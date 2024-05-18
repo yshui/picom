@@ -7,7 +7,11 @@
 #endif
 
 // clang-format off
-#define auto           __auto_type
+#if __STDC_VERSION__ <= 201710L
+// Polyfill for C23's `auto` and `typeof`
+# define auto           __auto_type
+# define typeof         __typeof__
+#endif
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
 #define likely_if(x)   if (likely(x))
@@ -50,7 +54,7 @@
 #else
 # define attr_warn_unused_result
 #endif
-// An alias for conveninence
+// An alias for convenience
 #define must_use attr_warn_unused_result
 
 #if __has_attribute(nonnull)
@@ -85,6 +89,12 @@
 # define fallthrough()
 #endif
 
+#if __has_attribute(cleanup)
+# define cleanup(func) __attribute__((cleanup(func)))
+#else
+# error "Compiler is missing cleanup attribute"
+#endif
+
 #if __STDC_VERSION__ >= 201112L
 # define attr_noret _Noreturn
 #else
@@ -95,10 +105,12 @@
 # endif
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-# define unreachable __builtin_unreachable()
-#else
-# define unreachable do {} while(0)
+#ifndef unreachable
+# if defined(__GNUC__) || defined(__clang__)
+#  define unreachable() assert(false); __builtin_unreachable()
+# else
+#  define unreachable() assert(false); do {} while(0)
+# endif
 #endif
 
 #ifndef __has_include

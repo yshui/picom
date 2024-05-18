@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <xcb/xcb.h>
 
+#include "config.h"
 #include "utils.h"
 
 struct session;
@@ -41,13 +42,15 @@ enum driver detect_driver(xcb_connection_t *, struct backend_base *, xcb_window_
 
 /// Apply driver specified global workarounds. It's safe to call this multiple times.
 void apply_driver_workarounds(struct session *ps, enum driver);
+/// Choose a vblank scheduler based on the driver.
+enum vblank_scheduler_type choose_vblank_scheduler(enum driver driver);
 
 // Print driver names to stdout, for diagnostics
 static inline void print_drivers(enum driver drivers) {
 	const char *seen_drivers[ARR_SIZE(driver_names)];
 	int driver_count = 0;
 	for (size_t i = 0; i < ARR_SIZE(driver_names); i++) {
-		if (drivers & (1ul << i)) {
+		if (drivers & (1UL << i)) {
 			seen_drivers[driver_count++] = driver_names[i];
 		}
 	}

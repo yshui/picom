@@ -14,7 +14,10 @@
 
 #include <test.h>
 
+#include <time.h>
+
 #include "compiler.h"
+#include "log.h"
 #include "types.h"
 
 #define ARR_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -41,6 +44,17 @@ safe_isnan(double a) {
 		assert(false);                                                           \
 		abort();                                                                 \
 	} while (0)
+/// Abort the program is `expr` is true. This is similar to assert, but it is not disabled
+/// in release builds.
+#define BUG_ON(expr)                                                                     \
+	do {                                                                             \
+		bool __bug_on_tmp = (expr);                                              \
+		assert(!__bug_on_tmp && "Original expr: " #expr);                        \
+		if (__bug_on_tmp) {                                                      \
+			fprintf(stderr, "BUG_ON: \"%s\"\n", #expr);                      \
+			abort();                                                         \
+		}                                                                        \
+	} while (0)
 #define CHECK_EXPR(...) ((void)0)
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
@@ -55,11 +69,11 @@ safe_isnan(double a) {
 /// being always true or false.
 #define ASSERT_IN_RANGE(var, lower, upper)                                               \
 	do {                                                                             \
-		auto __tmp attr_unused = (var);                                          \
+		auto __assert_in_range_tmp attr_unused = (var);                          \
 		_Pragma("GCC diagnostic push");                                          \
 		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
-		assert(__tmp >= lower);                                                  \
-		assert(__tmp <= upper);                                                  \
+		assert(__assert_in_range_tmp >= lower);                                  \
+		assert(__assert_in_range_tmp <= upper);                                  \
 		_Pragma("GCC diagnostic pop");                                           \
 	} while (0)
 
@@ -80,40 +94,62 @@ safe_isnan(double a) {
 
 #define to_int_checked(val)                                                              \
 	({                                                                               \
-		int64_t tmp = (val);                                                     \
-		ASSERT_IN_RANGE(tmp, INT_MIN, INT_MAX);                                  \
-		(int)tmp;                                                                \
+		int64_t __to_tmp = (val);                                                \
+		ASSERT_IN_RANGE(__to_tmp, INT_MIN, INT_MAX);                             \
+		(int)__to_tmp;                                                           \
 	})
 
 #define to_char_checked(val)                                                             \
 	({                                                                               \
-		int64_t tmp = (val);                                                     \
-		ASSERT_IN_RANGE(tmp, CHAR_MIN, CHAR_MAX);                                \
-		(char)tmp;                                                               \
+		int64_t __to_tmp = (val);                                                \
+		ASSERT_IN_RANGE(__to_tmp, CHAR_MIN, CHAR_MAX);                           \
+		(char)__to_tmp;                                                          \
 	})
 
 #define to_u16_checked(val)                                                              \
 	({                                                                               \
-		auto tmp = (val);                                                        \
-		ASSERT_IN_RANGE(tmp, 0, UINT16_MAX);                                     \
-		(uint16_t) tmp;                                                          \
+		auto __to_tmp = (val);                                                   \
+		ASSERT_IN_RANGE(__to_tmp, 0, UINT16_MAX);                                \
+		(uint16_t) __to_tmp;                                                     \
 	})
 
 #define to_i16_checked(val)                                                              \
 	({                                                                               \
-		int64_t tmp = (val);                                                     \
-		ASSERT_IN_RANGE(tmp, INT16_MIN, INT16_MAX);                              \
-		(int16_t) tmp;                                                           \
+		int64_t __to_tmp = (val);                                                \
+		ASSERT_IN_RANGE(__to_tmp, INT16_MIN, INT16_MAX);                         \
+		(int16_t) __to_tmp;                                                      \
 	})
 
 #define to_u32_checked(val)                                                              \
 	({                                                                               \
-		auto tmp = (val);                                                        \
-		int64_t max attr_unused = UINT32_MAX; /* silence clang tautological      \
-		                                         comparison warning*/            \
-		ASSERT_IN_RANGE(tmp, 0, max);                                            \
-		(uint32_t) tmp;                                                          \
+		auto __to_tmp = (val);                                                   \
+		int64_t __to_u32_max attr_unused = UINT32_MAX; /* silence clang          \
+		                                                  tautological           \
+		                                                  comparison warning */  \
+		ASSERT_IN_RANGE(__to_tmp, 0, __to_u32_max);                              \
+		(uint32_t) __to_tmp;                                                     \
 	})
+
+/* Are two types/vars the same type (ignoring qualifiers)? */
+#define is_same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:	the pointer to the member.
+ * @type:	the type of the container struct this is embedded in.
+ * @member:	the name of the member within the struct.
+ *
+ * WARNING: any const qualifier of @ptr is lost.
+ */
+#define container_of(ptr, type, member)                                                  \
+	({                                                                               \
+		void *__mptr = (void *)(ptr);                                            \
+		static_assert(is_same_type(*(ptr), ((type *)0)->member) ||               \
+		                  is_same_type(*(ptr), void),                            \
+		              "pointer type mismatch in container_of()");                \
+		((type *)(__mptr - offsetof(type, member)));                             \
+	})
+
 /**
  * Normalize an int value to a specific range.
  *
@@ -122,16 +158,25 @@ safe_isnan(double a) {
  * @param max maximum value
  * @return normalized value
  */
-static inline int attr_const normalize_i_range(int i, int min, int max) {
-	if (i > max)
+static inline int attr_const attr_unused normalize_i_range(int i, int min, int max) {
+	if (i > max) {
 		return max;
-	if (i < min)
+	}
+	if (i < min) {
 		return min;
+	}
 	return i;
 }
 
+/// Generic integer abs()
+#define iabs(val)                                                                        \
+	({                                                                               \
+		__auto_type __tmp = (val);                                               \
+		__tmp > 0 ? __tmp : -__tmp;                                              \
+	})
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
+#define min3(a, b, c) min2(a, min2(b, c))
 
 /// clamp `val` into interval [min, max]
 #define clamp(val, min, max) max2(min2(val, max), min)
@@ -145,10 +190,12 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
  * @return normalized value
  */
 static inline double attr_const normalize_d_range(double d, double min, double max) {
-	if (d > max)
+	if (d > max) {
 		return max;
-	if (d < min)
+	}
+	if (d < min) {
 		return min;
+	}
 	return d;
 }
 
@@ -158,7 +205,7 @@ static inline double attr_const normalize_d_range(double d, double min, double m
  * @param d double value to normalize
  * @return normalized value
  */
-static inline double attr_const normalize_d(double d) {
+static inline double attr_const attr_unused normalize_d(double d) {
 	return normalize_d_range(d, 0.0, 1.0);
 }
 
@@ -208,7 +255,7 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 		((type *)allocchk(calloc((size_t)tmp, sizeof(type))));                   \
 	})
 
-/// @brief Wrapper of ealloc().
+/// @brief Wrapper of realloc().
 #define crealloc(ptr, nmemb)                                                               \
 	({                                                                                 \
 		auto tmp = (nmemb);                                                        \
@@ -270,6 +317,15 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 	void name##_ref(type *a);                                                        \
 	void name##_unref(type **a);
 
+static inline void free_charpp(char **str) {
+	if (str) {
+		free(*str);
+		*str = NULL;
+	}
+}
+
+/// An allocated char* that is automatically freed when it goes out of scope.
+#define scoped_charp char *cleanup(free_charpp)
 
 ///
 /// Calculates next closest power of two of 32bit integer n
@@ -277,5 +333,111 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 ///
 int next_power_of_two(int n);
 
+struct rolling_window {
+	int *elem;
+	int elem_head, nelem;
+	int window_size;
+};
+
+void rolling_window_destroy(struct rolling_window *rw);
+void rolling_window_reset(struct rolling_window *rw);
+void rolling_window_init(struct rolling_window *rw, int size);
+int rolling_window_pop_front(struct rolling_window *rw);
+bool rolling_window_push_back(struct rolling_window *rw, int val, int *front);
+
+/// Copy the contents of the rolling window to an array. The array is assumed to
+/// have enough space to hold the contents of the rolling window.
+static inline void attr_unused rolling_window_copy_to_array(struct rolling_window *rw,
+                                                            int *arr) {
+	// The length from head to the end of the array
+	auto head_len = (size_t)(rw->window_size - rw->elem_head);
+	if (head_len >= (size_t)rw->nelem) {
+		memcpy(arr, rw->elem + rw->elem_head, sizeof(int) * (size_t)rw->nelem);
+	} else {
+		auto tail_len = (size_t)((size_t)rw->nelem - head_len);
+		memcpy(arr, rw->elem + rw->elem_head, sizeof(int) * head_len);
+		memcpy(arr + head_len, rw->elem, sizeof(int) * tail_len);
+	}
+}
+
+struct rolling_max;
+
+struct rolling_max *rolling_max_new(int capacity);
+void rolling_max_destroy(struct rolling_max *rm);
+void rolling_max_reset(struct rolling_max *rm);
+void rolling_max_pop_front(struct rolling_max *rm, int front);
+void rolling_max_push_back(struct rolling_max *rm, int val);
+int rolling_max_get_max(struct rolling_max *rm);
+
+/// Estimate the mean and variance of random variable X using Welford's online
+/// algorithm.
+struct cumulative_mean_and_var {
+	double mean;
+	double m2;
+	unsigned int n;
+};
+
+static inline attr_unused void
+cumulative_mean_and_var_init(struct cumulative_mean_and_var *cmv) {
+	*cmv = (struct cumulative_mean_and_var){0};
+}
+
+static inline attr_unused void
+cumulative_mean_and_var_update(struct cumulative_mean_and_var *cmv, double x) {
+	if (cmv->n == UINT_MAX) {
+		// We have too many elements, let's keep the mean and variance.
+		return;
+	}
+	cmv->n++;
+	double delta = x - cmv->mean;
+	cmv->mean += delta / (double)cmv->n;
+	cmv->m2 += delta * (x - cmv->mean);
+}
+
+static inline attr_unused double
+cumulative_mean_and_var_get_var(struct cumulative_mean_and_var *cmv) {
+	if (cmv->n < 2) {
+		return 0;
+	}
+	return cmv->m2 / (double)(cmv->n - 1);
+}
+
+// Find the k-th smallest element in an array.
+int quickselect(int *elems, int nelem, int k);
+
+/// A naive quantile estimator.
+///
+/// Estimates the N-th percentile of a random variable X in a sliding window.
+struct rolling_quantile {
+	int current_rank;
+	int min_target_rank, max_target_rank;
+	int estimate;
+	int capacity;
+	int *tmp_buffer;
+};
+
+void rolling_quantile_init(struct rolling_quantile *rq, int capacity, int mink, int maxk);
+void rolling_quantile_init_with_tolerance(struct rolling_quantile *rq, int window_size,
+                                          double target, double tolerance);
+void rolling_quantile_reset(struct rolling_quantile *rq);
+void rolling_quantile_destroy(struct rolling_quantile *rq);
+int rolling_quantile_estimate(struct rolling_quantile *rq, struct rolling_window *elements);
+void rolling_quantile_push_back(struct rolling_quantile *rq, int x);
+void rolling_quantile_pop_front(struct rolling_quantile *rq, int x);
+void set_rr_scheduling(void);
+
+// Some versions of the Android libc do not have timespec_get(), use
+// clock_gettime() instead.
+#ifdef __ANDROID__
+
+#ifndef TIME_UTC
+#define TIME_UTC 1
+#endif
+
+static inline int timespec_get(struct timespec *ts, int base) {
+	assert(base == TIME_UTC);
+	return clock_gettime(CLOCK_REALTIME, ts);
+}
+#endif
 
 // vim: set noet sw=8 ts=8 :

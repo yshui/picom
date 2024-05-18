@@ -33,6 +33,10 @@ def set_window_size_async(conn, wid, width, height):
     value_list = [width, height]
     return conn.core.ConfigureWindowChecked(wid, value_mask, value_list)
 
+def set_window_bypass_compositor(conn, wid, value = 1):
+    prop_name = to_atom(conn, "_NET_WM_BYPASS_COMPOSITOR")
+    return conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, xproto.Atom.CARDINAL, 32, 1, [value])
+
 def find_picom_window(conn):
     prop_name = to_atom(conn, "WM_NAME")
     setup = conn.get_setup()
@@ -45,13 +49,13 @@ def find_picom_window(conn):
         if name.value.buf() == b"picom":
             return w
 
-def prepare_root_configure(conn):
+def prepare_root_configure(conn, size = 1000):
     setup = conn.get_setup()
     root = setup.roots[0].root
     # Xorg sends root ConfigureNotify when we add a new mode to an output
     rr = conn(randr.key)
     name = ''.join([random.choice(string.ascii_letters + string.digits) for n in range(0, 32)])
-    mode_info = randr.ModeInfo.synthetic(id = 0, width = 1000, height = 1000, dot_clock = 0,
+    mode_info = randr.ModeInfo.synthetic(id = 0, width = size, height = size, dot_clock = 0,
             hsync_start = 0, hsync_end = 0, htotal = 0, hskew = 0, vsync_start = 0, vsync_end = 0,
             vtotal = 0, name_len = len(name), mode_flags = 0)
 

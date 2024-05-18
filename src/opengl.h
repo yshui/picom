@@ -18,9 +18,9 @@
 #include "render.h"
 #include "win.h"
 
-#include <GL/gl.h>
-#include <GL/glx.h>
 #include <ctype.h>
+#include <epoxy/gl.h>
+#include <epoxy/glx.h>
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,7 +75,7 @@ typedef struct glx_session {
 	glx_round_pass_t *round_passes;
 } glx_session_t;
 
-/// @brief Wrapper of a binded GLX texture.
+/// @brief Wrapper of a bound GLX texture.
 typedef struct _glx_texture {
 	GLuint texture;
 	GLXPixmap glpixmap;
@@ -121,9 +121,9 @@ bool glx_bind_texture(session_t *ps, glx_texture_t **pptex, int x, int y, int wi
 void glx_paint_pre(session_t *ps, region_t *preg) attr_nonnull(1, 2);
 
 /**
- * Check if a texture is binded, or is binded to the given pixmap.
+ * Check if a texture is bound, or is bound to the given pixmap.
  */
-static inline bool glx_tex_binded(const glx_texture_t *ptex, xcb_pixmap_t pixmap) {
+static inline bool glx_tex_bound(const glx_texture_t *ptex, xcb_pixmap_t pixmap) {
 	return ptex && ptex->glpixmap && ptex->texture && (!pixmap || pixmap == ptex->pixmap);
 }
 
@@ -156,10 +156,11 @@ static inline bool glx_has_context(session_t *ps) {
  */
 static inline bool ensure_glx_context(session_t *ps) {
 	// Create GLX context
-	if (!glx_has_context(ps))
+	if (!glx_has_context(ps)) {
 		glx_init(ps, false);
+	}
 
-	return ps->psglx->context;
+	return glx_has_context(ps);
 }
 
 /**
@@ -227,10 +228,7 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
  */
 static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 	free_texture(ps, &ppaint->ptex);
-#ifdef CONFIG_OPENGL
-	free(ppaint->fbcfg);
-#endif
-	ppaint->fbcfg = NULL;
+	ppaint->fbcfg = (struct glx_fbconfig_info){0};
 }
 
 /**

@@ -158,7 +158,7 @@ bool file_watch_add(void *_fwr, const char *filename, file_watch_cb_t cb, void *
 	fflags |= NOTE_CLOSE_WRITE;
 #else
 	// NOTE_WRITE will receive notification more frequent than necessary, so is less
-	// preferrable
+	// preferable
 	fflags |= NOTE_WRITE;
 #endif
 	struct kevent ev = {

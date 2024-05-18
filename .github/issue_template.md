@@ -53,5 +53,11 @@
 
 <!-- Or, you can enable core dump, and upload the core file with the corresponding executable here. -->
 
+### OpenGL trace
+<!--
+    If you encounter visual glitches, i.e. things don't look how they supposed to look. It might be a good idea to follow the steps here:
+    https://github.com/yshui/picom/wiki/Reporting-issues#capture-a-trace , and upload the resulting trace here.
+-->
+
 ### Other details
 <!-- If your problem is visual, you are encouraged to record a short video when the problem occurs and link to it here. -->

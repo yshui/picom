@@ -77,31 +77,35 @@ static bool vsync_drm_init(session_t *ps) {
  * @return true for success, false otherwise
  */
 static bool vsync_opengl_init(session_t *ps) {
-	if (!ensure_glx_context(ps))
+	if (!ensure_glx_context(ps)) {
 		return false;
+	}
 
 	return glxext.has_GLX_SGI_video_sync;
 }
 
 static bool vsync_opengl_oml_init(session_t *ps) {
-	if (!ensure_glx_context(ps))
+	if (!ensure_glx_context(ps)) {
 		return false;
+	}
 
 	return glxext.has_GLX_OML_sync_control;
 }
 
 static inline bool vsync_opengl_swc_swap_interval(session_t *ps, int interval) {
-	if (glxext.has_GLX_MESA_swap_control)
+	if (glxext.has_GLX_MESA_swap_control) {
 		return glXSwapIntervalMESA((uint)interval) == 0;
-	else if (glxext.has_GLX_SGI_swap_control)
+	}
+	if (glxext.has_GLX_SGI_swap_control) {
 		return glXSwapIntervalSGI(interval) == 0;
-	else if (glxext.has_GLX_EXT_swap_control) {
+	}
+	if (glxext.has_GLX_EXT_swap_control) {
 		GLXDrawable d = glXGetCurrentDrawable();
 		if (d == None) {
 			// We don't have a context??
 			return false;
 		}
-		glXSwapIntervalEXT(ps->dpy, glXGetCurrentDrawable(), interval);
+		glXSwapIntervalEXT(ps->c.dpy, glXGetCurrentDrawable(), interval);
 		return true;
 	}
 	return false;
@@ -140,8 +144,8 @@ static int vsync_opengl_wait(session_t *ps attr_unused) {
 static int vsync_opengl_oml_wait(session_t *ps) {
 	int64_t ust = 0, msc = 0, sbc = 0;
 
-	glXGetSyncValuesOML(ps->dpy, ps->reg_win, &ust, &msc, &sbc);
-	glXWaitForMscOML(ps->dpy, ps->reg_win, 0, 2, (msc + 1) % 2, &ust, &msc, &sbc);
+	glXGetSyncValuesOML(ps->c.dpy, ps->reg_win, &ust, &msc, &sbc);
+	glXWaitForMscOML(ps->c.dpy, ps->reg_win, 0, 2, (msc + 1) % 2, &ust, &msc, &sbc);
 	return 0;
 }
 #endif

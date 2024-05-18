@@ -1,61 +1,15 @@
 picom
-=======
+=====
+
+[![circleci](https://circleci.com/gh/yshui/picom.svg?style=shield)](https://circleci.com/gh/yshui/picom)
+[![codecov](https://codecov.io/gh/yshui/picom/branch/next/graph/badge.svg?token=NRSegi0Gze)](https://codecov.io/gh/yshui/picom)
+[![chat on discord](https://img.shields.io/discord/1106224720833159198?logo=discord)](https://discord.gg/SY5JJzPgME)
+
+__picom__ is a compositor for X, and a [fork of Compton](History.md).
 
 **This is a development branch, bugs to be expected**
 
-This is forked from the original Compton because it seems to have become unmaintained.
-
-The current battle plan of this fork is to refactor it to make the code _possible_ to maintain, so potential contributors won't be scared away when they take a look at the code.
-
-We also try to fix bugs.
-
-You can leave your feedbacks or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
-
-The original README can be found [here](README_orig.md)
-
-## Call for testers
-
-### `--experimental-backends`
-
-This flag enables the refactored/partially rewritten backends.
-
-Currently, new backends feature better vsync with the xrender backend and improved input lag with the glx backend (for non-NVIDIA users). The performance should be on par with the old backends.
-
-New backend features will only be implemented on the new backends from now on, and the old backends will eventually be phased out after the new backends stabilize.
-
-To test the new backends, add the `--experimental-backends` flag to the command you use to run picom. This flag is not available from the configuration file.
-
-To report issues with the new backends, please state explicitly you are using the new backends in your report.
-
-## Rename
-
-### Rationale
-
-Since the inception of this fork, the existence of two compton repositories has caused some number of confusions. Mainly, people will report issues of this fork to the original compton, or report issues of the original compton here. Later, when distros started packaging this fork of compton, some wanted to differentiate the newer compton from the older version. They found themselves having no choice but to invent a name for this fork. This is less than ideal since this has the potential to cause more confusions among users.
-
-Therefore, we decided to move this fork to a new name. Personally, I consider this more than justified since this version of compton has gone through significant changes since it was forked.
-
-### The name
-
-The criteria for a good name were
-
-0. Being short, so it's easy to remember.
-1. Pronounceability, again, helps memorability
-2. Searchability, so when people search the name, it's easy for them to find this repository.
-
-Of course, choosing a name is never easy, and there is no apparent way to objectively evaluate the names. Yet, we have to solve the aforementioned problems as soon as possible.
-
-In the end, we picked `picom` (a portmanteau of `pico` and `composite`) as our new name. This name might not be perfect, but is what we will move forward with unless there's a compelling reason not to.
-
-### Migration
-
-Following the [deprecation process](https://github.com/yshui/picom/issues/114), migration to the new name will be broken into 3 steps:
-
-1. All mentions of `compton` will be updated to `picom` in the code base. `compton` will still be installed, but only as a symlink to `picom`. When `picom` is launched via the symlink, a warning message is printed, alerting the user to migrate. Similarly, the old configuration file names and dbus interface names will still be accepted but warned.
-2. 3 major releases after step 1, the warning messages will be prompted to error messages and `picom` will not start when launched via the symlink.
-3. 3 major releases after step 2, the symlink will be removed.
-
-The dbus interface and service names are unchanged, so no migration needed for that.
+You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions), or chat with other users on [discord](https://discord.gg/SY5JJzPgME)!
 
 ## Change Log
 
@@ -72,7 +26,9 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * libXext
 * xproto
 * xcb
+* xcb-util
 * xcb-damage
+* xcb-dpms
 * xcb-xfixes
 * xcb-shape
 * xcb-renderutil
@@ -81,26 +37,25 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * xcb-composite
 * xcb-image
 * xcb-present
-* xcb-xinerama
 * xcb-glx
 * pixman
+* libconfig
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
-* libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
-* libGL (optional, disable with the `-Dopengl=false` meson configure flag)
-* libpcre (optional, disable with the `-Dregex=false` meson configure flag)
+* libGL, libEGL, libepoxy (optional, disable with the `-Dopengl=false` meson configure flag)
+* libpcre2 (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
 * uthash
 
 On Debian based distributions (e.g. Ubuntu), the needed packages are
 
 ```
-libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl1-mesa-dev libpcre2-dev libpcre3-dev libevdev-dev uthash-dev libev-dev libx11-xcb-dev
+libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libepoxy-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev meson ninja-build uthash-dev
 ```
 
 On Fedora, the needed packages are
 
 ```
-dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel mesa-libGL-devel meson pcre-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
+dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel libepoxy-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel xcb-util-devel
 ```
 
 To build the documents, you need `asciidoc`
@@ -108,8 +63,7 @@ To build the documents, you need `asciidoc`
 ### To build
 
 ```bash
-$ git submodule update --init --recursive
-$ meson --buildtype=release . build
+$ meson setup --buildtype=release build
 $ ninja -C build
 ```
 
@@ -120,13 +74,12 @@ If you have libraries and/or headers installed at non-default location (e.g. und
 You can do that by setting the `CPPFLAGS` and `LDFLAGS` environment variables when running `meson`. Like this:
 
 ```bash
-$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson --buildtype=release . build
-
+$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson setup --buildtype=release build
 ```
 
 As an example, on FreeBSD, you might have to run meson with:
 ```bash
-$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson --buildtype=release . build
+$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson setup --buildtype=release build
 $ ninja -C build
 ```
 
@@ -140,16 +93,29 @@ Default install prefix is `/usr/local`, you can change it with `meson configure 
 
 ## How to Contribute
 
-### Code
+All contributions are welcome!
 
-You can look at the [Projects](https://github.com/yshui/picom/projects) page, and see if there is anything that interests you. Or you can take a look at the [Issues](https://github.com/yshui/picom/issues).
+New features you think should be included in picom, a fix for a bug you found - please open a PR!
 
-### Non-code
+You can take a look at the [Issues](https://github.com/yshui/picom/issues).
 
-Even if you don't want to contribute code, you can still contribute by compiling and running this branch, and report any issue you can find.
+Contributions to the documents and wiki are also appreciated.
 
-Contributions to the documents and wiki will also be appreciated.
+Even if you don't want to add anything to picom, you are still helping by compiling and running this branch, and report any issue you can find.
+
+### Become a Collaborator
+
+Becoming a collaborator of picom requires significant time commitment. You are expected to reply to issue reports, reviewing PRs, and sometimes fix bugs or implement new feature. You won't be able to push to the main branch directly, and all you code still has to go through code review.
+
+If this sounds good to you, feel free to contact me.
 
 ## Contributors
 
 See [CONTRIBUTORS](CONTRIBUTORS)
+
+The README for the [original Compton project](https://github.com/chjj/compton/) can be found [here](History.md#Compton).
+
+## Licensing
+
+picom is free software, made available under the [MIT](LICENSES/MIT) and [MPL-2.0](LICENSES/MPL-2.0) software
+licenses. See the individual source files for details.

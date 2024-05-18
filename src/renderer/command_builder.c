@@ -1,0 +1,404 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
+#include "command_builder.h"
+
+#include "common.h"
+#include "layout.h"
+#include "win.h"
+
+/// Generate commands for rendering the body of the window in `layer`.
+///
+/// @param[in]  frame_region frame region of the window, in window local coordinates
+/// @param[out] cmd          output commands, when multiple commands are generated,
+///                          it's stored in `cmd` going backwards, i.e. cmd - 1, -2, ...
+/// @return                  number of commands generated
+static inline unsigned
+commands_for_window_body(struct layer *layer, struct backend_command *cmd,
+                         const region_t *frame_region, bool inactive_dim_fixed,
+                         double inactive_dim, double max_brightness) {
+	auto w = layer->win;
+	auto mode = win_calc_mode_raw(layer->win);
+	int border_width = w->g.border_width;
+	double dim = 0;
+	if (w->dim) {
+		dim = inactive_dim;
+		if (!inactive_dim_fixed) {
+			dim *= layer->opacity;
+		}
+	}
+	if (border_width == 0) {
+		// Some WM has borders implemented as WM frames
+		border_width = min3(w->frame_extents.left, w->frame_extents.right,
+		                    w->frame_extents.bottom);
+	}
+	ivec2 raw_size = {.width = w->widthb, .height = w->heightb};
+	pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
+	pixman_region32_translate(&cmd->target_mask, layer->origin.x, layer->origin.y);
+	if (w->frame_opacity < 1) {
+		pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask, frame_region);
+	}
+	pixman_region32_init(&cmd->opaque_region);
+	if ((mode == WMODE_SOLID || mode == WMODE_FRAME_TRANS) && layer->opacity == 1.0) {
+		pixman_region32_copy(&cmd->opaque_region, &cmd->target_mask);
+		if (mode == WMODE_FRAME_TRANS) {
+			pixman_region32_subtract(&cmd->opaque_region, &cmd->opaque_region,
+			                         frame_region);
+		}
+	}
+	if (w->corner_radius > 0) {
+		win_region_remove_corners(w, layer->origin, &cmd->opaque_region);
+	}
+	cmd->op = BACKEND_COMMAND_BLIT;
+	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
+	cmd->origin = layer->origin;
+	cmd->blit = (struct backend_blit_args){
+	    .border_width = border_width,
+	    .target_mask = &cmd->target_mask,
+	    .corner_radius = w->corner_radius,
+	    .opacity = layer->opacity,
+	    .dim = dim,
+	    .effective_size = raw_size,
+	    .shader = w->fg_shader ? w->fg_shader->backend_shader : NULL,
+	    .color_inverted = w->invert_color,
+	    .source_mask = NULL,
+	    .max_brightness = max_brightness};
+
+	if (w->frame_opacity == 1 || w->frame_opacity == 0) {
+		return 1;
+	}
+	cmd -= 1;
+
+	pixman_region32_copy(&cmd->target_mask, frame_region);
+	pixman_region32_init(&cmd->opaque_region);
+	cmd->op = BACKEND_COMMAND_BLIT;
+	cmd->origin = layer->origin;
+	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
+	cmd->blit = cmd[1].blit;
+	cmd->blit.target_mask = &cmd->target_mask;
+	cmd->blit.opacity *= w->frame_opacity;
+	return 2;
+}
+
+/// Generate render command for the shadow in `layer`
+///
+/// @param[in] end the end of the commands generated for this `layer`.
+static inline unsigned
+command_for_shadow(struct layer *layer, struct backend_command *cmd,
+                   const struct win_option *wintype_options,
+                   const struct x_monitors *monitors, const struct backend_command *end) {
+	auto w = layer->win;
+	if (!w->shadow) {
+		return 0;
+	}
+	cmd->op = BACKEND_COMMAND_BLIT;
+	cmd->origin = layer->shadow_origin;
+	cmd->source = BACKEND_COMMAND_SOURCE_SHADOW;
+	pixman_region32_clear(&cmd->target_mask);
+	pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
+	                           layer->shadow_origin.x, layer->shadow_origin.y,
+	                           (unsigned)layer->shadow_size.width,
+	                           (unsigned)layer->shadow_size.height);
+	log_trace("Calculate shadow for %#010x (%s)", w->base.id, w->name);
+	log_region(TRACE, &cmd->target_mask);
+	if (!wintype_options[w->window_type].full_shadow) {
+		// We need to not draw under the window
+		// From this command up, until the next WINDOW_START
+		// should be blits for the current window.
+		for (auto j = cmd + 1; j != end; j++) {
+			assert(j->op == BACKEND_COMMAND_BLIT);
+			assert(j->source == BACKEND_COMMAND_SOURCE_WINDOW);
+			if (j->blit.corner_radius == 0) {
+				pixman_region32_subtract(
+				    &cmd->target_mask, &cmd->target_mask, &j->target_mask);
+			} else {
+				region_t mask_without_corners;
+				pixman_region32_init(&mask_without_corners);
+				pixman_region32_copy(&mask_without_corners, &j->target_mask);
+				win_region_remove_corners(layer->win, j->origin,
+				                          &mask_without_corners);
+				pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask,
+				                         &mask_without_corners);
+				pixman_region32_fini(&mask_without_corners);
+			}
+		}
+	}
+	log_region(TRACE, &cmd->target_mask);
+	if (monitors && w->randr_monitor >= 0 && w->randr_monitor < monitors->count) {
+		pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask,
+		                          &monitors->regions[w->randr_monitor]);
+	}
+	log_region(TRACE, &cmd->target_mask);
+	if (w->corner_radius > 0) {
+		cmd->source_mask.corner_radius = w->corner_radius;
+		cmd->source_mask.inverted = true;
+		cmd->source_mask.origin = ivec2_sub(layer->origin, layer->shadow_origin);
+	}
+	cmd->blit = (struct backend_blit_args){
+	    .opacity = layer->shadow_opacity,
+	    .max_brightness = 1,
+	    .source_mask = w->corner_radius > 0 ? &cmd->source_mask : NULL,
+	    .effective_size = layer->shadow_size,
+	    .target_mask = &cmd->target_mask,
+	};
+	pixman_region32_init(&cmd->opaque_region);
+	return 1;
+}
+
+static inline unsigned
+command_for_blur(struct layer *layer, struct backend_command *cmd,
+                 const region_t *frame_region, bool force_blend, bool blur_frame) {
+	auto w = layer->win;
+	auto mode = win_calc_mode_raw(w);
+	if (!w->blur_background || layer->blur_opacity == 0) {
+		return 0;
+	}
+	if (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0) {
+		pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
+		pixman_region32_translate(&cmd->target_mask, layer->origin.x,
+		                          layer->origin.y);
+	} else if (blur_frame && mode == WMODE_FRAME_TRANS) {
+		pixman_region32_copy(&cmd->target_mask, frame_region);
+	} else {
+		return 0;
+	}
+	cmd->op = BACKEND_COMMAND_BLUR;
+	cmd->origin = (ivec2){};
+	if (w->corner_radius > 0) {
+		cmd->source_mask.origin = (ivec2){.x = layer->origin.x, .y = layer->origin.y};
+		cmd->source_mask.corner_radius = w->corner_radius;
+		cmd->source_mask.inverted = false;
+	}
+	cmd->blur = (struct backend_blur_args){
+	    .opacity = layer->blur_opacity,
+	    .target_mask = &cmd->target_mask,
+	    .source_mask = w->corner_radius > 0 ? &cmd->source_mask : NULL,
+	};
+	return 1;
+}
+
+static inline void
+command_builder_apply_transparent_clipping(struct layout *layout, region_t *scratch_region) {
+	// Going from top down, apply transparent-clipping
+	if (layout->len == 0) {
+		return;
+	}
+
+	pixman_region32_clear(scratch_region);
+	auto end = &layout->commands[layout->number_of_commands - 1];
+	auto begin = &layout->commands[layout->first_layer_start - 1];
+	auto layer = &layout->layers[layout->len - 1];
+	// `layer_start` is one before the first command for this layer
+	auto layer_start = end - layer->number_of_commands;
+	for (auto i = end; i != begin; i--) {
+		if (i == layer_start) {
+			if (layer->win->transparent_clipping) {
+				auto win = layer->win;
+				auto mode = win_calc_mode_raw(layer->win);
+				region_t tmp;
+				pixman_region32_init(&tmp);
+				if (mode == WMODE_TRANS || layer->opacity < 1.0) {
+					pixman_region32_copy(&tmp, &win->bounding_shape);
+				} else if (mode == WMODE_FRAME_TRANS) {
+					win_get_region_frame_local(win, &tmp);
+				}
+				pixman_region32_translate(&tmp, layer->origin.x,
+				                          layer->origin.y);
+				pixman_region32_union(scratch_region, scratch_region, &tmp);
+				pixman_region32_fini(&tmp);
+			}
+			layer -= 1;
+			layer_start -= layer->number_of_commands;
+		}
+
+		if (i->op == BACKEND_COMMAND_BLUR ||
+		    (i->op == BACKEND_COMMAND_BLIT &&
+		     i->source != BACKEND_COMMAND_SOURCE_BACKGROUND)) {
+			pixman_region32_subtract(&i->target_mask, &i->target_mask,
+			                         scratch_region);
+		}
+		if (i->op == BACKEND_COMMAND_BLIT &&
+		    i->source != BACKEND_COMMAND_SOURCE_BACKGROUND) {
+			pixman_region32_subtract(&i->opaque_region, &i->opaque_region,
+			                         scratch_region);
+		}
+	}
+}
+static inline void
+command_builder_apply_shadow_clipping(struct layout *layout, region_t *scratch_region) {
+	// Going from bottom up, apply clipping-shadow-above
+	pixman_region32_clear(scratch_region);
+	auto begin = &layout->commands[layout->first_layer_start];
+	auto end = &layout->commands[layout->number_of_commands];
+	auto layer = layout->layers - 1;
+	// `layer_end` is one after the last command for this layer
+	auto layer_end = begin;
+	bool clip_shadow_above = false;
+	for (auto i = begin; i != end; i++) {
+		if (i == layer_end) {
+			layer += 1;
+			layer_end += layer->number_of_commands;
+			clip_shadow_above = layer->win->clip_shadow_above;
+		}
+
+		if (i->op == BACKEND_COMMAND_BLUR) {
+			pixman_region32_subtract(scratch_region, scratch_region,
+			                         &i->target_mask);
+		} else if (i->op == BACKEND_COMMAND_BLIT) {
+			if (i->source == BACKEND_COMMAND_SOURCE_SHADOW) {
+				pixman_region32_subtract(&i->target_mask, &i->target_mask,
+				                         scratch_region);
+			} else if (i->source == BACKEND_COMMAND_SOURCE_WINDOW &&
+			           clip_shadow_above) {
+				pixman_region32_union(scratch_region, scratch_region,
+				                      &i->target_mask);
+			}
+		}
+	}
+}
+
+struct command_builder {
+	region_t scratch_region;
+	struct list_node free_command_lists;
+};
+
+struct command_list {
+	struct list_node free_list;
+	unsigned capacity;
+	struct command_builder *super;
+	struct backend_command commands[];
+};
+
+static struct command_list *
+command_builder_command_list_new(struct command_builder *cb, unsigned ncmds) {
+	const auto size = sizeof(struct command_list) + sizeof(struct backend_command[ncmds]);
+	struct command_list *list = NULL;
+	unsigned capacity = 0;
+	if (!list_is_empty(&cb->free_command_lists)) {
+		list = list_entry(cb->free_command_lists.next, struct command_list, free_list);
+		capacity = list->capacity;
+		list_remove(&list->free_list);
+	}
+	if (capacity < ncmds || capacity / 2 > ncmds) {
+		for (unsigned i = ncmds; i < capacity; i++) {
+			pixman_region32_fini(&list->commands[i].target_mask);
+		}
+
+		struct command_list *new_list = realloc(list, size);
+		allocchk(new_list);
+		list = new_list;
+		list_init_head(&list->free_list);
+		list->capacity = ncmds;
+		list->super = cb;
+
+		for (unsigned i = capacity; i < ncmds; i++) {
+			list->commands[i].op = BACKEND_COMMAND_INVALID;
+			pixman_region32_init(&list->commands[i].target_mask);
+		}
+	}
+	return list;
+}
+
+void command_builder_command_list_free(struct backend_command *cmds) {
+	if (!cmds) {
+		return;
+	}
+
+	auto list = container_of(cmds, struct command_list, commands[0]);
+	for (unsigned i = 0; i < list->capacity; i++) {
+		auto cmd = &list->commands[i];
+		if (cmd->op == BACKEND_COMMAND_BLIT) {
+			pixman_region32_fini(&cmd->opaque_region);
+		}
+		cmd->op = BACKEND_COMMAND_INVALID;
+	}
+	list_insert_after(&list->super->free_command_lists, &list->free_list);
+}
+
+struct command_builder *command_builder_new(void) {
+	auto cb = ccalloc(1, struct command_builder);
+	pixman_region32_init(&cb->scratch_region);
+	list_init_head(&cb->free_command_lists);
+	return cb;
+}
+
+void command_builder_free(struct command_builder *cb) {
+	list_foreach_safe(struct command_list, i, &cb->free_command_lists, free_list) {
+		list_remove(&i->free_list);
+		for (unsigned j = 0; j < i->capacity; j++) {
+			pixman_region32_fini(&i->commands[j].target_mask);
+		}
+		free(i);
+	}
+
+	pixman_region32_fini(&cb->scratch_region);
+	free(cb);
+}
+
+// TODO(yshui) reduce the number of parameters by storing the final effective parameter
+// value in `struct managed_win`.
+void command_builder_build(struct command_builder *cb, struct layout *layout, bool force_blend,
+                           bool blur_frame, bool inactive_dim_fixed, double max_brightness,
+                           double inactive_dim, const struct x_monitors *monitors,
+                           const struct win_option *wintype_options) {
+
+	unsigned ncmds = 1;
+	for (unsigned i = 0; i < layout->len; i++) {
+		auto layer = &layout->layers[i];
+		auto mode = win_calc_mode_raw(layer->win);
+		if (layer->win->blur_background && layer->blur_opacity > 0 &&
+		    (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0 ||
+		     (blur_frame && mode == WMODE_FRAME_TRANS))) {
+			// Needs blur
+			ncmds += 1;
+		}
+		if (layer->win->shadow) {
+			ncmds += 1;
+		}
+		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0) {
+			// Needs to draw the frame separately
+			ncmds += 1;
+		}
+		ncmds += 1;        // window body
+	}
+
+	auto list = command_builder_command_list_new(cb, ncmds);
+	layout->commands = list->commands;
+
+	auto cmd = &layout->commands[ncmds - 1];
+	for (int i = to_int_checked(layout->len) - 1; i >= 0; i--) {
+		auto layer = &layout->layers[i];
+		auto last = cmd;
+		auto frame_region = win_get_region_frame_local_by_val(layer->win);
+		pixman_region32_translate(&frame_region, layer->origin.x, layer->origin.y);
+
+		// Add window body
+		cmd -= commands_for_window_body(layer, cmd, &frame_region, inactive_dim_fixed,
+		                                inactive_dim, max_brightness);
+
+		// Add shadow
+		cmd -= command_for_shadow(layer, cmd, wintype_options, monitors, last + 1);
+
+		// Add blur
+		cmd -= command_for_blur(layer, cmd, &frame_region, force_blend, blur_frame);
+
+		layer->number_of_commands = (unsigned)(last - cmd);
+		pixman_region32_fini(&frame_region);
+	}
+
+	// Command for the desktop background
+	cmd->op = BACKEND_COMMAND_COPY_AREA;
+	cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
+	cmd->origin = (ivec2){};
+	pixman_region32_reset(
+	    &cmd->target_mask,
+	    (rect_t[]){{.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});
+	cmd->copy_area.region = &cmd->target_mask;
+	assert(cmd == list->commands);
+
+	layout->first_layer_start = 1;
+	layout->number_of_commands = ncmds;
+
+	command_builder_apply_transparent_clipping(layout, &cb->scratch_region);
+	command_builder_apply_shadow_clipping(layout, &cb->scratch_region);
+}

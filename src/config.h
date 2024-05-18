@@ -15,9 +15,9 @@
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
 
-#ifdef CONFIG_LIBCONFIG
+#include "uthash_extra.h"
+
 #include <libconfig.h>
-#endif
 
 #include "compiler.h"
 #include "kernel.h"
@@ -34,6 +34,7 @@ enum backend {
 	BKEND_GLX,
 	BKEND_XR_GLX_HYBRID,
 	BKEND_DUMMY,
+	BKEND_EGL,
 	NUM_BKEND,
 };
 
@@ -70,6 +71,33 @@ enum blur_method {
 
 typedef struct _c2_lptr c2_lptr_t;
 
+enum vblank_scheduler_type {
+	/// X Present extension based vblank events
+	VBLANK_SCHEDULER_PRESENT,
+	/// GLX_SGI_video_sync based vblank events
+	VBLANK_SCHEDULER_SGI_VIDEO_SYNC,
+	/// An invalid scheduler, served as a scheduler count, and
+	/// as a sentinel value.
+	LAST_VBLANK_SCHEDULER,
+};
+
+extern const char *vblank_scheduler_str[];
+
+/// Internal, private options for debugging and development use.
+struct debug_options {
+	/// Try to reduce frame latency by using vblank interval and render time
+	/// estimates. Right now it's not working well across drivers.
+	int smart_frame_pacing;
+	/// Override the vblank scheduler chosen by the compositor.
+	int force_vblank_scheduler;
+	/// Release then immediately rebind every window pixmap each frame.
+	/// Useful when being traced under apitrace, to force it to pick up
+	/// updated contents. WARNING, extremely slow.
+	int always_rebind_pixmap;
+};
+
+extern struct debug_options global_debug_options;
+
 /// Structure representing all options.
 typedef struct options {
 	// === Debugging ===
@@ -78,12 +106,14 @@ typedef struct options {
 	/// Render to a separate window instead of taking over the screen
 	bool debug_mode;
 	// === General ===
-	/// Use the experimental new backends?
-	bool experimental_backends;
+	/// Use the legacy backends?
+	bool legacy_backends;
 	/// Path to write PID to.
 	char *write_pid_path;
 	/// The backend in use.
-	enum backend backend;
+	int backend;
+	/// Log level.
+	int log_level;
 	/// Whether to sync X drawing with X Sync fence to avoid certain delay
 	/// issues with GLX backend.
 	bool xrender_sync_fence;
@@ -107,7 +137,7 @@ typedef struct options {
 	/// when determining if a window could be unredirected.
 	c2_lptr_t *unredir_if_possible_blacklist;
 	/// Delay before unredirecting screen, in milliseconds.
-	long unredir_if_possible_delay;
+	int unredir_if_possible_delay;
 	/// Forced redirection setting through D-Bus.
 	switch_t redirected_force;
 	/// Whether to stop painting. Controlled through D-Bus.
@@ -128,12 +158,11 @@ typedef struct options {
 	bool no_x_selection;
 	/// Window type option override.
 	win_option_t wintype_option[NUM_WINTYPES];
+	struct win_option_mask wintype_option_mask[NUM_WINTYPES];
+	/// Whether to set realtime scheduling policy for the compositor process.
+	bool use_realtime_scheduling;
 
 	// === VSync & software optimization ===
-	/// User-specified refresh rate.
-	int refresh_rate;
-	/// Whether to enable refresh-rate-based software optimization.
-	bool sw_opti;
 	/// VSync method to use;
 	bool vsync;
 	/// Whether to use glFinish() instead of glFlush() for (possibly) better
@@ -141,6 +170,8 @@ typedef struct options {
 	bool vsync_use_glfinish;
 	/// Whether use damage information to help limit the area to paint
 	bool use_damage;
+	/// Disable frame pacing
+	bool frame_pacing;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
@@ -148,16 +179,15 @@ typedef struct options {
 	int shadow_radius;
 	int shadow_offset_x, shadow_offset_y;
 	double shadow_opacity;
-	/// argument string to shadow-exclude-reg option
-	char *shadow_exclude_reg_str;
 	/// Shadow blacklist. A linked list of conditions.
 	c2_lptr_t *shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
 	bool shadow_ignore_shaped;
-	/// Whether to crop shadow to the very Xinerama screen.
-	bool xinerama_shadow_crop;
+	/// Whether to crop shadow to the very X RandR monitor.
+	bool crop_shadow_to_monitor;
 	/// Don't draw shadow over these windows. A linked list of conditions.
 	c2_lptr_t *shadow_clip_list;
+	bool shadow_enable;
 
 	// === Fading ===
 	/// How much to fade in in a single fading step.
@@ -172,10 +202,11 @@ typedef struct options {
 	bool no_fading_destroyed_argb;
 	/// Fading blacklist. A linked list of conditions.
 	c2_lptr_t *fade_blacklist;
+	bool fading_enable;
 
 	// === Opacity ===
 	/// Default opacity for inactive windows.
-	/// 32-bit integer with the format of _NET_WM_OPACITY.
+	/// 32-bit integer with the format of _NET_WM_WINDOW_OPACITY.
 	double inactive_opacity;
 	/// Default opacity for inactive windows.
 	double active_opacity;
@@ -185,8 +216,8 @@ typedef struct options {
 	/// Frame opacity. Relative to window opacity, also affects shadow
 	/// opacity.
 	double frame_opacity;
-	/// Whether to detect _NET_WM_OPACITY on client windows. Used on window
-	/// managers that don't pass _NET_WM_OPACITY to frame windows.
+	/// Whether to detect _NET_WM_WINDOW_OPACITY on client windows. Used on window
+	/// managers that don't pass _NET_WM_WINDOW_OPACITY to frame windows.
 	bool detect_client_opacity;
 
 	// === Other window processing ===
@@ -210,6 +241,10 @@ typedef struct options {
 	struct conv **blur_kerns;
 	/// Number of convolution kernels
 	int blur_kernel_count;
+	/// Custom fragment shader for painting windows
+	char *window_shader_fg;
+	/// Rules to change custom fragment shader for painting windows.
+	c2_lptr_t *window_shader_fg_rules;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -225,6 +260,8 @@ typedef struct options {
 	int corner_radius;
 	/// Rounded corners blacklist. A linked list of conditions.
 	c2_lptr_t *rounded_corners_blacklist;
+	/// Rounded corner rules. A linked list of conditions.
+	c2_lptr_t *corner_radius_rules;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.
@@ -250,50 +287,54 @@ typedef struct options {
 	// Make transparent windows clip other windows, instead of blending on top of
 	// them
 	bool transparent_clipping;
+	/// A list of conditions of windows to which transparent clipping
+	/// should not apply
+	c2_lptr_t *transparent_clipping_blacklist;
+
+	bool dithered_present;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
-struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
-bool must_use parse_geometry(session_t *, const char *, region_t *);
-bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
-enum blur_method must_use parse_blur_method(const char *src);
+struct conv **must_use parse_blur_kern_lst(const char *, int *count);
+/// Parse the path prefix of a c2 rule. Then look for the specified file in the
+/// given include directories. The include directories are passed via `user_data`.
+void *parse_window_shader_prefix(const char *src, const char **end, void *user_data);
+/// Same as `parse_window_shader_prefix`, but the path is relative to the current
+/// working directory. `user_data` is ignored.
+void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, void *);
+void *parse_numeric_prefix(const char *src, const char **end, void *user_data);
+char *must_use locate_auxiliary_file(const char *scope, const char *path,
+                                     const char *include_dir);
+int must_use parse_blur_method(const char *src);
+void parse_debug_options(struct debug_options *);
 
-/**
- * Add a pattern to a condition linked list.
- */
-bool condlst_add(c2_lptr_t **, const char *);
+const char *xdg_config_home(void);
+char **xdg_config_dirs(void);
 
-#ifdef CONFIG_LIBCONFIG
 /// Parse a configuration file
 /// Returns the actually config_file name used, allocated on heap
 /// Outputs:
-///   shadow_enable = whether shaodw is enabled globally
+///   shadow_enable = whether shadow is enabled globally
 ///   fading_enable = whether fading is enabled globally
 ///   win_option_mask = whether option overrides for specific window type is set for given
 ///                     options
 ///   hasneg = whether the convolution kernel has negative values
-char *
-parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable,
-                       bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
-#endif
+char *parse_config_libconfig(options_t *, const char *config_file);
 
-void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
-                         bool fading_enable, bool blur_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
-char *parse_config(options_t *, const char *config_file, bool *shadow_enable,
-                   bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
+char *parse_config(options_t *, const char *config_file);
 
 /**
  * Parse a backend option argument.
  */
-static inline attr_pure enum backend parse_backend(const char *str) {
-	for (enum backend i = 0; BACKEND_STRS[i]; ++i) {
+static inline attr_pure int parse_backend(const char *str) {
+	for (int i = 0; BACKEND_STRS[i]; ++i) {
 		if (!strcasecmp(str, BACKEND_STRS[i])) {
 			return i;
 		}

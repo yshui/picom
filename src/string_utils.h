@@ -2,7 +2,9 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <ctype.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "compiler.h"
 
@@ -11,6 +13,7 @@
 char *mstrjoin(const char *src1, const char *src2);
 char *mstrjoin3(const char *src1, const char *src2, const char *src3);
 void mstrextend(char **psrc1, const char *src2);
+const char *trim_both(const char *src, size_t *length);
 
 /// Parse a floating point number of form (+|-)?[0-9]*(\.[0-9]*)
 double strtod_simple(const char *, const char **);
@@ -23,8 +26,9 @@ static inline int uitostr(unsigned int n, char *buf) {
 		ret++;
 	}
 
-	if (ret == 0)
+	if (ret == 0) {
 		ret = 1;
+	}
 
 	int pos = ret;
 	while (pos--) {
@@ -35,20 +39,35 @@ static inline int uitostr(unsigned int n, char *buf) {
 }
 
 static inline const char *skip_space_const(const char *src) {
-	if (!src)
+	if (!src) {
 		return NULL;
-	while (*src && isspace((unsigned char)*src))
+	}
+	while (*src && isspace((unsigned char)*src)) {
 		src++;
+	}
 	return src;
 }
 
 static inline char *skip_space_mut(char *src) {
-	if (!src)
+	if (!src) {
 		return NULL;
-	while (*src && isspace((unsigned char)*src))
+	}
+	while (*src && isspace((unsigned char)*src)) {
 		src++;
+	}
 	return src;
 }
 
 #define skip_space(x)                                                                    \
-	_Generic((x), char * : skip_space_mut, const char * : skip_space_const)(x)
+	_Generic((x), char *: skip_space_mut, const char *: skip_space_const)(x)
+
+static inline bool starts_with(const char *str, const char *needle, bool ignore_case) {
+	if (ignore_case) {
+		return strncasecmp(str, needle, strlen(needle)) == 0;
+	}
+	return strncmp(str, needle, strlen(needle)) == 0;
+}
+
+/// Similar to `asprintf`, but it reuses the allocated memory pointed to by `*strp`, and
+/// reallocates it if it's not big enough.
+int asnprintf(char **strp, size_t *capacity, const char *fmt, ...);

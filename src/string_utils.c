@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <stdarg.h>
 #include <string.h>
 
 #include <test.h>
@@ -85,6 +86,8 @@ TEST_CASE(mstrextend) {
 /// Parse a floating point number of form (+|-)?[0-9]*(\.[0-9]*)
 double strtod_simple(const char *src, const char **end) {
 	double neg = 1;
+	bool succeeded = false;
+	*end = src;
 	if (*src == '-') {
 		neg = -1;
 		src++;
@@ -95,6 +98,7 @@ double strtod_simple(const char *src, const char **end) {
 	double ret = 0;
 	while (*src >= '0' && *src <= '9') {
 		ret = ret * 10 + (*src - '0');
+		succeeded = true;
 		src++;
 	}
 
@@ -104,13 +108,17 @@ double strtod_simple(const char *src, const char **end) {
 		while (*src >= '0' && *src <= '9') {
 			frac += mult * (*src - '0');
 			mult *= 0.1;
+			succeeded = true;
 			src++;
 		}
 		ret += frac;
 	}
 
-	*end = src;
-	return ret * neg;
+	if (succeeded) {
+		*end = src;
+		return ret * neg;
+	}
+	return NAN;
 }
 
 TEST_CASE(strtod_simple) {
@@ -126,4 +134,63 @@ TEST_CASE(strtod_simple) {
 	result = strtod_simple("+.5", &end);
 	TEST_EQUAL(result, 0.5);
 	TEST_EQUAL(*end, '\0');
+
+	result = strtod_simple("+.", &end);
+	TEST_TRUE(safe_isnan(result));
+	TEST_EQUAL(*end, '+');
+}
+
+const char *trim_both(const char *src, size_t *length) {
+	size_t i = 0;
+	while (isspace(src[i])) {
+		i++;
+	}
+	size_t j = strlen(src) - 1;
+	while (j > i && isspace(src[j])) {
+		j--;
+	}
+	*length = j - i + 1;
+	return src + i;
+}
+
+TEST_CASE(trim_both) {
+	size_t length;
+	const char *str = trim_both("  \t\n\r\f", &length);
+	TEST_EQUAL(length, 0);
+	TEST_EQUAL(*str, '\0');
+
+	str = trim_both(" asdfas  ", &length);
+	TEST_EQUAL(length, 6);
+	TEST_STRNEQUAL(str, "asdfas", length);
+
+	str = trim_both("  asdf asdf   ", &length);
+	TEST_EQUAL(length, 9);
+	TEST_STRNEQUAL(str, "asdf asdf", length);
+}
+
+static int vasnprintf(char **strp, size_t *capacity, const char *fmt, va_list args) {
+	va_list copy;
+	va_copy(copy, args);
+	int needed = vsnprintf(*strp, *capacity, fmt, copy);
+	va_end(copy);
+
+	if ((size_t)needed + 1 > *capacity) {
+		char *new_str = malloc((size_t)needed + 1);
+		allocchk(new_str);
+		free(*strp);
+		*strp = new_str;
+		*capacity = (size_t)needed + 1;
+	} else {
+		return needed;
+	}
+
+	return vsnprintf(*strp, *capacity, fmt, args);
+}
+
+int asnprintf(char **strp, size_t *capacity, const char *fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	int ret = vasnprintf(strp, capacity, fmt, args);
+	va_end(args);
+	return ret;
 }

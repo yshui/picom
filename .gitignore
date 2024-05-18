@@ -1,5 +1,6 @@
 # Build files
 .deps
+.direnv
 aclocal.m4
 autom4te.cache
 config.log
@@ -33,14 +34,29 @@ cmake_install.cmake
 CPackSourceConfig.cmake
 install_manifest.txt
 
+# apitrace
+*.trace
 
 # Vim files
 .sw[a-z]
 .*.sw[a-z]
 *~
 
+# Rust
+target
+
+# Python
+*.pyc
+*.py
+!/tests/testcases/*.py
+
 # Misc files
+*.conf
+!/tests/configs/*.conf
+perf.data
+perf.data.old
 core.*
+vgcore.*
 .gdb_history
 oprofile_data/
 compton.plist

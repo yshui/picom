@@ -1,5 +1,4 @@
 option('sanitize', type: 'boolean', value: false, description: 'Build with sanitizers enabled (deprecated)')
-option('config_file', type: 'boolean', value: true, description: 'Enable config file support')
 option('regex', type: 'boolean', value: true, description: 'Enable regex support in window conditions')
 
 option('vsync_drm', type: 'boolean', value: false, description: 'Enable support for using drm for vsync')

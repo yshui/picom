@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2019, Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
+#include <xcb/xcb_event.h>
+#include <xcb/xproto.h>
 
 #include "atom.h"
+#include "c2.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -16,8 +20,11 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
+#include "types.h"
 #include "utils.h"
 #include "win.h"
+#include "win_defs.h"
+#include "wm.h"
 #include "x.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
@@ -28,7 +35,7 @@
 /// made the query when those events were already in the queue. so the reply you got is
 /// more up-to-date than the events). Also, handling events when other client are making
 /// concurrent requests is not good. Because the server states are changing without you
-/// knowning them. This is super racy, and can cause lots of potential problems.
+/// knowing them. This is super racy, and can cause lots of potential problems.
 ///
 /// All of above mandates we do these things:
 ///    1. Grab server when handling events
@@ -46,8 +53,14 @@
 /// When top half finished, we enter the render stage, where no server state should be
 /// queried. All rendering should be done with our internal knowledge of the server state.
 ///
+/// P.S. There is another reason to avoid sending any request to the server as much as
+/// possible. To make sure requests are sent, flushes are needed. And `xcb_flush`/`XFlush`
+/// functions may read more events from the server into their queues. This is
+/// undesirable, see the comments on `handle_queued_x_events` in picom.c for more details.
 
-// TODO(yshui) the things described above
+// TODO(yshui) the things described above. This is mostly done, maybe some of
+//             the functions here is still making unnecessary queries, we need
+//             to do some auditing to be sure.
 
 /**
  * Get a window's name from window ID.
@@ -56,14 +69,14 @@ static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
 	char *name = "";
 	if (wid) {
 		name = "(Failed to get title)";
-		if (ps->root == wid) {
+		if (ps->c.screen_info->root == wid) {
 			name = "(Root window)";
 		} else if (ps->overlay == wid) {
 			name = "(Overlay)";
 		} else {
-			auto w = find_managed_win(ps, wid);
+			auto w = wm_find_managed(ps->wm, wid);
 			if (!w) {
-				w = find_toplevel(ps, wid);
+				w = wm_find_by_client(ps->wm, wid);
 			}
 
 			if (w && w->name) {
@@ -106,7 +119,7 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 
 static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
-	switch (ev->response_type & 0x7f) {
+	switch (XCB_EVENT_RESPONSE_TYPE(ev)) {
 		CASESTRRET(FocusIn);
 		CASESTRRET(FocusOut);
 		CASESTRRET(CreateNotify);
@@ -121,11 +134,13 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(ClientMessage);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
+	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 		return "Damage";
+	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event)
+	if (ps->shape_exists && ev->response_type == ps->shape_event) {
 		return "ShapeNotify";
+	}
 
 	if (ps->xsync_exists) {
 		int o = ev->response_type - ps->xsync_event;
@@ -181,27 +196,44 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	if (ev->parent == ps->root) {
-		add_win_top(ps, ev->window);
+	if (ev->parent == ps->c.screen_info->root) {
+		wm_stack_add_top(ps->wm, ev->window);
+		ps->pending_updates = true;
+		return;
+	}
+
+	auto w = wm_find_managed(ps->wm, ev->parent);
+	if (w == NULL) {
+		// The parent window is not a toplevel window, we don't care about it.
+		// This can happen if a toplevel is reparented somewhere, and more events
+		// were generated from it before we can unsubscribe.
+		return;
+	}
+	// A direct child of a toplevel, subscribe to property changes so we can
+	// know if WM_STATE is set on this window.
+	wm_subwin_add_and_subscribe(ps->wm, &ps->c, ev->window, ev->parent);
+	if (w->client_win == XCB_NONE || w->client_win == w->base.id) {
+		win_set_flags(w, WIN_FLAGS_CLIENT_STALE);
+		ps->pending_updates = true;
 	}
 }
 
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
-	auto w = find_win(ps, ce->window);
+	auto w = wm_find(ps->wm, ce->window);
 
 	if (!w) {
 		return;
 	}
 
+	wm_stack_move_above(ps->wm, w, ce->above_sibling);
+
 	if (!w->managed) {
-		restack_above(ps, w, ce->above_sibling);
 		return;
 	}
 
 	auto mw = (struct managed_win *)w;
-
-	restack_above(ps, w, ce->above_sibling);
+	add_damage_from_win(ps, mw);
 
 	// We check against pending_g here, because there might have been multiple
 	// configure notifies in this cycle, or the window could receive multiple updates
@@ -235,8 +267,8 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 			win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 		}
 
-		// Recalculate which screen this window is on
-		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
+		// Recalculate which monitor this window is on
+		win_update_monitor(&ps->monitors, mw);
 	}
 
 	// override_redirect flag cannot be changed after window creation, as far
@@ -247,7 +279,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
 	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
-	if (ev->window == ps->root) {
+	if (ev->window == ps->c.screen_info->root) {
 		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
 	} else {
 		configure_win(ps, ev);
@@ -255,25 +287,42 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
-	auto w = find_win(ps, ev->window);
-	auto mw = find_toplevel(ps, ev->window);
+	auto subwin = wm_subwin_find(ps->wm, ev->window);
+	if (subwin) {
+		wm_subwin_remove(ps->wm, subwin);
+	}
+
+	auto w = wm_find(ps->wm, ev->window);
+	auto mw = wm_find_by_client(ps->wm, ev->window);
 	if (mw && mw->client_win == mw->base.id) {
 		// We only want _real_ frame window
 		assert(&mw->base == w);
 		mw = NULL;
 	}
+
+	// A window can't be a client window and a top-level window at the same time,
+	// so only one of `w` and `mw` can be non-NULL
 	assert(w == NULL || mw == NULL);
 
 	if (w != NULL) {
-		auto _ attr_unused = destroy_win_start(ps, w);
-	} else if (mw != NULL) {
-		win_unmark_client(ps, mw);
+		destroy_win_start(ps, w);
+		if (!w->managed || !win_as_managed(w)->to_paint) {
+			// If the window wasn't managed, or was already not rendered,
+			// we don't need to fade it out.
+			if (w->managed) {
+				win_skip_fading(win_as_managed(w));
+			}
+			destroy_win_finish(ps, w);
+		}
+		return;
+	}
+	if (mw != NULL) {
+		win_unmark_client(mw);
 		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
-	} else {
-		log_debug("Received a destroy notify from an unknown window, %#010x",
-		          ev->window);
+		return;
 	}
+	log_debug("Received a destroy notify from an unknown window, %#010x", ev->window);
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
@@ -281,7 +330,8 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	// in redirected state.
 	if (ps->overlay && ev->window == ps->overlay && !ps->redirected) {
 		log_debug("Overlay is mapped while we are not redirected");
-		auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
+		auto e = xcb_request_check(
+		    ps->c.c, xcb_unmap_window_checked(ps->c.c, ps->overlay));
 		if (e) {
 			log_error("Failed to unmap the overlay window");
 			free(e);
@@ -290,12 +340,19 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 		return;
 	}
 
-	auto w = find_managed_win(ps, ev->window);
+	auto w = wm_find_managed(ps->wm, ev->window);
 	if (!w) {
 		return;
 	}
 
 	win_set_flags(w, WIN_FLAGS_MAPPED);
+	// We set `ever_damaged` to false here, instead of in `map_win_start`,
+	// because we might receive damage events before that function is called
+	// (which is called when we handle the `WIN_FLAGS_MAPPED` flag), in
+	// which case `repair_win` will be called, which uses `ever_damaged` so
+	// it needs to be correct. This also covers the case where the window is
+	// unmapped before `map_win_start` is called.
+	w->ever_damaged = false;
 
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
@@ -303,7 +360,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 }
 
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
-	auto w = find_managed_win(ps, ev->window);
+	auto w = wm_find_managed(ps->wm, ev->window);
 	if (w) {
 		unmap_win_start(ps, w);
 	}
@@ -312,89 +369,131 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
-	auto w_top = find_toplevel(ps, ev->window);
-	if (w_top) {
-		win_unmark_client(ps, w_top);
-		win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
+
+	auto old_toplevel = wm_find_by_client(ps->wm, ev->window);
+	auto old_w = wm_find(ps->wm, ev->window);
+	auto old_subwin = wm_subwin_find(ps->wm, ev->window);
+	auto new_toplevel = wm_find_managed(ps->wm, ev->parent);
+	xcb_window_t old_parent = XCB_NONE;
+	if (old_subwin) {
+		old_parent = old_subwin->toplevel;
+	} else if (old_w) {
+		old_parent = ps->c.screen_info->root;
+	}
+	if (old_toplevel && old_toplevel->client_win == old_toplevel->base.id) {
+		// We only want _real_ frame window, meaning old_toplevel must be
+		// a parent of `ev->window`.
+		old_toplevel = NULL;
+	}
+	// A window can't be a toplevel and a subwin at the same time
+	assert(old_w == NULL || old_subwin == NULL);
+
+	log_debug("old toplevel: %p, old subwin: %p, new toplevel: %p, old parent: "
+	          "%#010x, new parent: %#010x, root window: %#010x",
+	          old_w, old_subwin, new_toplevel, old_parent, ev->parent,
+	          ps->c.screen_info->root);
+
+	if (old_w == NULL && old_subwin == NULL && new_toplevel == NULL &&
+	    ev->parent != ps->c.screen_info->root) {
+		// The window is neither a toplevel nor a subwin, and the new parent is
+		// neither a root nor a toplevel, we don't care about this window.
+		// This can happen if a window is reparented to somewhere irrelevant, but
+		// more events from it are generated before we can unsubscribe.
+		return;
+	}
+
+	if (ev->parent == old_parent) {
+		// Parent unchanged, but if the parent is root, we need to move the window
+		// to the top of the window stack
+		if (old_w) {
+			// root -> root reparent, we just need to move it to the top
+			log_debug("Restack %#010x (%s) to top", old_w->id,
+			          win_get_name_if_managed(old_w));
+			wm_stack_move_to_top(ps->wm, old_w);
+			if (old_w->managed) {
+				add_damage_from_win(ps, win_as_managed(old_w));
+			}
+		}
+		return;
+	}
+
+	if (old_toplevel) {
+		assert(old_subwin != NULL);
+		assert(old_subwin->toplevel == old_toplevel->base.id);
+		win_unmark_client(old_toplevel);
+		win_set_flags(old_toplevel, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
 	}
 
-	if (ev->parent == ps->root) {
-		// X will generate reparent notifiy even if the parent didn't actually
-		// change (i.e. reparent again to current parent). So we check if that's
-		// the case
-		auto w = find_win(ps, ev->window);
-		if (w) {
-			// This window has already been reparented to root before,
-			// so we don't need to create a new window for it, we just need to
-			// move it to the top
-			restack_top(ps, w);
-		} else {
-			add_win_top(ps, ev->window);
-		}
-	} else {
-		// otherwise, find and destroy the window first
-		{
-			auto w = find_win(ps, ev->window);
-			if (w) {
-				auto ret = destroy_win_start(ps, w);
-				if (!ret && w->managed) {
-					auto mw = (struct managed_win *)w;
-					CHECK(win_skip_fading(ps, mw));
-				}
+	if (old_w) {
+		// A toplevel is reparented, so it is no longer a toplevel. We need to
+		// destroy the existing toplevel.
+		if (old_w->managed) {
+			auto mw = (struct managed_win *)old_w;
+			// Usually, damage for unmapped windows are added in
+			// `paint_preprocess`, when a window was painted before and isn't
+			// anymore. But since we are reparenting the window here, we would
+			// lose track of the `to_paint` information. So we just add damage
+			// here.
+			if (mw->to_paint) {
+				add_damage_from_win(ps, mw);
+			}
+			// Emulating what X server does: a destroyed
+			// window is always unmapped first.
+			if (mw->state == WSTATE_MAPPED) {
+				unmap_win_start(ps, mw);
 			}
 		}
-
-		// Reset event mask in case something wrong happens
-		xcb_change_window_attributes(
-		    ps->c, ev->window, XCB_CW_EVENT_MASK,
-		    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)});
-
-		if (!wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
-			log_debug("Window %#010x doesn't have WM_STATE property, it is "
-			          "probably not a client window. But we will listen for "
-			          "property change in case it gains one.",
-			          ev->window);
-			xcb_change_window_attributes(
-			    ps->c, ev->window, XCB_CW_EVENT_MASK,
-			    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
-			                       XCB_EVENT_MASK_PROPERTY_CHANGE});
-		} else {
-			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
-			if (w_real_top && w_real_top->state != WSTATE_UNMAPPED &&
-			    w_real_top->state != WSTATE_UNMAPPING) {
-				log_debug("Mark window %#010x (%s) as having a stale "
-				          "client",
-				          w_real_top->base.id, w_real_top->name);
-				win_set_flags(w_real_top, WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
-			} else {
-				if (!w_real_top)
-					log_debug("parent %#010x not found", ev->parent);
-				else {
-					// Window is not currently mapped, unmark its
-					// client to trigger a client recheck when it is
-					// mapped later.
-					win_unmark_client(ps, w_real_top);
-					log_debug("parent %#010x (%s) is in state %d",
-					          w_real_top->base.id, w_real_top->name,
-					          w_real_top->state);
-				}
-			}
+		destroy_win_start(ps, old_w);
+		if (old_w->managed) {
+			win_skip_fading(win_as_managed(old_w));
 		}
+		destroy_win_finish(ps, old_w);
+	}
+
+	// We need to guarantee a subwin exists iff it has a valid toplevel.
+	auto new_subwin = old_subwin;
+	if (new_subwin != NULL && new_toplevel == NULL) {
+		wm_subwin_remove_and_unsubscribe(ps->wm, &ps->c, new_subwin);
+		new_subwin = NULL;
+	} else if (new_subwin == NULL && new_toplevel != NULL) {
+		new_subwin =
+		    wm_subwin_add_and_subscribe(ps->wm, &ps->c, ev->window, ev->parent);
+	}
+	if (new_subwin) {
+		new_subwin->toplevel = new_toplevel->base.id;
+		if (new_toplevel->client_win == XCB_NONE ||
+		    new_toplevel->client_win == new_toplevel->base.id) {
+			win_set_flags(new_toplevel, WIN_FLAGS_CLIENT_STALE);
+			ps->pending_updates = true;
+		}
+	}
+
+	if (ev->parent == ps->c.screen_info->root) {
+		// New parent is root, add a toplevel;
+		assert(old_w == NULL);
+		assert(new_toplevel == NULL);
+		wm_stack_add_top(ps->wm, ev->window);
+		ps->pending_updates = true;
 	}
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
-	auto w = find_win(ps, ev->window);
+	auto w = wm_find(ps->wm, ev->window);
 
-	if (!w)
+	if (!w) {
 		return;
+	}
 
+	log_debug("Moving window %#010x (%s) to the %s", w->id,
+	          win_get_name_if_managed(w), ev->place == PlaceOnTop ? "top" : "bottom");
 	if (ev->place == PlaceOnTop) {
-		restack_top(ps, w);
+		wm_stack_move_to_top(ps->wm, w);
 	} else {
-		restack_bottom(ps, w);
+		wm_stack_move_to_bottom(ps->wm, w);
+	}
+	if (w->managed) {
+		add_damage_from_win(ps, win_as_managed(w));
 	}
 }
 
@@ -406,7 +505,8 @@ static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
 }
 
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
-	if (ev->window == ps->root || (ps->overlay && ev->window == ps->overlay)) {
+	if (ev->window == ps->c.screen_info->root ||
+	    (ps->overlay && ev->window == ps->overlay)) {
 		int more = ev->count + 1;
 		if (ps->n_expose == ps->size_expose) {
 			if (ps->expose_rects) {
@@ -432,11 +532,55 @@ static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 	}
 }
 
+static inline void ev_subwin_wm_state_changed(session_t *ps, xcb_property_notify_event_t *ev) {
+	auto subwin = wm_subwin_find(ps->wm, ev->window);
+	if (!subwin) {
+		// We only care if a direct child of a toplevel gained/lost WM_STATE
+		return;
+	}
+
+	enum tristate old_has_wm_state = subwin->has_wm_state;
+	subwin->has_wm_state = ev->state == XCB_PROPERTY_DELETE ? TRI_FALSE : TRI_TRUE;
+	if (old_has_wm_state == subwin->has_wm_state) {
+		if (subwin->has_wm_state == TRI_FALSE) {
+			log_warn("Child window %#010x of window %#010x lost WM_STATE a "
+			         "second time?",
+			         ev->window, subwin->toplevel);
+		}
+		return;
+	}
+
+	auto toplevel = wm_find(ps->wm, subwin->toplevel);
+	BUG_ON(toplevel == NULL);
+	if (!toplevel->managed) {
+		return;
+	}
+
+	auto managed = (struct managed_win *)toplevel;
+	if (managed->client_win == subwin->id) {
+		// 1. This window is the client window of its toplevel, and now it lost
+		//    its WM_STATE (implies it must have it before)
+		assert(subwin->has_wm_state == TRI_FALSE);
+		win_set_flags(managed, WIN_FLAGS_CLIENT_STALE);
+	} else if (subwin->has_wm_state == TRI_TRUE) {
+		// 2. This window is not the client window of its toplevel, and
+		//    now it gained WM_STATE
+		if (managed->client_win != XCB_NONE && managed->client_win != toplevel->id) {
+			log_warn("Toplevel %#010x already has a client window %#010x, "
+			         "but another of its child windows %#010x gained "
+			         "WM_STATE.",
+			         toplevel->id, managed->client_win, subwin->id);
+		} else {
+			win_set_flags(managed, WIN_FLAGS_CLIENT_STALE);
+		}
+	}
+}
+
 static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
 	if (unlikely(log_get_level_tls() <= LOG_LEVEL_TRACE)) {
 		// Print out changed atom
-		xcb_get_atom_name_reply_t *reply =
-		    xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, ev->atom), NULL);
+		xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
+		    ps->c.c, xcb_get_atom_name(ps->c.c, ev->atom), NULL);
 		const char *name = "?";
 		int name_len = 1;
 		if (reply) {
@@ -448,7 +592,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		free(reply);
 	}
 
-	if (ps->root == ev->window) {
+	if (ps->c.screen_info->root == ev->window) {
 		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			// to update focus
 			ps->pending_updates = true;
@@ -459,135 +603,87 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			}
 		}
 
-		// Unconcerned about any other proprties on root window
+		// Unconcerned about any other properties on root window
 		return;
 	}
 
 	ps->pending_updates = true;
-	// If WM_STATE changes
+	auto w = wm_find_by_client(ps->wm, ev->window);
 	if (ev->atom == ps->atoms->aWM_STATE) {
-		// Check whether it could be a client window
-		if (!find_toplevel(ps, ev->window)) {
-			// Reset event mask anyway
-			xcb_change_window_attributes(ps->c, ev->window, XCB_CW_EVENT_MASK,
-			                             (const uint32_t[]){determine_evmask(
-			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
-
-			auto w_top = find_managed_window_or_parent(ps, ev->window);
-			// ev->window might have not been managed yet, in that case w_top
-			// would be NULL.
-			if (w_top) {
-				win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
-			}
-		}
-		return;
-	}
-
-	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
-	// there are always some stupid applications. (#144)
-	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
-		struct managed_win *w = NULL;
-		if ((w = find_toplevel(ps, ev->window))) {
-			win_set_property_stale(w, ev->atom);
-		}
+		ev_subwin_wm_state_changed(ps, ev);
 	}
 
 	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
-		// Unnecessay until we remove the queue_redraw in ev_handle
+		// Unnecessary until we remove the queue_redraw in ev_handle
 		queue_redraw(ps);
 	}
 
-	// If _NET_WM_OPACITY changes
+	if (w) {
+		win_set_property_stale(w, ev->atom);
+	}
+
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
-		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If frame extents property changes
-	if (ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If name changes
-	if (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If class changes
-	if (ps->atoms->aWM_CLASS == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If role changes
-	if (ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If _COMPTON_SHADOW changes
-	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
-		auto w = find_managed_win(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If a leader property changes
-	if ((ps->o.detect_transient && ps->atoms->aWM_TRANSIENT_FOR == ev->atom) ||
-	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
+		// We already handle if this is set on the client window, check
+		// if this is set on the frame window as well.
+		// TODO(yshui) do we really need this?
+		auto toplevel = wm_find_managed(ps->wm, ev->window);
+		if (toplevel) {
+			win_set_property_stale(toplevel, ev->atom);
 		}
 	}
 
 	// Check for other atoms we are tracking
-	for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
-		if (platom->atom == ev->atom) {
-			auto w = find_managed_win(ps, ev->window);
-			if (!w) {
-				w = find_toplevel(ps, ev->window);
-			}
-			if (w) {
-				// Set FACTOR_CHANGED so rules based on properties will be
-				// re-evaluated.
-				// Don't need to set property stale here, since that only
-				// concerns properties we explicitly check.
-				win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
-			}
-			break;
+	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
+		bool change_is_on_client = false;
+		w = wm_find_managed(ps->wm, ev->window);
+		if (!w) {
+			w = wm_find_by_client(ps->wm, ev->window);
+			change_is_on_client = true;
+		}
+		if (w) {
+			c2_window_state_mark_dirty(ps->c2_state, &w->c2_state, ev->atom,
+			                           change_is_on_client);
+			// Set FACTOR_CHANGED so rules based on properties will be
+			// re-evaluated.
+			// Don't need to set property stale here, since that only
+			// concerns properties we explicitly check.
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 		}
 	}
 }
 
 static inline void repair_win(session_t *ps, struct managed_win *w) {
 	// Only mapped window can receive damages
-	assert(win_is_mapped_in_x(w));
+	assert(w->state == WSTATE_MAPPED || win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
 	region_t parts;
 	pixman_region32_init(&parts);
 
+	// If this is the first time this window is damaged, we would redraw the
+	// whole window, so we don't need to fetch the damage region. But we still need
+	// to make sure the X server receives the DamageSubtract request, hence the
+	// `xcb_request_check` here.
+	// Otherwise, we fetch the damage regions. That means we will receive a reply
+	// from the X server, which implies it has received our DamageSubtract request.
 	if (!w->ever_damaged) {
+		auto e = xcb_request_check(
+		    ps->c.c,
+		    xcb_damage_subtract_checked(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
+		if (e) {
+			if (ps->o.show_all_xerrors) {
+				x_print_error(e->sequence, e->major_code, e->minor_code,
+				              e->error_code);
+			}
+			free(e);
+		}
 		win_extents(w, &parts);
-		set_ignore_cookie(
-		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, XCB_NONE));
 	} else {
-		set_ignore_cookie(
-		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, ps->damaged_region));
-		x_fetch_region(ps->c, ps->damaged_region, &parts);
+		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
+		                                  ps->damage_ring.x_region);
+		if (!ps->o.show_all_xerrors) {
+			set_ignore_cookie(&ps->c, cookie);
+		}
+		x_fetch_region(&ps->c, ps->damage_ring.x_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}
@@ -604,11 +700,17 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	}
 
 	// Remove the part in the damage area that could be ignored
+	region_t without_ignored;
+	pixman_region32_init(&without_ignored);
 	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
-		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
+		pixman_region32_subtract(&without_ignored, &parts, w->reg_ignore);
 	}
 
-	add_damage(ps, &parts);
+	add_damage(ps, &without_ignored);
+	pixman_region32_fini(&without_ignored);
+
+	pixman_region32_translate(&parts, -w->g.x, -w->g.y);
+	pixman_region32_union(&w->damaged, &w->damaged, &parts);
 	pixman_region32_fini(&parts);
 }
 
@@ -619,7 +721,7 @@ static inline void ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de
 	  return;
 	} */
 
-	auto w = find_managed_win(ps, de->drawable);
+	auto w = wm_find_managed(ps->wm, de->drawable);
 
 	if (!w) {
 		return;
@@ -629,7 +731,7 @@ static inline void ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de
 }
 
 static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
-	auto w = find_managed_win(ps, ev->affected_window);
+	auto w = wm_find_managed(ps->wm, ev->affected_window);
 	if (!w || w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
 		return;
 	}
@@ -662,8 +764,8 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
-	if ((ev->response_type & 0x7f) != KeymapNotify) {
-		discard_ignore(ps, ev->full_sequence);
+	if (XCB_EVENT_RESPONSE_TYPE(ev) != KeymapNotify) {
+		x_discard_pending(&ps->c, ev->full_sequence);
 	}
 
 	xcb_window_t wid = ev_window(ps, ev);
@@ -684,9 +786,10 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// For even more details, see:
 	// https://bugs.freedesktop.org/show_bug.cgi?id=35945
 	// https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
-	auto proc = XESetWireToEvent(ps->dpy, ev->response_type, 0);
+	auto response_type = XCB_EVENT_RESPONSE_TYPE(ev);
+	auto proc = XESetWireToEvent(ps->c.dpy, response_type, 0);
 	if (proc) {
-		XESetWireToEvent(ps->dpy, ev->response_type, proc);
+		XESetWireToEvent(ps->c.dpy, response_type, proc);
 		XEvent dummy;
 
 		// Stop Xlib from complaining about lost sequence numbers.
@@ -695,39 +798,46 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		// missing sequence numbers.
 		//
 		// We only need the low 16 bits
-		ev->sequence = (uint16_t)(LastKnownRequestProcessed(ps->dpy) & 0xffff);
-		proc(ps->dpy, &dummy, (xEvent *)ev);
+		uint16_t seq = ev->sequence;
+		ev->sequence = (uint16_t)(LastKnownRequestProcessed(ps->c.dpy) & 0xffff);
+		proc(ps->c.dpy, &dummy, (xEvent *)ev);
+		// Restore the sequence number
+		ev->sequence = seq;
 	}
 
 	// XXX redraw needs to be more fine grained
 	queue_redraw(ps);
 
+	// We intentionally ignore events sent via SendEvent. Those events has the 8th bit
+	// of response_type set, meaning they will match none of the cases below.
 	switch (ev->response_type) {
-	case FocusIn: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
-	case FocusOut: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
-	case CreateNotify: ev_create_notify(ps, (xcb_create_notify_event_t *)ev); break;
-	case ConfigureNotify:
+	case XCB_FOCUS_IN: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
+	case XCB_FOCUS_OUT: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
+	case XCB_CREATE_NOTIFY:
+		ev_create_notify(ps, (xcb_create_notify_event_t *)ev);
+		break;
+	case XCB_CONFIGURE_NOTIFY:
 		ev_configure_notify(ps, (xcb_configure_notify_event_t *)ev);
 		break;
-	case DestroyNotify:
+	case XCB_DESTROY_NOTIFY:
 		ev_destroy_notify(ps, (xcb_destroy_notify_event_t *)ev);
 		break;
-	case MapNotify: ev_map_notify(ps, (xcb_map_notify_event_t *)ev); break;
-	case UnmapNotify: ev_unmap_notify(ps, (xcb_unmap_notify_event_t *)ev); break;
-	case ReparentNotify:
+	case XCB_MAP_NOTIFY: ev_map_notify(ps, (xcb_map_notify_event_t *)ev); break;
+	case XCB_UNMAP_NOTIFY: ev_unmap_notify(ps, (xcb_unmap_notify_event_t *)ev); break;
+	case XCB_REPARENT_NOTIFY:
 		ev_reparent_notify(ps, (xcb_reparent_notify_event_t *)ev);
 		break;
-	case CirculateNotify:
+	case XCB_CIRCULATE_NOTIFY:
 		ev_circulate_notify(ps, (xcb_circulate_notify_event_t *)ev);
 		break;
-	case Expose: ev_expose(ps, (xcb_expose_event_t *)ev); break;
-	case PropertyNotify:
+	case XCB_EXPOSE: ev_expose(ps, (xcb_expose_event_t *)ev); break;
+	case XCB_PROPERTY_NOTIFY:
 		ev_property_notify(ps, (xcb_property_notify_event_t *)ev);
 		break;
-	case SelectionClear:
+	case XCB_SELECTION_CLEAR:
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
-	case 0: ev_xcb_error(ps, (xcb_generic_error_t *)ev); break;
+	case 0: x_handle_error(&ps->c, (xcb_generic_error_t *)ev); break;
 	default:
 		if (ps->shape_exists && ev->response_type == ps->shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);

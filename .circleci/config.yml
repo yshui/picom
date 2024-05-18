@@ -29,7 +29,7 @@ commands:
             - ".git"
       - run:
           name: config
-          command: CC=<< parameters.cc >> meson << parameters.build-config >> -Dunittest=true --werror . build
+          command: CC=<< parameters.cc >> meson setup << parameters.build-config >> -Dunittest=true --werror . build
       - run:
           name: build
           command: ninja -vC build
@@ -54,7 +54,7 @@ jobs:
           command: ninja -vC build test
       - run:
           name: test config file parsing
-          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config picom.sample.conf --no-vsync --diagnostics
+          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
       - run:
           name: run testsuite
           command: tests/run_tests.sh build/src/picom
@@ -72,7 +72,7 @@ jobs:
     executor: e
     steps:
       - build:
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false
   release:
     executor: e
     steps:
@@ -104,7 +104,7 @@ jobs:
     steps:
       - build:
           cc: clang
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false
   clang_nogl:
     executor: e
     steps:

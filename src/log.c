@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #ifdef CONFIG_OPENGL
-#include <GL/gl.h>
+#include <epoxy/gl.h>
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #endif
@@ -68,6 +68,7 @@ log_default_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 static attr_const const char *log_level_to_string(enum log_level level) {
 	switch (level) {
 	case LOG_LEVEL_TRACE: return "TRACE";
+	case LOG_LEVEL_VERBOSE: return "VERBOSE";
 	case LOG_LEVEL_DEBUG: return "DEBUG";
 	case LOG_LEVEL_INFO: return "INFO";
 	case LOG_LEVEL_WARN: return "WARN";
@@ -77,17 +78,25 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 	}
 }
 
-enum log_level string_to_log_level(const char *str) {
-	if (strcasecmp(str, "TRACE") == 0)
+int string_to_log_level(const char *str) {
+	if (strcasecmp(str, "TRACE") == 0) {
 		return LOG_LEVEL_TRACE;
-	else if (strcasecmp(str, "DEBUG") == 0)
+	}
+	if (strcasecmp(str, "VERBOSE") == 0) {
+		return LOG_LEVEL_VERBOSE;
+	}
+	if (strcasecmp(str, "DEBUG") == 0) {
 		return LOG_LEVEL_DEBUG;
-	else if (strcasecmp(str, "INFO") == 0)
+	}
+	if (strcasecmp(str, "INFO") == 0) {
 		return LOG_LEVEL_INFO;
-	else if (strcasecmp(str, "WARN") == 0)
+	}
+	if (strcasecmp(str, "WARN") == 0) {
 		return LOG_LEVEL_WARN;
-	else if (strcasecmp(str, "ERROR") == 0)
+	}
+	if (strcasecmp(str, "ERROR") == 0) {
 		return LOG_LEVEL_ERROR;
+	}
 	return LOG_LEVEL_INVALID;
 }
 
@@ -143,8 +152,9 @@ enum log_level log_get_level(const struct log *l) {
 attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
                                   const char *fmt, ...) {
 	assert(level <= LOG_LEVEL_FATAL && level >= 0);
-	if (level < l->log_level)
+	if (level < l->log_level) {
 		return;
+	}
 
 	char *buf = NULL;
 	va_list args;
@@ -228,12 +238,10 @@ struct log_target *null_logger_new(void) {
 
 static void null_logger_write(struct log_target *tgt attr_unused,
                               const char *str attr_unused, size_t len attr_unused) {
-	return;
 }
 
 static void null_logger_writev(struct log_target *tgt attr_unused,
                                const struct iovec *vec attr_unused, int vcnt attr_unused) {
-	return;
 }
 
 static const struct log_ops null_logger_ops = {
@@ -256,7 +264,7 @@ static void file_logger_write(struct log_target *tgt, const char *str, size_t le
 static void file_logger_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 	auto f = (struct file_logger *)tgt;
 	fflush(f->f);
-	writev(fileno(f->f), vec, vcnt);
+	ssize_t _ attr_unused = writev(fileno(f->f), vec, vcnt);
 }
 
 static void file_logger_destroy(struct log_target *tgt) {
@@ -269,6 +277,7 @@ static void file_logger_destroy(struct log_target *tgt) {
 static const char *terminal_colorize_begin(enum log_level level) {
 	switch (level) {
 	case LOG_LEVEL_TRACE: return ANSI("30;2");
+	case LOG_LEVEL_VERBOSE:
 	case LOG_LEVEL_DEBUG: return ANSI("37;2");
 	case LOG_LEVEL_INFO: return ANSI("92");
 	case LOG_LEVEL_WARN: return ANSI("33");
@@ -329,21 +338,14 @@ struct log_target *stderr_logger_new(void) {
 }
 
 #ifdef CONFIG_OPENGL
-/// An opengl logger that can be used for logging into opengl debugging tools,
-/// such as apitrace
-struct gl_string_marker_logger {
-	struct log_target tgt;
-	PFNGLSTRINGMARKERGREMEDYPROC gl_string_marker;
-};
 
-static void
-gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
-	auto g = (struct gl_string_marker_logger *)tgt;
+static void gl_string_marker_logger_write(struct log_target *tgt attr_unused,
+                                          const char *str, size_t len) {
 	// strip newlines at the end of the string
-	while (len > 0 && str[len-1] == '\n') {
+	while (len > 0 && str[len - 1] == '\n') {
 		len--;
 	}
-	g->gl_string_marker((GLsizei)len, str);
+	glStringMarkerGREMEDY((GLsizei)len, str);
 }
 
 static const struct log_ops gl_string_marker_logger_ops = {
@@ -352,19 +354,16 @@ static const struct log_ops gl_string_marker_logger_ops = {
     .destroy = logger_trivial_destroy,
 };
 
+/// Create an opengl logger that can be used for logging into opengl debugging tools,
+/// such as apitrace
 struct log_target *gl_string_marker_logger_new(void) {
-	if (!gl_has_extension("GL_GREMEDY_string_marker")) {
+	if (!epoxy_has_gl_extension("GL_GREMEDY_string_marker")) {
 		return NULL;
 	}
 
-	void *fnptr = glXGetProcAddress((GLubyte *)"glStringMarkerGREMEDY");
-	if (!fnptr)
-		return NULL;
-
-	auto ret = cmalloc(struct gl_string_marker_logger);
-	ret->tgt.ops = &gl_string_marker_logger_ops;
-	ret->gl_string_marker = fnptr;
-	return &ret->tgt;
+	auto ret = cmalloc(struct log_target);
+	ret->ops = &gl_string_marker_logger_ops;
+	return ret;
 }
 
 #else

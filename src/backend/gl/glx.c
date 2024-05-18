@@ -17,8 +17,10 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <uthash.h>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
@@ -34,36 +36,38 @@
 #include "win.h"
 #include "x.h"
 
-struct _glx_pixmap {
-	GLXPixmap glpixmap;
-	xcb_pixmap_t pixmap;
-	bool owned;
-};
-
 struct _glx_data {
 	struct gl_data gl;
-	Display *display;
-	int screen;
 	xcb_window_t target_win;
 	GLXContext ctx;
+	struct glx_fbconfig_cache *cached_fbconfigs;
+};
+
+struct glx_fbconfig_cache {
+	UT_hash_handle hh;
+	struct xvisual_info visual_info;
+	struct glx_fbconfig_info info;
 };
 
 #define glXGetFBConfigAttribChecked(a, b, attr, c)                                       \
 	do {                                                                             \
 		if (glXGetFBConfigAttrib(a, b, attr, c)) {                               \
 			log_info("Cannot get FBConfig attribute " #attr);                \
-			continue;                                                        \
+			break;                                                           \
 		}                                                                        \
 	} while (0)
 
-struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvisual_info m) {
-	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
-	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
+bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
+                       struct glx_fbconfig_info *info) {
+	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth: %d, visual id: %#x", m.red_size,
+	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth, m.visual);
+
+	info->cfg = NULL;
 
 	int ncfg;
 	// clang-format off
 	GLXFBConfig *cfg =
-	    glXChooseFBConfig(dpy, screen, (int[]){
+	    glXChooseFBConfig(c->dpy, c->screen, (int[]){
 	                          GLX_RENDER_TYPE, GLX_RGBA_BIT,
 	                          GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
 	                          GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
@@ -87,25 +91,26 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 	GLXFBConfig ret;
 	for (int i = 0; i < ncfg; i++) {
 		int depthbuf, stencil, doublebuf, bufsize;
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BUFFER_SIZE, &bufsize);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_DEPTH_SIZE, &depthbuf);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_STENCIL_SIZE, &stencil);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_DOUBLEBUFFER, &doublebuf);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_BUFFER_SIZE, &bufsize);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_DEPTH_SIZE, &depthbuf);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_STENCIL_SIZE, &stencil);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_DOUBLEBUFFER, &doublebuf);
 		if (depthbuf + stencil + bufsize * (doublebuf + 1) >= min_cost) {
 			continue;
 		}
 		int red, green, blue;
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_RED_SIZE, &red);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BLUE_SIZE, &blue);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_GREEN_SIZE, &green);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_RED_SIZE, &red);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_BLUE_SIZE, &blue);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_GREEN_SIZE, &green);
 		if (red != m.red_size || green != m.green_size || blue != m.blue_size) {
 			// Color size doesn't match, this cannot work
 			continue;
 		}
 
 		int rgb, rgba;
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGB_EXT, &rgb);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGBA_EXT, &rgba);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGB_EXT, &rgb);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGBA_EXT,
+		                            &rgba);
 		if (!rgb && !rgba) {
 			log_info("FBConfig is neither RGBA nor RGB, we cannot "
 			         "handle this setup.");
@@ -113,9 +118,9 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		}
 
 		int visual;
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_VISUAL_ID, &visual);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_VISUAL_ID, &visual);
 		if (m.visual_depth != -1 &&
-		    x_get_visual_depth(XGetXCBConnection(dpy), (xcb_visualid_t)visual) !=
+		    xcb_aux_get_depth_of_visual(c->screen_info, (xcb_visualid_t)visual) !=
 		        m.visual_depth) {
 			// FBConfig and the correspondent X Visual might not have the same
 			// depth. (e.g. 32 bit FBConfig with a 24 bit Visual). This is
@@ -129,9 +134,9 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		// All check passed, we are using this one.
 		found = true;
 		ret = cfg[i];
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_TARGETS_EXT,
-		                            &texture_tgts);
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_Y_INVERTED_EXT, &y_inverted);
+		glXGetFBConfigAttribChecked(
+		    c->dpy, cfg[i], GLX_BIND_TO_TEXTURE_TARGETS_EXT, &texture_tgts);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_Y_INVERTED_EXT, &y_inverted);
 
 		// Prefer the texture format with matching alpha, with the other one as
 		// fallback
@@ -145,41 +150,31 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		min_cost = depthbuf + stencil + bufsize * (doublebuf + 1);
 	}
 	free(cfg);
-	if (!found) {
-		return NULL;
+	if (found) {
+		info->cfg = ret;
+		info->texture_tgts = texture_tgts;
+		info->texture_fmt = texture_fmt;
+		info->y_inverted = y_inverted;
 	}
-
-	auto info = cmalloc(struct glx_fbconfig_info);
-	info->cfg = ret;
-	info->texture_tgts = texture_tgts;
-	info->texture_fmt = texture_fmt;
-	info->y_inverted = y_inverted;
-	return info;
+	return found;
 }
 
 /**
  * Free a glx_texture_t.
  */
 static void glx_release_image(backend_t *base, struct gl_texture *tex) {
-	struct _glx_data *gd = (void *)base;
-
-	struct _glx_pixmap *p = tex->user_data;
+	GLXPixmap *p = tex->user_data;
 	// Release binding
-	if (p->glpixmap && tex->texture) {
+	if (p && tex->texture) {
 		glBindTexture(GL_TEXTURE_2D, tex->texture);
-		glXReleaseTexImageEXT(gd->display, p->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(base->c->dpy, *p, GLX_FRONT_LEFT_EXT);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
 	// Free GLX Pixmap
-	if (p->glpixmap) {
-		glXDestroyPixmap(gd->display, p->glpixmap);
-		p->glpixmap = 0;
-	}
-
-	if (p->owned) {
-		xcb_free_pixmap(base->c, p->pixmap);
-		p->pixmap = XCB_NONE;
+	if (p) {
+		glXDestroyPixmap(base->c->dpy, *p);
+		*p = 0;
 	}
 
 	free(p);
@@ -196,20 +191,22 @@ void glx_deinit(backend_t *base) {
 
 	// Destroy GLX context
 	if (gd->ctx) {
-		glXMakeCurrent(gd->display, None, NULL);
-		glXDestroyContext(gd->display, gd->ctx);
+		glXMakeCurrent(base->c->dpy, None, NULL);
+		glXDestroyContext(base->c->dpy, gd->ctx);
 		gd->ctx = 0;
+	}
+
+	struct glx_fbconfig_cache *cached_fbconfig = NULL, *tmp = NULL;
+	HASH_ITER(hh, gd->cached_fbconfigs, cached_fbconfig, tmp) {
+		HASH_DEL(gd->cached_fbconfigs, cached_fbconfig);
+		free(cached_fbconfig);
 	}
 
 	free(gd);
 }
 
 static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	auto ret = cmalloc(struct _glx_pixmap);
-	ret->owned = false;
-	ret->glpixmap = 0;
-	ret->pixmap = 0;
-	return ret;
+	return NULL;
 }
 
 static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
@@ -228,18 +225,18 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
 	return vsync_enabled;
 }
 
+struct backend_operations glx_ops;
 /**
  * Initialize OpenGL.
  */
-static backend_t *glx_init(session_t *ps) {
+static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	bool success = false;
-	glxext_init(ps->dpy, ps->scr);
+	glxext_init(ps->c.dpy, ps->c.screen);
 	auto gd = ccalloc(1, struct _glx_data);
 	init_backend_base(&gd->gl.base, ps);
+	gd->gl.base.ops = &glx_ops;
 
-	gd->display = ps->dpy;
-	gd->screen = ps->scr;
-	gd->target_win = session_get_target_window(ps);
+	gd->target_win = target;
 
 	XVisualInfo *pvis = NULL;
 
@@ -251,8 +248,8 @@ static backend_t *glx_init(session_t *ps) {
 
 	// Get XVisualInfo
 	int nitems = 0;
-	XVisualInfo vreq = {.visualid = ps->vis};
-	pvis = XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
+	XVisualInfo vreq = {.visualid = ps->c.screen_info->root_visual};
+	pvis = XGetVisualInfo(ps->c.dpy, VisualIDMask, &vreq, &nitems);
 	if (!pvis) {
 		log_error("Failed to acquire XVisualInfo for current visual.");
 		goto end;
@@ -260,22 +257,22 @@ static backend_t *glx_init(session_t *ps) {
 
 	// Ensure the visual is double-buffered
 	int value = 0;
-	if (glXGetConfig(ps->dpy, pvis, GLX_USE_GL, &value) || !value) {
+	if (glXGetConfig(ps->c.dpy, pvis, GLX_USE_GL, &value) || !value) {
 		log_error("Root visual is not a GL visual.");
 		goto end;
 	}
 
-	if (glXGetConfig(ps->dpy, pvis, GLX_STENCIL_SIZE, &value) || !value) {
+	if (glXGetConfig(ps->c.dpy, pvis, GLX_STENCIL_SIZE, &value) || !value) {
 		log_error("Root visual lacks stencil buffer.");
 		goto end;
 	}
 
-	if (glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
+	if (glXGetConfig(ps->c.dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
 		log_error("Root visual is not a double buffered GL visual.");
 		goto end;
 	}
 
-	if (glXGetConfig(ps->dpy, pvis, GLX_RGBA, &value) || !value) {
+	if (glXGetConfig(ps->c.dpy, pvis, GLX_RGBA, &value) || !value) {
 		log_error("Root visual is a color index visual, not supported");
 		goto end;
 	}
@@ -293,25 +290,30 @@ static backend_t *glx_init(session_t *ps) {
 	// Find a fbconfig with visualid matching the one from the target win, so we can
 	// be sure that the fbconfig is compatible with our target window.
 	int ncfgs;
-	GLXFBConfig *cfg = glXGetFBConfigs(gd->display, gd->screen, &ncfgs);
+	GLXFBConfig *cfg = glXGetFBConfigs(ps->c.dpy, ps->c.screen, &ncfgs);
 	bool found = false;
 	for (int i = 0; i < ncfgs; i++) {
 		int visualid;
-		glXGetFBConfigAttribChecked(gd->display, cfg[i], GLX_VISUAL_ID, &visualid);
+		glXGetFBConfigAttribChecked(ps->c.dpy, cfg[i], GLX_VISUAL_ID, &visualid);
 		if ((VisualID)visualid != pvis->visualid) {
 			continue;
 		}
 
-		gd->ctx = glXCreateContextAttribsARB(ps->dpy, cfg[i], 0, true,
-		                                     (int[]){
-		                                         GLX_CONTEXT_MAJOR_VERSION_ARB,
-		                                         3,
-		                                         GLX_CONTEXT_MINOR_VERSION_ARB,
-		                                         3,
-		                                         GLX_CONTEXT_PROFILE_MASK_ARB,
-		                                         GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
-		                                         0,
-		                                     });
+		int *attributes = (int[]){GLX_CONTEXT_MAJOR_VERSION_ARB,
+		                          3,
+		                          GLX_CONTEXT_MINOR_VERSION_ARB,
+		                          3,
+		                          GLX_CONTEXT_PROFILE_MASK_ARB,
+		                          GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+		                          0,
+		                          0,
+		                          0};
+		if (glxext.has_GLX_ARB_create_context_robustness) {
+			attributes[6] = GLX_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB;
+			attributes[7] = GLX_LOSE_CONTEXT_ON_RESET_ARB;
+		}
+
+		gd->ctx = glXCreateContextAttribsARB(ps->c.dpy, cfg[i], 0, true, attributes);
 		free(cfg);
 
 		if (!gd->ctx) {
@@ -329,7 +331,7 @@ static backend_t *glx_init(session_t *ps) {
 
 	// Attach GLX context
 	GLXDrawable tgt = gd->target_win;
-	if (!glXMakeCurrent(ps->dpy, tgt, gd->ctx)) {
+	if (!glXMakeCurrent(ps->c.dpy, tgt, gd->ctx)) {
 		log_error("Failed to attach GLX context.");
 		goto end;
 	}
@@ -343,11 +345,11 @@ static backend_t *glx_init(session_t *ps) {
 	gd->gl.release_user_data = glx_release_image;
 
 	if (ps->o.vsync) {
-		if (!glx_set_swap_interval(1, ps->dpy, tgt)) {
+		if (!glx_set_swap_interval(1, ps->c.dpy, tgt)) {
 			log_error("Failed to enable vsync.");
 		}
 	} else {
-		glx_set_swap_interval(0, ps->dpy, tgt);
+		glx_set_swap_interval(0, ps->c.dpy, tgt);
 	}
 
 	success = true;
@@ -365,111 +367,105 @@ end:
 	return &gd->gl.base;
 }
 
-static void *
-glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
-	struct _glx_data *gd = (void *)base;
-	struct _glx_pixmap *glxpixmap = NULL;
-	// Retrieve pixmap parameters, if they aren't provided
-	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
-		log_error("Requested depth %d higher than max possible depth %d.",
-		          fmt.visual_depth, OPENGL_MAX_DEPTH);
-		return false;
-	}
+static image_handle
+glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
+	GLXPixmap *glxpixmap = NULL;
+	auto gd = (struct _glx_data *)base;
 
 	if (fmt.visual_depth < 0) {
 		log_error("Pixmap %#010x with invalid depth %d", pixmap, fmt.visual_depth);
-		return false;
+		return NULL;
 	}
 
-	auto r = xcb_get_geometry_reply(base->c, xcb_get_geometry(base->c, pixmap), NULL);
+	auto r =
+	    xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), NULL);
 	if (!r) {
 		log_error("Invalid pixmap %#010x", pixmap);
 		return NULL;
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = ccalloc(1, struct backend_image);
-	wd->max_brightness = 1;
 	auto inner = ccalloc(1, struct gl_texture);
-	inner->width = wd->ewidth = r->width;
-	inner->height = wd->eheight = r->height;
-	wd->inner = (struct backend_image_inner_base *)inner;
+	inner->width = r->width;
+	inner->height = r->height;
+	inner->format = BACKEND_IMAGE_FORMAT_PIXMAP;
 	free(r);
 
-	auto fbcfg = glx_find_fbconfig(gd->display, gd->screen, fmt);
-	if (!fbcfg) {
-		log_error("Couldn't find FBConfig with requested visual %x", fmt.visual);
-		goto err;
+	struct glx_fbconfig_cache *cached_fbconfig = NULL;
+	HASH_FIND(hh, gd->cached_fbconfigs, &fmt, sizeof(fmt), cached_fbconfig);
+	if (!cached_fbconfig) {
+		struct glx_fbconfig_info fbconfig;
+		if (!glx_find_fbconfig(base->c, fmt, &fbconfig)) {
+			log_error("Couldn't find FBConfig with requested visual %#x",
+			          fmt.visual);
+			goto err;
+		}
+		cached_fbconfig = cmalloc(struct glx_fbconfig_cache);
+		cached_fbconfig->visual_info = fmt;
+		cached_fbconfig->info = fbconfig;
+		HASH_ADD(hh, gd->cached_fbconfigs, visual_info, sizeof(fmt), cached_fbconfig);
+	} else {
+		log_debug("Found cached FBConfig for RGBA%d%d%d%d, depth: %d, visual id: "
+		          "%#x",
+		          fmt.red_size, fmt.blue_size, fmt.green_size, fmt.alpha_size,
+		          fmt.visual_depth, fmt.visual);
 	}
+	struct glx_fbconfig_info *fbconfig = &cached_fbconfig->info;
 
 	// Choose a suitable texture target for our pixmap.
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
-	if (!(fbcfg->texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
+	if (!(fbconfig->texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
 		log_error("Cannot bind pixmap to GL_TEXTURE_2D, giving up");
 		goto err;
 	}
 
 	log_debug("depth %d, rgba %d", fmt.visual_depth,
-	          (fbcfg->texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
+	          (fbconfig->texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
 
 	GLint attrs[] = {
 	    GLX_TEXTURE_FORMAT_EXT,
-	    fbcfg->texture_fmt,
+	    fbconfig->texture_fmt,
 	    GLX_TEXTURE_TARGET_EXT,
 	    GLX_TEXTURE_2D_EXT,
 	    0,
 	};
 
-	inner->y_inverted = fbcfg->y_inverted;
+	inner->y_inverted = fbconfig->y_inverted;
 
-	glxpixmap = cmalloc(struct _glx_pixmap);
-	glxpixmap->pixmap = pixmap;
-	glxpixmap->glpixmap = glXCreatePixmap(gd->display, fbcfg->cfg, pixmap, attrs);
-	glxpixmap->owned = owned;
-	free(fbcfg);
+	glxpixmap = cmalloc(GLXPixmap);
+	inner->pixmap = pixmap;
+	*glxpixmap = glXCreatePixmap(base->c->dpy, fbconfig->cfg, pixmap, attrs);
 
-	if (!glxpixmap->glpixmap) {
+	if (!*glxpixmap) {
 		log_error("Failed to create glpixmap for pixmap %#010x", pixmap);
 		goto err;
 	}
 
-	log_trace("GLXPixmap %#010lx", glxpixmap->glpixmap);
+	log_trace("GLXPixmap %#010lx", *glxpixmap);
 
 	// Create texture
 	inner->user_data = glxpixmap;
-	inner->texture = gl_new_texture(GL_TEXTURE_2D);
-	inner->has_alpha = fmt.alpha_size != 0;
-	wd->opacity = 1;
-	wd->color_inverted = false;
-	wd->dim = 0;
-	wd->inner->refcount = 1;
+	inner->texture = gl_new_texture();
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
-	glXBindTexImageEXT(gd->display, glxpixmap->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glXBindTexImageEXT(base->c->dpy, *glxpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
-	return wd;
+	return (image_handle)inner;
 err:
-	if (glxpixmap && glxpixmap->glpixmap) {
-		glXDestroyPixmap(gd->display, glxpixmap->glpixmap);
+	if (glxpixmap && *glxpixmap) {
+		glXDestroyPixmap(base->c->dpy, *glxpixmap);
 	}
 	free(glxpixmap);
-
-	if (owned) {
-		xcb_free_pixmap(base->c, pixmap);
-	}
-	free(wd);
 	return NULL;
 }
 
-static void glx_present(backend_t *base, const region_t *region attr_unused) {
+static bool glx_present(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
-	gl_present(base, region);
-	glXSwapBuffers(gd->display, gd->target_win);
-	if (!gd->gl.is_nvidia) {
-		glFinish();
-	}
+	gl_finish_render(&gd->gl);
+	glXSwapBuffers(base->c->dpy, gd->target_win);
+	return true;
 }
 
 static int glx_buffer_age(backend_t *base) {
@@ -479,22 +475,21 @@ static int glx_buffer_age(backend_t *base) {
 
 	struct _glx_data *gd = (void *)base;
 	unsigned int val;
-	glXQueryDrawable(gd->display, gd->target_win, GLX_BACK_BUFFER_AGE_EXT, &val);
+	glXQueryDrawable(base->c->dpy, gd->target_win, GLX_BACK_BUFFER_AGE_EXT, &val);
 	return (int)val ?: -1;
 }
 
 static void glx_diagnostics(backend_t *base) {
-	struct _glx_data *gd = (void *)base;
 	bool warn_software_rendering = false;
 	const char *software_renderer_names[] = {"llvmpipe", "SWR", "softpipe"};
-	auto glx_vendor = glXGetClientString(gd->display, GLX_VENDOR);
+	auto glx_vendor = glXGetClientString(base->c->dpy, GLX_VENDOR);
 	printf("* Driver vendors:\n");
 	printf(" * GLX: %s\n", glx_vendor);
 	printf(" * GL: %s\n", glGetString(GL_VENDOR));
 
 	auto gl_renderer = (const char *)glGetString(GL_RENDERER);
 	printf("* GL renderer: %s\n", gl_renderer);
-	if (strcmp(glx_vendor, "Mesa Project and SGI")) {
+	if (strcmp(glx_vendor, "Mesa Project and SGI") == 0) {
 		for (size_t i = 0; i < ARR_SIZE(software_renderer_names); i++) {
 			if (strstr(gl_renderer, software_renderer_names[i]) != NULL) {
 				warn_software_rendering = true;
@@ -523,84 +518,49 @@ static void glx_diagnostics(backend_t *base) {
 }
 
 struct backend_operations glx_ops = {
+    .apply_alpha = gl_apply_alpha,
+    .back_buffer = gl_back_buffer,
+    .bind_pixmap = glx_bind_pixmap,
+    .blit = gl_blit,
+    .blur = gl_blur,
+    .clear = gl_clear,
+    .copy_area = gl_copy_area,
+    .copy_area_quantize = gl_copy_area_quantize,
+    .image_capabilities = gl_image_capabilities,
+    .is_format_supported = gl_is_format_supported,
+    .new_image = gl_new_image,
+    .present = glx_present,
+    .quirks = backend_no_quirks,
+    .release_image = gl_release_image,
+
     .init = glx_init,
     .deinit = glx_deinit,
-    .bind_pixmap = glx_bind_pixmap,
-    .release_image = gl_release_image,
-    .compose = gl_compose,
-    .image_op = gl_image_op,
-    .set_image_property = default_set_image_property,
-    .read_pixel = gl_read_pixel,
-    .clone_image = default_clone_image,
-    .blur = gl_blur,
-    .is_image_transparent = default_is_image_transparent,
-    .present = glx_present,
+    .root_change = gl_root_change,
+    .prepare = gl_prepare,
     .buffer_age = glx_buffer_age,
-    .render_shadow = default_backend_render_shadow,
-    .fill = gl_fill,
+    .last_render_time = gl_last_render_time,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
     .get_blur_size = gl_get_blur_size,
     .diagnostics = glx_diagnostics,
+    .device_status = gl_device_status,
+    .create_shader = gl_create_window_shader,
+    .destroy_shader = gl_destroy_window_shader,
+    .get_shader_attributes = gl_get_shader_attributes,
     .max_buffer_age = 5,        // Why?
 };
 
-/**
- * Check if a GLX extension exists.
- */
-static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) {
-	const char *glx_exts = glXQueryExtensionsString(dpy, screen);
-	if (!glx_exts) {
-		log_error("Failed get GLX extension list.");
-		return false;
-	}
-
-	auto inlen = strlen(ext);
-	const char *curr = glx_exts;
-	bool match = false;
-	while (curr && !match) {
-		const char *end = strchr(curr, ' ');
-		if (!end) {
-			// Last extension string
-			match = strcmp(ext, curr) == 0;
-		} else if (curr + inlen == end) {
-			// Length match, do match string
-			match = strncmp(ext, curr, (unsigned long)(end - curr)) == 0;
-		}
-		curr = end ? end + 1 : NULL;
-	}
-
-	if (!match) {
-		log_info("Missing GLX extension %s.", ext);
-	} else {
-		log_info("Found GLX extension %s.", ext);
-	}
-
-	return match;
-}
-
 struct glxext_info glxext = {0};
-PFNGLXGETVIDEOSYNCSGIPROC glXGetVideoSyncSGI;
-PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
-PFNGLXGETSYNCVALUESOMLPROC glXGetSyncValuesOML;
-PFNGLXWAITFORMSCOMLPROC glXWaitForMscOML;
-PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT;
-PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
-PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
-PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
-PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
-PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
-
-#ifdef GLX_MESA_query_renderer
-PFNGLXQUERYCURRENTRENDERERINTEGERMESAPROC glXQueryCurrentRendererIntegerMESA;
-#endif
 
 void glxext_init(Display *dpy, int screen) {
 	if (glxext.initialized) {
 		return;
 	}
 	glxext.initialized = true;
-#define check_ext(name) glxext.has_##name = glx_has_extension(dpy, screen, #name)
+#define check_ext(name)                                                                  \
+	glxext.has_##name = epoxy_has_glx_extension(dpy, screen, #name);                 \
+	log_info("Extension " #name " - %s", glxext.has_##name ? "present" : "absent")
+
 	check_ext(GLX_SGI_video_sync);
 	check_ext(GLX_SGI_swap_control);
 	check_ext(GLX_OML_sync_control);
@@ -609,40 +569,9 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_EXT_texture_from_pixmap);
 	check_ext(GLX_ARB_create_context);
 	check_ext(GLX_EXT_buffer_age);
+	check_ext(GLX_ARB_create_context_robustness);
 #ifdef GLX_MESA_query_renderer
 	check_ext(GLX_MESA_query_renderer);
 #endif
 #undef check_ext
-
-#define lookup(name) (name = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
-	// Checking if the returned function pointer is NULL is not really necessary,
-	// or maybe not even useful, since glXGetProcAddress might always return
-	// something. We are doing it just for completeness' sake.
-	if (!lookup(glXGetVideoSyncSGI) || !lookup(glXWaitVideoSyncSGI)) {
-		glxext.has_GLX_SGI_video_sync = false;
-	}
-	if (!lookup(glXSwapIntervalEXT)) {
-		glxext.has_GLX_EXT_swap_control = false;
-	}
-	if (!lookup(glXSwapIntervalMESA)) {
-		glxext.has_GLX_MESA_swap_control = false;
-	}
-	if (!lookup(glXSwapIntervalSGI)) {
-		glxext.has_GLX_SGI_swap_control = false;
-	}
-	if (!lookup(glXWaitForMscOML) || !lookup(glXGetSyncValuesOML)) {
-		glxext.has_GLX_OML_sync_control = false;
-	}
-	if (!lookup(glXBindTexImageEXT) || !lookup(glXReleaseTexImageEXT)) {
-		glxext.has_GLX_EXT_texture_from_pixmap = false;
-	}
-	if (!lookup(glXCreateContextAttribsARB)) {
-		glxext.has_GLX_ARB_create_context = false;
-	}
-#ifdef GLX_MESA_query_renderer
-	if (!lookup(glXQueryCurrentRendererIntegerMESA)) {
-		glxext.has_GLX_MESA_query_renderer = false;
-	}
-#endif
-#undef lookup
 }

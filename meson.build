@@ -1,5 +1,5 @@
-project('picom', 'c', version: '8',
-        default_options: ['c_std=c11'])
+project('picom', 'c', version: '11',
+        default_options: ['c_std=c11', 'warning_level=1'])
 
 cc = meson.get_compiler('c')
 
@@ -9,13 +9,13 @@ version = 'v'+meson.project_version()
 # use git describe if that's available
 git = find_program('git', required: false)
 if git.found()
-	gitv = run_command('git', 'rev-parse', '--short=5', 'HEAD')
+	gitv = run_command('git', 'rev-parse', '--short=5', 'HEAD', check: false)
 	if gitv.returncode() == 0
 		version = 'vgit-'+gitv.stdout().strip()
 	endif
 endif
 
-add_global_arguments('-DCOMPTON_VERSION="'+version+'"', language: 'c')
+add_global_arguments('-DPICOM_VERSION="'+version+'"', language: 'c')
 
 if get_option('buildtype') == 'release'
 	add_global_arguments('-DNDEBUG', language: 'c')
@@ -53,16 +53,27 @@ if cc.has_header('stdc-predef.h')
 	add_global_arguments('-DHAS_STDC_PREDEF_H', language: 'c')
 endif
 
-warns = [ 'all', 'cast-function-type', 'ignored-qualifiers', 'missing-parameter-type',
-          'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
-          'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
-          'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough',
-          'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
-foreach w : warns
-	if cc.has_argument('-W'+w)
-		add_global_arguments('-W'+w, language: 'c')
-	endif
-endforeach
+if get_option('warning_level') != '0'
+  warns = [ 'cast-function-type', 'ignored-qualifiers', 'missing-parameter-type',
+            'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
+            'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
+            'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough=2',
+            'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body',
+            'no-c2x-extensions' ]
+  bad_warns_ubsan = [
+    'no-format-overflow' # see gcc bug 87884, enabling UBSAN makes gcc spit out spurious warnings
+                         # (if you saw this comment, went and checked gcc bugzilla, and found out
+                         # bug has been fixed, please open a PR to remove this).
+  ]
+  if get_option('b_sanitize').contains('undefined') and cc.get_id() == 'gcc'
+    warns = warns + bad_warns_ubsan
+  endif
+  foreach w : warns
+          if cc.has_argument('-W'+w)
+                  add_global_arguments('-W'+w, language: 'c')
+          endif
+  endforeach
+endif
 
 test_h_dep = subproject('test.h').get_variable('test_h_dep')
 
@@ -71,6 +82,7 @@ subdir('man')
 
 install_data('bin/picom-trans', install_dir: get_option('bindir'))
 install_data('picom.desktop', install_dir: 'share/applications')
+install_data('picom.desktop', install_dir: get_option('sysconfdir') / 'xdg' / 'autostart')
 
 if get_option('compton')
 	install_data('compton.desktop', install_dir: 'share/applications')
