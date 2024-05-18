@@ -95,7 +95,7 @@ const char masking_glsl[] = GLSL(330,
 		if (mask_corner_radius != 0) {
 			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
 			float dist = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
-			    inner_size / 2.0f) - mask_corner_radius;
+			    inner_size / 2.0f) - mask_corner_radius + 1.0f;
 			if (dist > 0.0f) {
 				mask.r *= (1.0f - clamp(dist, 0.0f, 1.0f));
 			}
@@ -161,8 +161,12 @@ const char blit_shader_glsl[] = GLSL(330,
 
 		vec2 outer_size = effective_size;
 		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
+		// +1.0 so the last 1-pixel ring of the rounded rectangle will transition
+		// smoothly from 1 to 0 for anti-aliasing. If we don't do this, everything
+		// inside the corner radius will be solid, and we will have an extra 1-pixel
+		// feathering outside the corner radius, which makes it look bad.
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
-		    inner_size / 2.0f) - corner_radius;
+		    inner_size / 2.0f) - corner_radius + 1.0f;
 		if (rect_distance > 0.0f) {
 			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * rim_color;
 		} else {
