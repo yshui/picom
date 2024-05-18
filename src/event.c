@@ -591,6 +591,17 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	if (ps->c.screen_info->root == ev->window) {
+		// If desktop number property changes
+		if (ev->atom == ps->atoms->a_NET_CURRENT_DESKTOP) {
+			auto prop = x_get_prop(&ps->c, ps->c.screen_info->root, ps->atoms->a_NET_CURRENT_DESKTOP,
+						1L, XCB_ATOM_CARDINAL, 32);
+
+			if (prop.nitems) {
+				ps->root_desktop_switch_direction = ((int)*prop.c32) - ps->root_desktop_num;
+				ps->root_desktop_num = (int)*prop.c32;
+			}
+		}
+
 		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			// to update focus
 			ps->pending_updates = true;

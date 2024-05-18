@@ -1822,6 +1822,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	ps->next_render = 0;
 	ps->render_queued = false;
 
+	// Reset workspace switching so correct animations are used afterward
+	ps->root_desktop_switch_direction = 0;
+
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.
 
@@ -2279,6 +2282,16 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_fatal("No X RandR extension. crop-shadow-to-monitor cannot be "
 		          "enabled.");
 		goto err;
+	}
+
+	// Initiate current workspace num so we correctly animate if picom 
+	// started/restarted on different desktop number than 0
+	auto prop = x_get_prop(&ps->c, ps->c.screen_info->root, ps->atoms->a_NET_CURRENT_DESKTOP,
+				1L, XCB_ATOM_CARDINAL, 32);
+
+	ps->root_desktop_switch_direction = 0;
+	if (prop.nitems) {
+		ps->root_desktop_num = (int)*prop.c32;
 	}
 
 	rebuild_screen_reg(ps);
