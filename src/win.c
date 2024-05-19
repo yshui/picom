@@ -2190,6 +2190,11 @@ void unmap_win_start(struct managed_win *w) {
 
 struct win_script_context
 win_script_context_prepare(struct session *ps, struct managed_win *w) {
+	auto monitor =
+	    (w->randr_monitor >= 0 && w->randr_monitor < ps->monitors.count)
+	        ? *pixman_region32_extents(&ps->monitors.regions[w->randr_monitor])
+	        : (pixman_box32_t){
+	              .x1 = 0, .y1 = 0, .x2 = ps->root_width, .y2 = ps->root_height};
 	struct win_script_context ret = {
 	    .x = w->g.x,
 	    .y = w->g.y,
@@ -2197,6 +2202,10 @@ win_script_context_prepare(struct session *ps, struct managed_win *w) {
 	    .height = w->heightb,
 	    .opacity = win_calc_opacity_target(ps, w),
 	    .opacity_before = w->opacity,
+	    .monitor_x = monitor.x1,
+	    .monitor_y = monitor.y1,
+	    .monitor_width = monitor.x2 - monitor.x1,
+	    .monitor_height = monitor.y2 - monitor.y1,
 	};
 	return ret;
 }
