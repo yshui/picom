@@ -2,6 +2,7 @@
 
 ## New features
 
+* `@include` directives in config file now also search in `$XDG_CONFIG_HOME/picom/include` and `$XDG_CONFIG_DIRS/picom/include`, in addition to relative to the config file's parent directory.
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
 * New `picom-inspect` tool, which lets you test out your picom rules. Sample output:
 
@@ -49,7 +50,7 @@
 
 * picom now uses some OpenGL 4.3 features.
 * picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
-* `libconfig` is now a mandatory dependency.
+* `libconfig` is now a mandatory dependency, with a minimal supported version of 1.7.
 
 # v11.2 (2024-Feb-13)
 

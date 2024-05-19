@@ -34,7 +34,7 @@ endforeach
 foreach i : required_xcb_packages
 	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
-base_deps += [dependency('libconfig', version: '>=1.4', required: true)]
+base_deps += [dependency('libconfig', version: '>=1.7', required: true)]
 
 if not cc.has_header('uthash.h')
   error('Dependency uthash not found')

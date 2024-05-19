@@ -526,6 +526,21 @@ void generate_fading_config(struct options *opt) {
 	}
 }
 
+static const char **resolve_include(config_t * /* cfg */, const char *include_dir,
+                                    const char *path, const char **err) {
+	char *result = locate_auxiliary_file("include", path, include_dir);
+	if (result == NULL) {
+		*err = "Failed to locate included file";
+		return NULL;
+	}
+
+	log_debug("Resolved include file \"%s\" to \"%s\"", path, result);
+	const char **ret = ccalloc(2, const char *);
+	ret[0] = result;
+	ret[1] = NULL;
+	return ret;
+}
+
 /**
  * Parse a configuration file from default location.
  *
@@ -568,6 +583,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		if (parent) {
 			config_set_include_dir(&cfg, parent);
 		}
+		config_set_include_func(&cfg, resolve_include);
 
 		free(abspath);
 	}
