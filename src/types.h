@@ -5,6 +5,8 @@
 
 /// Some common types
 
+#include <limits.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -53,6 +55,11 @@ typedef struct ivec2 {
 	};
 } ivec2;
 
+struct ibox {
+	ivec2 origin;
+	ivec2 size;
+};
+
 static inline ivec2 ivec2_add(ivec2 a, ivec2 b) {
 	return (ivec2){
 	    .x = a.x + b.x,
@@ -76,6 +83,47 @@ static inline ivec2 ivec2_neg(ivec2 a) {
 	    .x = -a.x,
 	    .y = -a.y,
 	};
+}
+
+/// Saturating cast from a vec2 to a ivec2
+static inline ivec2 vec2_as(vec2 a) {
+	return (ivec2){
+	    .x = (int)fmin(fmax(a.x, INT_MIN), INT_MAX),
+	    .y = (int)fmin(fmax(a.y, INT_MIN), INT_MAX),
+	};
+}
+
+static inline bool vec2_eq(vec2 a, vec2 b) {
+	return a.x == b.x && a.y == b.y;
+}
+
+static inline vec2 vec2_scale(vec2 a, vec2 scale) {
+	return (vec2){
+	    .x = a.x * scale.x,
+	    .y = a.y * scale.y,
+	};
+}
+
+/// Check if two boxes have a non-zero intersection area.
+static inline bool ibox_overlap(struct ibox a, struct ibox b) {
+	if (a.size.width <= 0 || a.size.height <= 0 || b.size.width <= 0 || b.size.height <= 0) {
+		return false;
+	}
+	if (a.origin.x <= INT_MAX - a.size.width && a.origin.y <= INT_MAX - a.size.height &&
+	    (a.origin.x + a.size.width <= b.origin.x ||
+	     a.origin.y + a.size.height <= b.origin.y)) {
+		return false;
+	}
+	if (b.origin.x <= INT_MAX - b.size.width && b.origin.y <= INT_MAX - b.size.height &&
+	    (b.origin.x + b.size.width <= a.origin.x ||
+	     b.origin.y + b.size.height <= a.origin.y)) {
+		return false;
+	}
+	return true;
+}
+
+static inline bool ibox_eq(struct ibox a, struct ibox b) {
+	return ivec2_eq(a.origin, b.origin) && ivec2_eq(a.size, b.size);
 }
 
 #define MARGIN_INIT                                                                      \

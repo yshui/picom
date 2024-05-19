@@ -36,10 +36,11 @@ typedef enum {
 	/// The window is mapped and viewable. Equivalent to map-state ==
 	/// XCB_MAP_STATE_VIEWABLE
 	WSTATE_MAPPED,
-
 	// XCB_MAP_STATE_UNVIEWABLE is not represented here because it should not be
 	// possible for top-level windows.
 } winstate_t;
+
+#define NUM_OF_WSTATES (WSTATE_MAPPED + 1)
 
 enum win_flags {
 	// Note: *_NONE flags are mostly redundant and meant for detecting logical errors
@@ -65,3 +66,37 @@ enum win_flags {
 	/// need better name for this, is set when some aspects of the window changed
 	WIN_FLAGS_FACTOR_CHANGED = 1024,
 };
+
+enum win_script_output {
+	/// Additional X offset of the window.
+	WIN_SCRIPT_OFFSET_X = 0,
+	/// Additional Y offset of the window.
+	WIN_SCRIPT_OFFSET_Y,
+	/// Additional X offset of the shadow.
+	WIN_SCRIPT_SHADOW_OFFSET_X,
+	/// Additional Y offset of the shadow.
+	WIN_SCRIPT_SHADOW_OFFSET_Y,
+	/// Opacity of the window.
+	WIN_SCRIPT_OPACITY,
+	/// Opacity of the blurred background of the window.
+	WIN_SCRIPT_BLUR_OPACITY,
+	/// Opacity of the shadow.
+	WIN_SCRIPT_SHADOW_OPACITY,
+	/// Horizontal scale
+	WIN_SCRIPT_SCALE_X,
+	/// Vertical scale
+	WIN_SCRIPT_SCALE_Y,
+	/// Horizontal scale of the shadow
+	WIN_SCRIPT_SHADOW_SCALE_X,
+	/// Vertical scale of the shadow
+	WIN_SCRIPT_SHADOW_SCALE_Y,
+	/// X coordinate of the origin of the crop box
+	WIN_SCRIPT_CROP_X,
+	/// Y coordinate of the origin of the crop box
+	WIN_SCRIPT_CROP_Y,
+	/// Width of the crop box
+	WIN_SCRIPT_CROP_WIDTH,
+	/// Height of the crop box
+	WIN_SCRIPT_CROP_HEIGHT,
+};
+#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_CROP_HEIGHT + 1)

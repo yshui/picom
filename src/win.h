@@ -16,6 +16,7 @@
 #include "list.h"
 #include "region.h"
 #include "render.h"
+#include "script.h"
 #include "transition.h"
 #include "types.h"
 #include "utils.h"
@@ -100,6 +101,12 @@ struct win_geometry {
 	uint16_t border_width;
 };
 
+/// These are changes of window state that might trigger an animation. We separate them
+/// out and delay their application so determine which animation to run is easier.
+struct win_state_change {
+	winstate_t state;
+};
+
 struct managed_win {
 	struct win base;
 	/// backend data attached to this window. Only available when
@@ -130,7 +137,7 @@ struct managed_win {
 	/// Client window visual pict format
 	const xcb_render_pictforminfo_t *client_pictfmt;
 	/// Window painting mode.
-	winmode_t mode;
+	winmode_t mode;        // TODO(yshui) only used by legacy backends, remove.
 	/// Whether the window has been damaged at least once since it
 	/// was mapped. Unmapped windows that were previously mapped
 	/// retain their `ever_damaged` state. Mapping a window resets
@@ -213,11 +220,7 @@ struct managed_win {
 
 	// Opacity-related members
 	/// Window opacity
-	struct animatable opacity;
-	/// Opacity of the window's background blur
-	/// Used to gracefully fade in/out the window, otherwise the blur
-	/// would be at full/zero intensity immediately which will be jarring.
-	struct animatable blur_opacity;
+	double opacity;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity
 	/// prop
@@ -291,8 +294,6 @@ struct managed_win {
 	struct c2_window_state c2_state;
 
 	// Animation related
-	/// Number of animations currently in progress
-	unsigned int number_of_animations;
 
 #ifdef CONFIG_OPENGL
 	/// Textures and FBO background blur use.
@@ -303,21 +304,67 @@ struct managed_win {
 
 	/// The damaged region of the window, in window local coordinates.
 	region_t damaged;
+
+	/// Previous state of the window before state changed. This is used
+	/// by `win_process_animation_and_state_change` to trigger appropriate
+	/// animations.
+	struct win_state_change previous;
+	struct script_instance *running_animation;
+	const int *running_animation_outputs;
+	uint64_t running_animation_suppressions;
+};
+
+struct win_script_context {
+	double x, y, width, height;
+	double opacity_before, opacity;
+	double monitor_x, monitor_y;
+	double monitor_width, monitor_height;
+};
+
+static const struct script_context_info win_script_context_info[] = {
+    {"window-x", offsetof(struct win_script_context, x)},
+    {"window-y", offsetof(struct win_script_context, y)},
+    {"window-width", offsetof(struct win_script_context, width)},
+    {"window-height", offsetof(struct win_script_context, height)},
+    {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
+    {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
+    {"window-monitor-x", offsetof(struct win_script_context, monitor_x)},
+    {"window-monitor-y", offsetof(struct win_script_context, monitor_y)},
+    {"window-monitor-width", offsetof(struct win_script_context, monitor_width)},
+    {"window-monitor-height", offsetof(struct win_script_context, monitor_height)},
+    {NULL, 0}        //
+};
+
+static const struct script_output_info win_script_outputs[] = {
+    [WIN_SCRIPT_OFFSET_X] = {"offset-x"},
+    [WIN_SCRIPT_OFFSET_Y] = {"offset-y"},
+    [WIN_SCRIPT_SHADOW_OFFSET_X] = {"shadow-offset-x"},
+    [WIN_SCRIPT_SHADOW_OFFSET_Y] = {"shadow-offset-y"},
+    [WIN_SCRIPT_OPACITY] = {"opacity"},
+    [WIN_SCRIPT_BLUR_OPACITY] = {"blur-opacity"},
+    [WIN_SCRIPT_SHADOW_OPACITY] = {"shadow-opacity"},
+    [WIN_SCRIPT_SCALE_X] = {"scale-x"},
+    [WIN_SCRIPT_SCALE_Y] = {"scale-y"},
+    [WIN_SCRIPT_SHADOW_SCALE_X] = {"shadow-scale-x"},
+    [WIN_SCRIPT_SHADOW_SCALE_Y] = {"shadow-scale-y"},
+    [WIN_SCRIPT_CROP_X] = {"crop-x"},
+    [WIN_SCRIPT_CROP_Y] = {"crop-y"},
+    [WIN_SCRIPT_CROP_WIDTH] = {"crop-width"},
+    [WIN_SCRIPT_CROP_HEIGHT] = {"crop-height"},
+    [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
 /// Process pending updates/images flags on a window. Has to be called in X critical
 /// section
+void win_process_animation_and_state_change(struct session *ps, struct managed_win *w,
+                                            double delta_t);
+double win_animatable_get(const struct managed_win *w, enum win_script_output output);
 void win_process_update_flags(session_t *ps, struct managed_win *w);
 void win_process_image_flags(session_t *ps, struct managed_win *w);
 
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
 /// the window out.
-void unmap_win_start(struct session *, struct managed_win *);
-
-/// Start the mapping of a window. We cannot map immediately since we might need to fade
-/// the window in.
-void map_win_start(struct session *, struct managed_win *);
-
+void unmap_win_start(struct managed_win *);
 /// Start the destroying of a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
 void destroy_win_start(session_t *ps, struct win *w);
@@ -336,7 +383,6 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
  * Set real focused state of a window.
  */
 void win_set_focused(session_t *ps, struct managed_win *w);
-bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 void win_unmark_client(struct managed_win *w);
 
@@ -386,10 +432,6 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
  * Release a destroyed window that is no longer needed.
  */
 void destroy_win_finish(session_t *ps, struct win *w);
-
-/// Skip the current in progress fading of window,
-/// transition the window straight to its end state
-void win_skip_fading(struct managed_win *w);
 
 /**
  * Check if a window is focused, without using any focus rules or forced focus settings

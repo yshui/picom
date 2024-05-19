@@ -103,6 +103,16 @@ struct xrender_rounded_rectangle_cache {
 	int radius;
 };
 
+static void
+set_picture_scale(struct x_connection *c, xcb_render_picture_t picture, vec2 scale) {
+	xcb_render_transform_t transform = {
+	    .matrix11 = DOUBLE_TO_XFIXED(1.0 / scale.x),
+	    .matrix22 = DOUBLE_TO_XFIXED(1.0 / scale.y),
+	    .matrix33 = DOUBLE_TO_XFIXED(1.0),
+	};
+	set_cant_fail_cookie(c, xcb_render_set_picture_transform(c->c, picture, transform));
+}
+
 /// Make a picture of size width x height, which has a rounded rectangle of corner_radius
 /// rendered in it.
 struct xrender_rounded_rectangle_cache *
@@ -316,6 +326,9 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 			    inner->size.height, (int)args->corner_radius);
 		}
 	}
+
+	set_picture_scale(xd->base.c, mask_pict, args->scale);
+
 	if (((args->color_inverted || args->dim != 0) && has_alpha) ||
 	    args->corner_radius != 0) {
 		// Apply image properties using a temporary image, because the source
@@ -384,6 +397,8 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 			                     tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 
+		set_picture_scale(xd->base.c, tmp_pict, args->scale);
+
 		xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
 		                     mask_pict, target->pict, 0, 0, mask_pict_dst_x,
 		                     mask_pict_dst_y, to_i16_checked(origin.x),
@@ -391,6 +406,8 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 		xcb_render_free_picture(xd->base.c->c, tmp_pict);
 	} else {
 		uint8_t op = (has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
+
+		set_picture_scale(xd->base.c, inner->pict, args->scale);
 
 		xcb_render_composite(xd->base.c->c, op, inner->pict, mask_pict,
 		                     target->pict, 0, 0, mask_pict_dst_x, mask_pict_dst_y,

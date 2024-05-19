@@ -18,6 +18,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
                          const region_t *frame_region, bool inactive_dim_fixed,
                          double inactive_dim, double max_brightness) {
 	auto w = layer->win;
+	scoped_region_t crop = region_from_box(layer->crop);
 	auto mode = win_calc_mode_raw(layer->win);
 	int border_width = w->g.border_width;
 	double dim = 0;
@@ -32,9 +33,9 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 		border_width = min3(w->frame_extents.left, w->frame_extents.right,
 		                    w->frame_extents.bottom);
 	}
-	ivec2 raw_size = {.width = w->widthb, .height = w->heightb};
 	pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
-	pixman_region32_translate(&cmd->target_mask, layer->origin.x, layer->origin.y);
+	pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
+	                          layer->window.origin.y);
 	if (w->frame_opacity < 1) {
 		pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask, frame_region);
 	}
@@ -47,18 +48,23 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 		}
 	}
 	if (w->corner_radius > 0) {
-		win_region_remove_corners(w, layer->origin, &cmd->opaque_region);
+		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+	pixman_region32_intersect(&cmd->opaque_region, &cmd->opaque_region, &crop);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
-	cmd->origin = layer->origin;
+	cmd->origin = layer->window.origin;
 	cmd->blit = (struct backend_blit_args){
 	    .border_width = border_width,
 	    .target_mask = &cmd->target_mask,
 	    .corner_radius = w->corner_radius,
 	    .opacity = layer->opacity,
 	    .dim = dim,
-	    .effective_size = raw_size,
+	    .scale = layer->scale,
+	    .effective_size = layer->window.size,
 	    .shader = w->fg_shader ? w->fg_shader->backend_shader : NULL,
 	    .color_inverted = w->invert_color,
 	    .source_mask = NULL,
@@ -70,9 +76,11 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd -= 1;
 
 	pixman_region32_copy(&cmd->target_mask, frame_region);
+	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 	pixman_region32_init(&cmd->opaque_region);
 	cmd->op = BACKEND_COMMAND_BLIT;
-	cmd->origin = layer->origin;
+	cmd->origin = layer->window.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
 	cmd->blit = cmd[1].blit;
 	cmd->blit.target_mask = &cmd->target_mask;
@@ -92,13 +100,13 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		return 0;
 	}
 	cmd->op = BACKEND_COMMAND_BLIT;
-	cmd->origin = layer->shadow_origin;
+	cmd->origin = layer->shadow.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_SHADOW;
 	pixman_region32_clear(&cmd->target_mask);
 	pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
-	                           layer->shadow_origin.x, layer->shadow_origin.y,
-	                           (unsigned)layer->shadow_size.width,
-	                           (unsigned)layer->shadow_size.height);
+	                           layer->shadow.origin.x, layer->shadow.origin.y,
+	                           (unsigned)layer->shadow.size.width,
+	                           (unsigned)layer->shadow.size.height);
 	log_trace("Calculate shadow for %#010x (%s)", w->base.id, w->name);
 	log_region(TRACE, &cmd->target_mask);
 	if (!wintype_options[w->window_type].full_shadow) {
@@ -132,13 +140,19 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	if (w->corner_radius > 0) {
 		cmd->source_mask.corner_radius = w->corner_radius;
 		cmd->source_mask.inverted = true;
-		cmd->source_mask.origin = ivec2_sub(layer->origin, layer->shadow_origin);
+		cmd->source_mask.origin =
+		    ivec2_sub(layer->window.origin, layer->shadow.origin);
 	}
+
+	scoped_region_t crop = region_from_box(layer->crop);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+
 	cmd->blit = (struct backend_blit_args){
 	    .opacity = layer->shadow_opacity,
 	    .max_brightness = 1,
 	    .source_mask = w->corner_radius > 0 ? &cmd->source_mask : NULL,
-	    .effective_size = layer->shadow_size,
+	    .scale = layer->shadow_scale,
+	    .effective_size = layer->shadow.size,
 	    .target_mask = &cmd->target_mask,
 	};
 	pixman_region32_init(&cmd->opaque_region);
@@ -155,17 +169,22 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	}
 	if (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0) {
 		pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
-		pixman_region32_translate(&cmd->target_mask, layer->origin.x,
-		                          layer->origin.y);
+		pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
+		                          layer->window.origin.y);
 	} else if (blur_frame && mode == WMODE_FRAME_TRANS) {
 		pixman_region32_copy(&cmd->target_mask, frame_region);
 	} else {
 		return 0;
 	}
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+
+	scoped_region_t crop = region_from_box(layer->crop);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+
 	cmd->op = BACKEND_COMMAND_BLUR;
 	cmd->origin = (ivec2){};
 	if (w->corner_radius > 0) {
-		cmd->source_mask.origin = (ivec2){.x = layer->origin.x, .y = layer->origin.y};
+		cmd->source_mask.origin = layer->window.origin;
 		cmd->source_mask.corner_radius = w->corner_radius;
 		cmd->source_mask.inverted = false;
 	}
@@ -202,8 +221,8 @@ command_builder_apply_transparent_clipping(struct layout *layout, region_t *scra
 				} else if (mode == WMODE_FRAME_TRANS) {
 					win_get_region_frame_local(win, &tmp);
 				}
-				pixman_region32_translate(&tmp, layer->origin.x,
-				                          layer->origin.y);
+				pixman_region32_translate(&tmp, layer->window.origin.x,
+				                          layer->window.origin.y);
 				pixman_region32_union(scratch_region, scratch_region, &tmp);
 				pixman_region32_fini(&tmp);
 			}
@@ -370,7 +389,8 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 		auto layer = &layout->layers[i];
 		auto last = cmd;
 		auto frame_region = win_get_region_frame_local_by_val(layer->win);
-		pixman_region32_translate(&frame_region, layer->origin.x, layer->origin.y);
+		pixman_region32_translate(&frame_region, layer->window.origin.x,
+		                          layer->window.origin.y);
 
 		// Add window body
 		cmd -= commands_for_window_body(layer, cmd, &frame_region, inactive_dim_fixed,

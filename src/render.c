@@ -437,7 +437,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	const int y = w->g.y;
 	const uint16_t wid = to_u16_checked(w->widthb);
 	const uint16_t hei = to_u16_checked(w->heightb);
-	const double window_opacity = animatable_get(&w->opacity);
+	const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
 
 	xcb_render_picture_t pict = w->paint.pict;
 
@@ -808,8 +808,8 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 	    .x = -(w->shadow_dx),
 	    .y = -(w->shadow_dy),
 	};
-	double shadow_opacity =
-	    animatable_get(&w->opacity) * ps->o.shadow_opacity * ps->o.frame_opacity;
+	double shadow_opacity = win_animatable_get(w, WIN_SCRIPT_SHADOW_OPACITY) *
+	                        ps->o.shadow_opacity * ps->o.frame_opacity;
 	render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width,
 	       w->shadow_height, w->widthb, w->heightb, shadow_opacity, true, false, 0,
 	       w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, NULL,
@@ -903,7 +903,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	auto const wid = to_u16_checked(w->widthb);
 	auto const hei = to_u16_checked(w->heightb);
 	const int cr = w ? w->corner_radius : 0;
-	const double window_opacity = animatable_get(&w->opacity);
+	const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
 
 	double factor_center = 1.0;
 	// Adjust blur strength according to window opacity, to make it appear
@@ -1143,7 +1143,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 		}
 
 		// Only clip shadows above visible windows
-		if (animatable_get(&w->opacity) * MAX_ALPHA >= 1) {
+		if (win_animatable_get(w, WIN_SCRIPT_OPACITY) * MAX_ALPHA >= 1) {
 			if (w->clip_shadow_above) {
 				// Add window bounds to shadow-clip region
 				pixman_region32_union(&reg_shadow_clip, &reg_shadow_clip,

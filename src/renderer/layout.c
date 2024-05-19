@@ -42,37 +42,58 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 		goto out;
 	}
 
-	out_layer->origin = (ivec2){.x = w->g.x, .y = w->g.y};
-	out_layer->size = (ivec2){.width = w->widthb, .height = w->heightb};
+	out_layer->scale = (vec2){
+	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X),
+	    .y = win_animatable_get(w, WIN_SCRIPT_SCALE_Y),
+	};
+	out_layer->window.origin =
+	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
+	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
+	out_layer->window.size = vec2_as((vec2){.width = w->widthb * out_layer->scale.x,
+	                                        .height = w->heightb * out_layer->scale.y});
+	out_layer->crop.origin = vec2_as((vec2){
+	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_X),
+	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_Y),
+	});
+	out_layer->crop.size = vec2_as((vec2){
+	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_WIDTH),
+	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_HEIGHT),
+	});
 	if (w->shadow) {
-		out_layer->shadow_origin =
-		    (ivec2){.x = w->g.x + w->shadow_dx, .y = w->g.y + w->shadow_dy};
-		out_layer->shadow_size =
-		    (ivec2){.width = w->shadow_width, .height = w->shadow_height};
+		out_layer->shadow_scale = (vec2){
+		    .x = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_X),
+		    .y = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_Y),
+		};
+		out_layer->shadow.origin =
+		    vec2_as((vec2){.x = w->g.x + w->shadow_dx +
+		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
+		                   .y = w->g.y + w->shadow_dy +
+		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
+		out_layer->shadow.size =
+		    vec2_as((vec2){.width = w->shadow_width * out_layer->shadow_scale.x,
+		                   .height = w->shadow_height * out_layer->shadow_scale.y});
 	} else {
-		out_layer->shadow_origin = (ivec2){};
-		out_layer->shadow_size = (ivec2){};
+		out_layer->shadow.origin = (ivec2){};
+		out_layer->shadow.size = (ivec2){};
+		out_layer->shadow_scale = SCALE_IDENTITY;
 	}
-	if (out_layer->size.width <= 0 || out_layer->size.height <= 0) {
-		goto out;
-	}
-	if (out_layer->size.height + out_layer->origin.y <= 0 ||
-	    out_layer->size.width + out_layer->origin.x <= 0 ||
-	    out_layer->origin.y >= size.height || out_layer->origin.x >= size.width) {
+
+	struct ibox screen = {.origin = {0, 0}, .size = size};
+	if (!ibox_overlap(out_layer->window, screen) || !ibox_overlap(out_layer->crop, screen)) {
 		goto out;
 	}
 
-	out_layer->opacity = (float)animatable_get(&w->opacity);
-	out_layer->blur_opacity = (float)animatable_get(&w->blur_opacity);
-	out_layer->shadow_opacity =
-	    (float)(out_layer->opacity * w->shadow_opacity * w->frame_opacity);
+	out_layer->opacity = (float)win_animatable_get(w, WIN_SCRIPT_OPACITY);
+	out_layer->blur_opacity = (float)win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
+	out_layer->shadow_opacity = (float)(win_animatable_get(w, WIN_SCRIPT_SHADOW_OPACITY) *
+	                                    w->shadow_opacity * w->frame_opacity);
 	if (out_layer->opacity == 0 && out_layer->blur_opacity == 0) {
 		goto out;
 	}
 
 	pixman_region32_copy(&out_layer->damaged, &w->damaged);
-	pixman_region32_translate(&out_layer->damaged, out_layer->origin.x,
-	                          out_layer->origin.y);
+	pixman_region32_translate(&out_layer->damaged, out_layer->window.origin.x,
+	                          out_layer->window.origin.y);
 	// TODO(yshui) Is there a better way to handle shaped windows? Shaped windows can
 	// have a very large number of rectangles in their shape, we don't want to handle
 	// that and slow ourselves down. so we treat them as transparent and just use

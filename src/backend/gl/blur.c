@@ -344,18 +344,18 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	}
 
 	// Original region for the final compositing step from blur result to target.
-	auto coord = ccalloc(nrects * 16, GLint);
+	auto coord = ccalloc(nrects * 16, GLfloat);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	gl_mask_rects_to_coords(origin, nrects, rects, coord, indices);
+	gl_mask_rects_to_coords(origin, nrects, rects, SCALE_IDENTITY, coord, indices);
 	if (!target->y_inverted) {
 		gl_y_flip_target(nrects, coord, target->height);
 	}
 
 	// Resize region for sampling from source texture, and for blur passes
-	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
+	auto coord_resized = ccalloc(nrects_resized * 16, GLfloat);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
-	gl_mask_rects_to_coords(origin, nrects_resized, rects_resized, coord_resized,
-	                        indices_resized);
+	gl_mask_rects_to_coords(origin, nrects_resized, rects_resized, SCALE_IDENTITY,
+	                        coord_resized, indices_resized);
 	pixman_region32_fini(&reg_blur_resized);
 	// FIXME(yshui) In theory we should handle blurring a non-y-inverted source, but
 	// we never actually use that capability anywhere.
@@ -375,9 +375,9 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	             indices, GL_STREAM_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
+	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 
 	glBindVertexArray(vao[1]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
@@ -389,9 +389,9 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	             GL_STREAM_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
+	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 
 	int vao_nelems[2] = {nrects * 6, nrects_resized * 6};
 

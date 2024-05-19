@@ -17,6 +17,14 @@ typedef pixman_box32_t rect_t;
 
 RC_TYPE(region_t, rc_region, pixman_region32_init, pixman_region32_fini, static inline)
 
+static inline void region_free(region_t *region) {
+	if (region) {
+		pixman_region32_fini(region);
+	}
+}
+
+#define scoped_region_t cleanup(region_free) region_t
+
 static inline void dump_region(const region_t *x) {
 	if (log_get_level_tls() > LOG_LEVEL_TRACE) {
 		return;
@@ -154,6 +162,29 @@ static inline void region_intersect(region_t *region, ivec2 origin, const region
 	pixman_region32_translate(region, origin.x, origin.y);
 }
 
+/// Scale the `region` by `scale`. The origin of scaling is `origin`.
+static inline void region_scale(region_t *region, ivec2 origin, vec2 scale) {
+	static const vec2 SCALE_IDENTITY = {.x = 1.0, .y = 1.0};
+	if (vec2_eq(scale, SCALE_IDENTITY)) {
+		return;
+	}
+
+	int n;
+	region_t tmp = *region;
+	auto r = pixman_region32_rectangles(&tmp, &n);
+	for (int i = 0; i < n; i++) {
+		r[i].x1 = (int32_t)((r[i].x1 - origin.x) * scale.x + origin.x);
+		r[i].y1 = (int32_t)((r[i].y1 - origin.y) * scale.y + origin.y);
+		r[i].x2 = (int32_t)((r[i].x2 - origin.x) * scale.x + origin.x);
+		r[i].y2 = (int32_t)((r[i].y2 - origin.y) * scale.y + origin.y);
+	}
+
+	// Manipulating the rectangles could break assumptions made internally by pixman,
+	// so we recreate the region with the rectangles to let pixman fix them.
+	pixman_region32_init_rects(region, r, n);
+	pixman_region32_fini(&tmp);
+}
+
 /// Calculate the symmetric difference of `region1`, and `region2`, and union the result
 /// into `result`. The two input regions has to be in the same coordinate space.
 ///
@@ -168,4 +199,12 @@ region_symmetric_difference_local(region_t *result, region_t *scratch,
 	pixman_region32_copy(scratch, region2);
 	pixman_region32_subtract(scratch, scratch, region1);
 	pixman_region32_union(result, result, scratch);
+}
+
+static inline region_t region_from_box(struct ibox a) {
+	region_t ret;
+	unsigned width = (unsigned)(min2(INT_MAX - a.origin.x, a.size.width)),
+	         height = (unsigned)(min2(INT_MAX - a.origin.y, a.size.height));
+	pixman_region32_init_rect(&ret, a.origin.x, a.origin.y, width, height);
+	return ret;
 }

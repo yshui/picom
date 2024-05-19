@@ -29,20 +29,24 @@ struct layer {
 	struct managed_win *win;
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
-	/// Origin (the top left outmost corner) of the window in screen coordinates
-	ivec2 origin;
-	/// Size of the window
-	ivec2 size;
-	/// Origin of the shadow in screen coordinates
-	ivec2 shadow_origin;
-	/// Size of the shadow
-	ivec2 shadow_size;
+	/// Window rectangle in screen coordinates.
+	struct ibox window;
+	/// Shadow rectangle in screen coordinates.
+	struct ibox shadow;
+	/// Scale of the window. The origin of scaling is the top left corner of the
+	/// window.
+	vec2 scale;
+	/// Scale of the shadow. The origin of scaling is the top left corner of the
+	/// shadow.
+	vec2 shadow_scale;
 	/// Opacity of this window
 	float opacity;
 	/// Opacity of the background blur of this window
 	float blur_opacity;
 	/// Opacity of this window's shadow
 	float shadow_opacity;
+	/// Crop the content of this layer to this box, in screen coordinates.
+	struct ibox crop;
 
 	/// How many commands are needed to render this layer
 	unsigned number_of_commands;
@@ -63,11 +67,6 @@ struct layer {
 	// things like blur-background-frame
 	// region_t opaque_region;
 	// region_t blur_region;
-
-	// TODO(yshui) support cropping
-	/// x and y offset for cropping. Anything to the top or
-	/// left of the crop point will be cropped out.
-	// uint32_t crop_x, crop_y;
 };
 
 /// Layout of windows at a specific frame

@@ -17,18 +17,19 @@ static inline bool attr_unused layer_key_eq(const struct layer_key *a,
 static bool
 layer_compare(const struct layer *past_layer, const struct backend_command *past_layer_cmd,
               const struct layer *curr_layer, const struct backend_command *curr_layer_cmd) {
-	if (past_layer->origin.x != curr_layer->origin.x ||
-	    past_layer->origin.y != curr_layer->origin.y ||
-	    past_layer->size.width != curr_layer->size.width ||
-	    past_layer->size.height != curr_layer->size.height) {
+	if (!ibox_eq(past_layer->window, curr_layer->window)) {
 		// Window moved or size changed
 		return false;
 	}
 
-	if (past_layer->shadow_origin.x != curr_layer->shadow_origin.x ||
-	    past_layer->shadow_origin.y != curr_layer->shadow_origin.y ||
-	    past_layer->shadow_size.width != curr_layer->shadow_size.width ||
-	    past_layer->shadow_size.height != curr_layer->shadow_size.height) {
+	// TODO(yshui) consider window body and shadow separately.
+	if (!vec2_eq(past_layer->scale, curr_layer->scale) ||
+	    !vec2_eq(past_layer->shadow_scale, curr_layer->shadow_scale)) {
+		// Window or shadow scale changed
+		return false;
+	}
+
+	if (!ibox_eq(past_layer->shadow, curr_layer->shadow)) {
 		// Shadow moved or size changed
 		return false;
 	}
@@ -99,6 +100,7 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	if (cmd1->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 		layout_manager_collect_window_damage(lm, layer_index, buffer_age,
 		                                     scratch_region);
+		region_scale(scratch_region, cmd2->origin, cmd2->blit.scale);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd1->target_mask);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd2->target_mask);
 		pixman_region32_union(damage, damage, scratch_region);
@@ -156,12 +158,14 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 			log_trace("Layout[%d]: ", -l);
 			auto layout = layout_manager_layout(lm, l);
 			for (unsigned i = 0; i < layout->len; i++) {
-				log_trace(
-				    "\t%#010x %dx%d+%dx%d (prev %d, next %d)",
-				    layout->layers[i].key.window, layout->layers[i].size.width,
-				    layout->layers[i].size.height,
-				    layout->layers[i].origin.x, layout->layers[i].origin.y,
-				    layout->layers[i].prev_rank, layout->layers[i].next_rank);
+				log_trace("\t%#010x %dx%d+%dx%d (prev %d, next %d)",
+				          layout->layers[i].key.window,
+				          layout->layers[i].window.size.width,
+				          layout->layers[i].window.size.height,
+				          layout->layers[i].window.origin.x,
+				          layout->layers[i].window.origin.y,
+				          layout->layers[i].prev_rank,
+				          layout->layers[i].next_rank);
 			}
 		}
 	}
