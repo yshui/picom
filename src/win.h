@@ -317,6 +317,8 @@ struct managed_win {
 struct win_script_context {
 	double x, y, width, height;
 	double opacity_before, opacity;
+	double monitor_x, monitor_y;
+	double monitor_width, monitor_height;
 };
 
 static const struct script_context_info win_script_context_info[] = {
@@ -326,6 +328,10 @@ static const struct script_context_info win_script_context_info[] = {
     {"window-height", offsetof(struct win_script_context, height)},
     {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
     {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
+    {"window-monitor-x", offsetof(struct win_script_context, monitor_x)},
+    {"window-monitor-y", offsetof(struct win_script_context, monitor_y)},
+    {"window-monitor-width", offsetof(struct win_script_context, monitor_width)},
+    {"window-monitor-height", offsetof(struct win_script_context, monitor_height)},
     {NULL, 0}        //
 };
 
