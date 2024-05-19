@@ -1875,6 +1875,21 @@ bool c2_match(struct c2_state *state, const struct managed_win *w,
 	return false;
 }
 
+/// Match a window against the first condition in a condition linked list.
+bool c2_match_one(struct c2_state *state, const struct managed_win *w,
+                  const c2_lptr_t *condlst, void **pdata) {
+	if (!condlst) {
+		return false;
+	}
+	if (c2_match_once(state, w, condlst->ptr)) {
+		if (pdata) {
+			*pdata = condlst->data;
+		}
+		return true;
+	}
+	return false;
+}
+
 /// Iterate over all conditions in a condition linked list. Call the callback for
 /// each of the conditions. If the callback returns true, the iteration stops
 /// early.
