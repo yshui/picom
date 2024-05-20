@@ -897,7 +897,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 		opt->number_of_scripts = 0;
 	}
 
-	generate_fading_config(opt);
+	if (opt->fading_enable) {
+		generate_fading_config(opt);
+	}
 	return true;
 }
 
