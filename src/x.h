@@ -220,6 +220,13 @@ static inline void attr_unused free_x_connection(struct x_connection *c) {
 /// responsible for closing it after `free_x_connection` is called.
 void x_connection_init(struct x_connection *c, Display *dpy);
 
+/// Initialize the used X extensions and populate the x_extensions structure in
+/// an x_connection structure with information about them.
+///
+/// Returns false if the X server doesn't have or support the required version
+/// of at least one required X extension, true otherwise.
+bool x_extensions_init(struct x_connection *c);
+
 /// Discard queued pending replies.
 ///
 /// We have received reply with sequence number `sequence`, which means all pending
