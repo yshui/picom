@@ -421,6 +421,8 @@ CONFIGURATION FILES
 -------------------
 picom could read from a configuration file if libconfig support is compiled in. If *--config* is not used, picom will seek for a configuration file in `$XDG_CONFIG_HOME/picom.conf` (`~/.config/picom.conf`, usually), then `$XDG_CONFIG_HOME/picom/picom.conf`, then `$XDG_CONFIG_DIRS/picom.conf` (often `/etc/xdg/picom.conf`), then `$XDG_CONFIG_DIRS/picom/picom.conf`.
 
+When `@include` directive is used in the config file, picom will first search for the included file in the parent directory of `picom.conf`, then in `$XDG_CONFIG_HOME/picom/include/`, then in `$XDG_CONFIG_DIRS/picom/include`.
+
 picom uses general libconfig configuration file format. A sample configuration file is available as `picom.sample.conf` in the source tree. Most of commandline switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
 
 Window-type-specific settings are exposed only in configuration file and has the following format:

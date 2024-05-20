@@ -11,7 +11,7 @@ srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
                'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c', 'statistics.c',
                'vblank.c', 'transition.c', 'wm.c', 'renderer/layout.c', 'renderer/command_builder.c',
-               'renderer/renderer.c', 'renderer/damage.c', 'config_libconfig.c', 'inspect.c') ]
+               'renderer/renderer.c', 'renderer/damage.c', 'config_libconfig.c', 'inspect.c', 'script.c') ]
 picom_inc = include_directories('.')
 
 cflags = []
@@ -34,7 +34,7 @@ endforeach
 foreach i : required_xcb_packages
 	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
-base_deps += [dependency('libconfig', version: '>=1.4', required: true)]
+base_deps += [dependency('libconfig', version: '>=1.7', required: true)]
 
 if not cc.has_header('uthash.h')
   error('Dependency uthash not found')

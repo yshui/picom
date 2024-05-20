@@ -15,8 +15,10 @@
 #include "config.h"
 #include "err.h"
 #include "log.h"
+#include "script.h"
 #include "string_utils.h"
 #include "utils.h"
+#include "win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -220,6 +222,325 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 	}
 }
 
+static enum animation_trigger parse_animation_trigger(const char *trigger) {
+	for (int i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+		if (strcasecmp(trigger, animation_trigger_names[i]) == 0) {
+			return i;
+		}
+	}
+	return ANIMATION_TRIGGER_INVALID;
+}
+
+static struct script *
+compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
+	struct script_output_info outputs[ARR_SIZE(win_script_outputs)];
+	memcpy(outputs, win_script_outputs, sizeof(win_script_outputs));
+
+	struct script_parse_config parse_config = {
+	    .context_info = win_script_context_info,
+	    .output_info = outputs,
+	};
+	auto script = script_compile(setting, parse_config, err);
+	if (script == NULL) {
+		return script;
+	}
+	for (int i = 0; i < NUM_OF_WIN_SCRIPT_OUTPUTS; i++) {
+		output_indices[i] = outputs[i].slot;
+	}
+	return script;
+}
+
+static bool
+set_animation(struct win_script *animations, const enum animation_trigger *triggers,
+              int number_of_triggers, struct script *script, const int *output_indices,
+              uint64_t suppressions, unsigned line) {
+	bool needed = false;
+	for (int i = 0; i < number_of_triggers; i++) {
+		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
+			log_error("Invalid trigger defined at line %d", line);
+			continue;
+		}
+		if (animations[triggers[i]].script != NULL) {
+			log_error("Duplicate animation defined for trigger %s at line "
+			          "%d, it will be ignored.",
+			          animation_trigger_names[triggers[i]], line);
+			continue;
+		}
+		memcpy(animations[triggers[i]].output_indices, output_indices,
+		       sizeof(int[NUM_OF_WIN_SCRIPT_OUTPUTS]));
+		animations[triggers[i]].script = script;
+		animations[triggers[i]].suppressions = suppressions;
+		needed = true;
+	}
+	return needed;
+}
+
+static struct script *
+parse_animation_one(struct win_script *animations, config_setting_t *setting) {
+	auto triggers = config_setting_lookup(setting, "triggers");
+	if (!triggers) {
+		log_error("Missing triggers in animation script, at line %d",
+		          config_setting_source_line(setting));
+		return NULL;
+	}
+	if (!config_setting_is_list(triggers) && !config_setting_is_array(triggers) &&
+	    config_setting_get_string(triggers) == NULL) {
+		log_error("The \"triggers\" option must either be a string, a list, or "
+		          "an array, but is none of those at line %d",
+		          config_setting_source_line(triggers));
+		return NULL;
+	}
+	auto number_of_triggers =
+	    config_setting_get_string(triggers) == NULL ? config_setting_length(triggers) : 1;
+	if (number_of_triggers > ANIMATION_TRIGGER_LAST) {
+		log_error("Too many triggers in animation defined at line %d",
+		          config_setting_source_line(triggers));
+		return NULL;
+	}
+	if (number_of_triggers == 0) {
+		log_error("Trigger list is empty in animation defined at line %d",
+		          config_setting_source_line(triggers));
+		return NULL;
+	}
+	enum animation_trigger *trigger_types =
+	    alloca(sizeof(enum animation_trigger[number_of_triggers]));
+	const char *trigger0 = config_setting_get_string(triggers);
+	if (trigger0 == NULL) {
+		for (int i = 0; i < number_of_triggers; i++) {
+			auto trigger_i = config_setting_get_string_elem(triggers, i);
+			trigger_types[i] = trigger_i == NULL
+			                       ? ANIMATION_TRIGGER_INVALID
+			                       : parse_animation_trigger(trigger_i);
+		}
+	} else {
+		trigger_types[0] = parse_animation_trigger(trigger0);
+	}
+
+	// script parser shouldn't see this.
+	config_setting_remove(setting, "triggers");
+
+	uint64_t suppressions = 0;
+	auto suppressions_setting = config_setting_lookup(setting, "suppressions");
+	if (suppressions_setting != NULL) {
+		auto single_suppression = config_setting_get_string(suppressions_setting);
+		if (!config_setting_is_list(suppressions_setting) &&
+		    !config_setting_is_array(suppressions_setting) &&
+		    single_suppression == NULL) {
+			log_error("The \"suppressions\" option must either be a string, "
+			          "a list, or an array, but is none of those at line %d",
+			          config_setting_source_line(suppressions_setting));
+			return NULL;
+		}
+		if (single_suppression != NULL) {
+			auto suppression = parse_animation_trigger(single_suppression);
+			if (suppression == ANIMATION_TRIGGER_INVALID) {
+				log_error("Invalid suppression defined at line %d",
+				          config_setting_source_line(suppressions_setting));
+				return NULL;
+			}
+			suppressions = 1 << suppression;
+		} else {
+			auto len = config_setting_length(suppressions_setting);
+			for (int i = 0; i < len; i++) {
+				auto suppression_str =
+				    config_setting_get_string_elem(suppressions_setting, i);
+				if (suppression_str == NULL) {
+					log_error(
+					    "The \"suppressions\" option must only "
+					    "contain strings, but one of them is not at "
+					    "line %d",
+					    config_setting_source_line(suppressions_setting));
+					return NULL;
+				}
+				auto suppression = parse_animation_trigger(suppression_str);
+				if (suppression == ANIMATION_TRIGGER_INVALID) {
+					log_error(
+					    "Invalid suppression defined at line %d",
+					    config_setting_source_line(suppressions_setting));
+					return NULL;
+				}
+				suppressions |= 1 << suppression;
+			}
+		}
+		config_setting_remove(setting, "suppressions");
+	}
+
+	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	char *err;
+	auto script = compile_win_script(setting, output_indices, &err);
+	if (!script) {
+		log_error("Failed to parse animation script at line %d: %s",
+		          config_setting_source_line(setting), err);
+		free(err);
+		return NULL;
+	}
+
+	bool needed = set_animation(animations, trigger_types, number_of_triggers, script,
+	                            output_indices, suppressions,
+	                            config_setting_source_line(setting));
+	if (!needed) {
+		script_free(script);
+		script = NULL;
+	}
+	return script;
+}
+
+static struct script **parse_animations(struct win_script *animations,
+                                        config_setting_t *setting, int *number_of_scripts) {
+	auto number_of_animations = config_setting_length(setting);
+	auto all_scripts = ccalloc(number_of_animations + 1, struct script *);
+	auto len = 0;
+	for (int i = 0; i < number_of_animations; i++) {
+		auto sub = config_setting_get_elem(setting, (unsigned)i);
+		auto script = parse_animation_one(animations, sub);
+		if (script != NULL) {
+			all_scripts[len++] = script;
+		}
+	}
+	if (len == 0) {
+		free(all_scripts);
+		all_scripts = NULL;
+	}
+	*number_of_scripts = len;
+	return all_scripts;
+}
+
+#define FADING_TEMPLATE_1                                                                \
+	"opacity = { "                                                                   \
+	"  timing = \"%fms linear\"; "                                                   \
+	"  start = \"window-raw-opacity-before\"; "                                      \
+	"  end = \"window-raw-opacity\"; "                                               \
+	"};"                                                                             \
+	"shadow-opacity = \"opacity\";"
+#define FADING_TEMPLATE_2                                                                \
+	"blur-opacity = { "                                                              \
+	"  timing = \"%fms linear\"; "                                                   \
+	"  start = %f; end = %f; "                                                       \
+	"};"
+
+static struct script *compile_win_script_from_string(const char *input, int *output_indices) {
+	config_t tmp_config;
+	config_setting_t *setting;
+	config_init(&tmp_config);
+	config_read_string(&tmp_config, input);
+	setting = config_root_setting(&tmp_config);
+
+	// Since we are compiling scripts we generated, it can't fail.
+	char *err = NULL;
+	auto script = compile_win_script(setting, output_indices, &err);
+	config_destroy(&tmp_config);
+	BUG_ON(err != NULL);
+
+	return script;
+}
+
+void generate_fading_config(struct options *opt) {
+	// We create stand-in animations for fade-in/fade-out if they haven't be
+	// overwritten
+	char *str = NULL;
+	size_t len = 0;
+	enum animation_trigger trigger[2];
+	struct script *scripts[4];
+	int number_of_scripts = 0;
+	int number_of_triggers = 0;
+
+	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	double duration = 1.0 / opt->fade_in_step * opt->fade_delta;
+	// Fading in from nothing, i.e. `open` and `show`
+	asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration, duration,
+	          0.F, 1.F);
+
+	auto fade_in1 = compile_win_script_from_string(str, output_indices);
+	if (opt->animations[ANIMATION_TRIGGER_OPEN].script == NULL && !opt->no_fading_openclose) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_OPEN;
+	}
+	if (opt->animations[ANIMATION_TRIGGER_SHOW].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1,
+	                  output_indices, 0, 0)) {
+		scripts[number_of_scripts++] = fade_in1;
+	} else {
+		script_free(fade_in1);
+	}
+
+	// Fading for opacity change, for these, the blur opacity doesn't change.
+	asnprintf(&str, &len, FADING_TEMPLATE_1, duration);
+	auto fade_in2 = compile_win_script_from_string(str, output_indices);
+	number_of_triggers = 0;
+	if (opt->animations[ANIMATION_TRIGGER_INCREASE_OPACITY].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2,
+	                  output_indices, 0, 0)) {
+		scripts[number_of_scripts++] = fade_in2;
+	} else {
+		script_free(fade_in2);
+	}
+
+	duration = 1.0 / opt->fade_out_step * opt->fade_delta;
+	// Fading out to nothing, i.e. `hide` and `close`
+	asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration, duration,
+	          1.F, 0.F);
+	auto fade_out1 = compile_win_script_from_string(str, output_indices);
+	number_of_triggers = 0;
+	if (opt->animations[ANIMATION_TRIGGER_CLOSE].script == NULL &&
+	    !opt->no_fading_openclose) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_CLOSE;
+	}
+	if (opt->animations[ANIMATION_TRIGGER_HIDE].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1,
+	                  output_indices, 0, 0)) {
+		scripts[number_of_scripts++] = fade_out1;
+	} else {
+		script_free(fade_out1);
+	}
+
+	// Fading for opacity change
+	asnprintf(&str, &len, FADING_TEMPLATE_1, duration);
+	auto fade_out2 = compile_win_script_from_string(str, output_indices);
+	number_of_triggers = 0;
+	if (opt->animations[ANIMATION_TRIGGER_DECREASE_OPACITY].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2,
+	                  output_indices, 0, 0)) {
+		scripts[number_of_scripts++] = fade_out2;
+	} else {
+		script_free(fade_out2);
+	}
+	free(str);
+
+	log_debug("Generated %d scripts for fading.", number_of_scripts);
+	if (number_of_scripts) {
+		auto ptr = realloc(
+		    opt->all_scripts,
+		    sizeof(struct scripts * [number_of_scripts + opt->number_of_scripts]));
+		allocchk(ptr);
+		opt->all_scripts = ptr;
+		memcpy(&opt->all_scripts[opt->number_of_scripts], scripts,
+		       sizeof(struct script *[number_of_scripts]));
+		opt->number_of_scripts += number_of_scripts;
+	}
+}
+
+static const char **resolve_include(config_t * /* cfg */, const char *include_dir,
+                                    const char *path, const char **err) {
+	char *result = locate_auxiliary_file("include", path, include_dir);
+	if (result == NULL) {
+		*err = "Failed to locate included file";
+		return NULL;
+	}
+
+	log_debug("Resolved include file \"%s\" to \"%s\"", path, result);
+	const char **ret = ccalloc(2, const char *);
+	ret[0] = result;
+	ret[1] = NULL;
+	return ret;
+}
+
 /**
  * Parse a configuration file from default location.
  *
@@ -262,6 +583,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		if (parent) {
 			config_set_include_dir(&cfg, parent);
 		}
+		config_set_include_func(&cfg, resolve_include);
 
 		free(abspath);
 	}
@@ -606,6 +928,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	// Compatibility with the old name for notification windows.
 	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
 	                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
+
+	config_setting_t *animations = config_lookup(&cfg, "animations");
+	if (animations) {
+		opt->all_scripts =
+		    parse_animations(opt->animations, animations, &opt->number_of_scripts);
+	}
 
 	config_destroy(&cfg);
 	return path;

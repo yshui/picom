@@ -148,7 +148,7 @@ bool c2_match_once_and_log(const c2_lptr_t *cond, void *data) {
 	struct c2_match_state *state = data;
 	void *rule_data = NULL;
 	printf("    %s ... ", c2_lptr_to_str(cond));
-	bool matched = c2_match(state->state, state->w, cond, &rule_data);
+	bool matched = c2_match_one(state->state, state->w, cond, rule_data);
 	printf("%s", matched ? "\033[1;32mmatched\033[0m" : "not matched");
 	if (state->print_value && matched) {
 		printf("/%lu", (unsigned long)(intptr_t)rule_data);

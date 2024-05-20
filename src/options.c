@@ -883,6 +883,23 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 	check_end:;
 	}
 
+	if (opt->legacy_backends && opt->number_of_scripts > 0) {
+		log_warn("Custom animations are not supported by the legacy "
+		         "backends. Disabling animations.");
+		for (size_t i = 0; i < ARR_SIZE(opt->animations); i++) {
+			opt->animations[i].script = NULL;
+		}
+		for (int i = 0; i < opt->number_of_scripts; i++) {
+			script_free(opt->all_scripts[i]);
+		}
+		free(opt->all_scripts);
+		opt->all_scripts = NULL;
+		opt->number_of_scripts = 0;
+	}
+
+	if (opt->fading_enable) {
+		generate_fading_config(opt);
+	}
 	return true;
 }
 
@@ -930,6 +947,13 @@ void options_destroy(struct options *options) {
 	}
 	free(options->blur_kerns);
 	free(options->glx_fshader_win_str);
+
+	for (int i = 0; i < options->number_of_scripts; i++) {
+		script_free(options->all_scripts[i]);
+		options->all_scripts[i] = NULL;
+	}
+	free(options->all_scripts);
+	memset(options->animations, 0, sizeof(options->animations));
 }
 
 // vim: set noet sw=8 ts=8 :

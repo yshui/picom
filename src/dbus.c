@@ -708,13 +708,13 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append(map_state, boolean, w->a.map_state);
 	append(wmwin, boolean, win_is_wmwin(w));
 	append(focused_raw, boolean, win_is_focused_raw(w));
-	append(opacity, double, animatable_get(&w->opacity));
 	append(left_width, int32, w->frame_extents.left);
 	append(right_width, int32, w->frame_extents.right);
 	append(top_width, int32, w->frame_extents.top);
 	append(bottom_width, int32, w->frame_extents.bottom);
 
 	append_win_property(mode, enum);
+	append_win_property(opacity, double);
 	append_win_property(client_win, wid);
 	append_win_property(ever_damaged, boolean);
 	append_win_property(window_type, enum);
@@ -727,7 +727,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append_win_property(class_instance, string);
 	append_win_property(class_general, string);
 	append_win_property(role, string);
-	append_win_property(opacity.target, double);
+	append_win_property(opacity, double);
 	append_win_property(has_opacity_prop, boolean);
 	append_win_property(opacity_prop, uint32);
 	append_win_property(opacity_is_set, boolean);

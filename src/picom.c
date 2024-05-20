@@ -140,12 +140,10 @@ void quit(session_t *ps) {
 }
 
 /**
- * Get current system clock in milliseconds.
+ * Convert struct timespec to milliseconds.
  */
-static inline int64_t get_time_ms(void) {
-	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
+static inline int64_t timespec_ms(struct timespec ts) {
+	return (int64_t)ts.tv_sec * 1000 + (int64_t)ts.tv_nsec / 1000000;
 }
 
 enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unused, void *ud) {
@@ -452,55 +450,6 @@ void add_damage(session_t *ps, const region_t *damage) {
 	pixman_region32_union(cursor, cursor, (region_t *)damage);
 }
 
-// === Fading ===
-
-/**
- * Get the time left before next fading point.
- *
- * In milliseconds.
- */
-static double fade_timeout(session_t *ps) {
-	auto now = get_time_ms();
-	if (ps->o.fade_delta + ps->fade_time < now) {
-		return 0;
-	}
-
-	auto diff = ps->o.fade_delta + ps->fade_time - now;
-
-	diff = clamp(diff, 0, ps->o.fade_delta * 2);
-
-	return (double)diff / 1000.0;
-}
-
-/**
- * Run fading on a window.
- *
- * @param steps steps of fading
- * @return whether we are still in fading mode
- */
-static bool run_fade(struct managed_win **_w, double delta_sec) {
-	auto w = *_w;
-	log_trace("Process fading for window %s (%#010x), ΔT: %fs", w->name, w->base.id,
-	          delta_sec);
-	if (w->number_of_animations == 0) {
-		// We have reached target opacity.
-		// We don't call win_check_fade_finished here because that could destroy
-		// the window, but we still need the damage info from this window
-		log_trace("|- was fading but finished");
-		return false;
-	}
-
-	log_trace("|- fading, opacity: %lf", animatable_get(&w->opacity));
-	animatable_advance(&w->opacity, delta_sec);
-	animatable_advance(&w->blur_opacity, delta_sec);
-	log_trace("|- opacity updated: %lf", animatable_get(&w->opacity));
-
-	// Note even if the animatable is not animating anymore at this point, we still
-	// want to run preprocess one last time to finish state transition. So return true
-	// in that case too.
-	return true;
-}
-
 // === Windows ===
 
 /**
@@ -597,13 +546,19 @@ static void rebuild_screen_reg(session_t *ps) {
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
 	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
-		// Wrapping up fading in progress
-		win_skip_fading(w);
+		// An unmapped window shouldn't have a pixmap, unless it has animation
+		// running. (`w->previous.state != w->state` means there might be
+		// animation but we haven't had a chance to start it because
+		// `win_process_animation_and_state_change` hasn't been called.)
+		// TBH, this assertion is probably too complex than what it's worth.
+		assert(!w->win_image || w->state == WSTATE_MAPPED ||
+		       w->running_animation != NULL || w->previous.state != w->state);
+		// Wrapping up animation in progress
+		free(w->running_animation);
+		w->running_animation = NULL;
 
 		if (ps->backend_data) {
-			// Unmapped windows could still have shadow images, but not pixmap
-			// images
-			assert(!w->win_image || w->state != WSTATE_UNMAPPED);
+			// Unmapped windows could still have shadow images.
 			// In some cases, the window might have PIXMAP_STALE flag set:
 			//   1. If the window is unmapped. Their stale flags won't be
 			//      handled until they are mapped.
@@ -752,6 +707,10 @@ static bool initialize_backend(session_t *ps) {
 		                                           .green = ps->o.shadow_green,
 		                                           .blue = ps->o.shadow_blue},
 		                            ps->o.dithered_present);
+		if (!ps->renderer) {
+			log_fatal("Failed to create renderer, aborting...");
+			goto err;
+		}
 	}
 
 	// The old backends binds pixmap lazily, nothing to do here
@@ -867,23 +826,12 @@ static void handle_root_flags(session_t *ps) {
  *
  * @return whether the operation succeeded
  */
-static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
-                             struct managed_win **out_bottom) {
+static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win **out_bottom) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
 	struct managed_win *bottom = NULL;
-	*fade_running = false;
 	*animation = false;
 	*out_bottom = NULL;
-
-	// Fading step calculation
-	int64_t delta_ms = 0L;
-	auto now = get_time_ms();
-	if (ps->fade_time) {
-		assert(now >= ps->fade_time);
-		delta_ms = now - ps->fade_time;
-	}
-	ps->fade_time = now;
 
 	// First, let's process fading, and animated shaders
 	// TODO(yshui) check if a window is fully obscured, and if we don't need to
@@ -901,18 +849,16 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 			add_damage_from_win(ps, w);
 			*animation = true;
 		}
+		if (w->running_animation != NULL) {
+			*animation = true;
+		}
 
 		// Add window to damaged area if its opacity changes
 		// If was_painted == false, and to_paint is also false, we don't care
 		// If was_painted == false, but to_paint is true, damage will be added in
 		// the loop below
-		if (was_painted && w->number_of_animations != 0) {
+		if (was_painted && w->running_animation != NULL) {
 			add_damage_from_win(ps, w);
-		}
-
-		// Run fading
-		if (run_fade(&w, (double)delta_ms / 1000.0)) {
-			*fade_running = true;
 		}
 
 		if (win_has_frame(w)) {
@@ -943,8 +889,8 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
 		const bool was_painted = w->to_paint;
-		const double window_opacity = animatable_get(&w->opacity);
-		const double blur_opacity = animatable_get(&w->blur_opacity);
+		const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
+		const double blur_opacity = win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
 
 		// Destroy reg_ignore if some window above us invalidated it
 		if (!reg_ignore_valid) {
@@ -959,12 +905,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
 		if ((w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYED) &&
-		    w->number_of_animations == 0) {
-			if (window_opacity != 0 || blur_opacity != 0) {
-				log_warn("Window %#010x (%s) is unmapped but still has "
-				         "opacity",
-				         w->base.id, w->name);
-			}
+		    w->running_animation == NULL) {
 			log_trace("|- is unmapped");
 			to_paint = false;
 		} else if (unlikely(ps->debug_window != XCB_NONE) &&
@@ -1080,7 +1021,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
 		w->reg_ignore_valid = true;
 
-		if (w->state == WSTATE_DESTROYED && w->number_of_animations == 0) {
+		if (w->state == WSTATE_DESTROYED && w->running_animation == NULL) {
 			// the window should be destroyed because it was destroyed
 			// by X server and now its animations are finished
 			destroy_win_finish(ps, &w->base);
@@ -1675,28 +1616,21 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 	queue_redraw(ps);
 }
 
-static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
-	// TODO(yshui): do we still need the fade timer? we queue redraw automatically in
-	// draw_callback_impl if animation is running.
-	session_t *ps = session_ptr(w, fade_timer);
-	queue_redraw(ps);
-}
+static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
+	log_trace("Delayed handling of events, entering critical section");
+	auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
+	if (e) {
+		log_fatal_x_error(e, "failed to grab x server");
+		free(e);
+		return quit(ps);
+	}
 
-static void handle_pending_updates(EV_P_ struct session *ps) {
+	ps->server_grabbed = true;
+
+	// Catching up with X server
+	handle_queued_x_events(EV_A, &ps->event_check, 0);
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
-		auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
-		if (e) {
-			log_fatal_x_error(e, "failed to grab x server");
-			free(e);
-			return quit(ps);
-		}
-
-		ps->server_grabbed = true;
-
-		// Catching up with X server
-		handle_queued_x_events(EV_A_ & ps->event_check, 0);
-
 		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
 
@@ -1713,17 +1647,31 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 
 		// Process window flags (stale images)
 		refresh_images(ps);
+	}
+	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
+	if (e) {
+		log_fatal_x_error(e, "failed to ungrab x server");
+		free(e);
+		return quit(ps);
+	}
 
-		e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
-		if (e) {
-			log_fatal_x_error(e, "failed to ungrab x server");
-			free(e);
-			return quit(ps);
+	ps->server_grabbed = false;
+	ps->pending_updates = false;
+	log_trace("Exited critical section");
+
+	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
+		// Window might be freed by this function, if it's destroyed and its
+		// animation finished
+		if (win_process_animation_and_state_change(ps, w, delta_t)) {
+			free(w->running_animation);
+			w->running_animation = NULL;
+			w->in_openclose = false;
+			if (w->state == WSTATE_UNMAPPED) {
+				unmap_win_finish(ps, w);
+			} else if (w->state == WSTATE_DESTROYED) {
+				destroy_win_finish(ps, &w->base);
+			}
 		}
-
-		ps->server_grabbed = false;
-		ps->pending_updates = false;
-		log_debug("Exited critical section");
 	}
 }
 
@@ -1735,13 +1683,22 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	int64_t draw_callback_enter_us;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
+	// Fading step calculation
+	auto now_ms = timespec_ms(now);
+	int64_t delta_ms = 0L;
+	if (ps->fade_time) {
+		assert(now_ms >= ps->fade_time);
+		delta_ms = now_ms - ps->fade_time;
+	}
+	ps->fade_time = now_ms;
+
 	draw_callback_enter_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
 	if (ps->next_render != 0) {
 		log_trace("Schedule delay: %" PRIi64 " us",
 		          draw_callback_enter_us - (int64_t)ps->next_render);
 	}
 
-	handle_pending_updates(EV_A_ ps);
+	handle_pending_updates(EV_A_ ps, (double)delta_ms / 1000.0);
 
 	int64_t after_handle_pending_updates_us;
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1758,8 +1715,12 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		//
 		// Using foreach_safe here since skipping fading can cause window to be
 		// freed if it's destroyed.
+		//
+		// TODO(yshui) I think maybe we don't need this anymore, since now we
+		//             immediate acquire pixmap right after `map_win_start`.
 		win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
-			win_skip_fading(w);
+			free(w->running_animation);
+			w->running_animation = NULL;
 			if (w->state == WSTATE_DESTROYED) {
 				destroy_win_finish(ps, &w->base);
 			}
@@ -1782,11 +1743,10 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	/* TODO(yshui) Have a stripped down version of paint_preprocess that is used when
 	 * screen is not redirected. its sole purpose should be to decide whether the
 	 * screen should be redirected. */
-	bool fade_running = false;
 	bool animation = false;
 	bool was_redirected = ps->redirected;
 	struct managed_win *bottom = NULL;
-	if (!paint_preprocess(ps, &fade_running, &animation, &bottom)) {
+	if (!paint_preprocess(ps, &animation, &bottom)) {
 		log_fatal("Pre-render preparation has failed, exiting...");
 		exit(1);
 	}
@@ -1803,14 +1763,6 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		// flags in paint_preprocess.
 		log_debug("Re-run _draw_callback");
 		return draw_callback_impl(EV_A_ ps, revents);
-	}
-
-	// Start/stop fade timer depends on whether window are fading
-	if (!fade_running && ev_is_active(&ps->fade_timer)) {
-		ev_timer_stop(EV_A_ & ps->fade_timer);
-	} else if (fade_running && !ev_is_active(&ps->fade_timer)) {
-		ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
-		ev_timer_start(EV_A_ & ps->fade_timer);
 	}
 
 	int64_t after_preprocess_us;
@@ -1881,11 +1833,6 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	// false.
 	ps->backend_busy = (ps->frame_pacing && did_render);
 	ps->next_render = 0;
-
-	if (!fade_running) {
-		ps->fade_time = 0L;
-	}
-
 	ps->render_queued = false;
 
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
@@ -1895,6 +1842,8 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	// event.
 	if (animation) {
 		queue_redraw(ps);
+	} else {
+		ps->fade_time = 0L;
 	}
 	if (ps->vblank_scheduler) {
 		// Even if we might not want to render during next vblank, we want to keep
@@ -2458,8 +2407,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
 
-	ev_init(&ps->fade_timer, fade_timer_callback);
-
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
 	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
@@ -2696,7 +2643,6 @@ static void session_destroy(session_t *ps) {
 
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
-	ev_timer_stop(ps->loop, &ps->fade_timer);
 	ev_timer_stop(ps->loop, &ps->draw_timer);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
