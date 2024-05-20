@@ -707,6 +707,10 @@ static bool initialize_backend(session_t *ps) {
 		                                           .green = ps->o.shadow_green,
 		                                           .blue = ps->o.shadow_blue},
 		                            ps->o.dithered_present);
+		if (!ps->renderer) {
+			log_fatal("Failed to create renderer, aborting...");
+			goto err;
+		}
 	}
 
 	// The old backends binds pixmap lazily, nothing to do here
