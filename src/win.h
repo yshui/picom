@@ -355,8 +355,10 @@ static const struct script_output_info win_script_outputs[] = {
 };
 
 /// Process pending updates/images flags on a window. Has to be called in X critical
-/// section
-void win_process_animation_and_state_change(struct session *ps, struct managed_win *w,
+/// section. Returns true if the window had an animation running and it has just finished,
+/// or if the window's states just changed and there is no animation defined for this
+/// state change.
+bool win_process_animation_and_state_change(struct session *ps, struct managed_win *w,
                                             double delta_t);
 double win_animatable_get(const struct managed_win *w, enum win_script_output output);
 void win_process_update_flags(session_t *ps, struct managed_win *w);
@@ -365,6 +367,7 @@ void win_process_image_flags(session_t *ps, struct managed_win *w);
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
 /// the window out.
 void unmap_win_start(struct managed_win *);
+void unmap_win_finish(session_t *ps, struct managed_win *w);
 /// Start the destroying of a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
 void destroy_win_start(session_t *ps, struct win *w);

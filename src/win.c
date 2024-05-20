@@ -876,7 +876,7 @@ static double win_calc_opacity_target(session_t *ps, const struct managed_win *w
 
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
-static void unmap_win_finish(session_t *ps, struct managed_win *w) {
+void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	w->reg_ignore_valid = false;
 
 	// We are in unmap_win, this window definitely was viewable
@@ -2236,7 +2236,7 @@ double win_animatable_get(const struct managed_win *w, enum win_script_output ou
 
 #define WSTATE_PAIR(a, b) ((int)(a) * NUM_OF_WSTATES + (int)(b))
 
-void win_process_animation_and_state_change(struct session *ps, struct managed_win *w,
+bool win_process_animation_and_state_change(struct session *ps, struct managed_win *w,
                                             double delta_t) {
 	// If the window hasn't ever been damaged yet, it won't be rendered in this frame.
 	// And if it is also unmapped/destroyed, it won't receive damage events. In this
@@ -2245,11 +2245,11 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 	bool will_never_render = !w->ever_damaged && w->state != WSTATE_MAPPED;
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
-		free(w->running_animation);
-		w->running_animation = NULL;
+		assert(w->running_animation == NULL);
+		bool state_changed = w->previous.state != w->state;
 		w->previous.state = w->state;
 		w->opacity = win_calc_opacity_target(ps, w);
-		return;
+		return state_changed;
 	}
 
 	auto win_ctx = win_script_context_prepare(ps, w);
@@ -2258,7 +2258,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 		// No state changes, if there's a animation running, we just continue it.
 	advance_animation:
 		if (w->running_animation == NULL) {
-			return;
+			return false;
 		}
 		log_debug("Advance animation for %#010x (%s) %f seconds", w->base.id,
 		          w->name, delta_t);
@@ -2268,18 +2268,11 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 			    script_instance_evaluate(w->running_animation, &win_ctx);
 			if (result != SCRIPT_EVAL_OK) {
 				log_error("Failed to run animation script: %d", result);
+				return true;
 			}
-			return;
+			return false;
 		}
-		free(w->running_animation);
-		w->running_animation = NULL;
-		w->in_openclose = false;
-		if (w->state == WSTATE_UNMAPPED) {
-			unmap_win_finish(ps, w);
-		} else if (w->state == WSTATE_DESTROYED) {
-			destroy_win_finish(ps, &w->base);
-		}
-		return;
+		return true;
 	}
 
 	// Try to determine the right animation trigger based on state changes. Note there
@@ -2341,9 +2334,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 			log_error("Impossible state transition from %d to %d", old_state,
 			          w->state);
 			assert(false);
-			free(w->running_animation);
-			w->running_animation = NULL;
-			return;
+			return true;
 		}
 	}
 
@@ -2356,9 +2347,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 	}
 
 	if (trigger == ANIMATION_TRIGGER_INVALID || ps->o.animations[trigger].script == NULL) {
-		free(w->running_animation);
-		w->running_animation = NULL;
-		return;
+		return true;
 	}
 
 	log_debug("Starting animation %s for window %#010x (%s)",
@@ -2373,6 +2362,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 	w->running_animation_outputs = ps->o.animations[trigger].output_indices;
 	w->running_animation_suppressions = ps->o.animations[trigger].suppressions;
 	script_instance_evaluate(w->running_animation, &win_ctx);
+	return false;
 }
 
 #undef WSTATE_PAIR

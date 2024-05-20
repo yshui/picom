@@ -1662,7 +1662,16 @@ static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
 		// Window might be freed by this function, if it's destroyed and its
 		// animation finished
-		win_process_animation_and_state_change(ps, w, delta_t);
+		if (win_process_animation_and_state_change(ps, w, delta_t)) {
+			free(w->running_animation);
+			w->running_animation = NULL;
+			w->in_openclose = false;
+			if (w->state == WSTATE_UNMAPPED) {
+				unmap_win_finish(ps, w);
+			} else if (w->state == WSTATE_DESTROYED) {
+				destroy_win_finish(ps, &w->base);
+			}
+		}
 	}
 }
 
