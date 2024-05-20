@@ -2346,16 +2346,17 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 		}
 	}
 
-	if (trigger == ANIMATION_TRIGGER_INVALID || ps->o.animations[trigger].script == NULL) {
-		free(w->running_animation);
-		w->running_animation = NULL;
-		return;
-	}
-
-	if (w->running_animation && (w->running_animation_suppressions & (1 << trigger)) != 0) {
+	if (trigger != ANIMATION_TRIGGER_INVALID && w->running_animation &&
+	    (w->running_animation_suppressions & (1 << trigger)) != 0) {
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], w->base.id, w->name);
+		return;
+	}
+
+	if (trigger == ANIMATION_TRIGGER_INVALID || ps->o.animations[trigger].script == NULL) {
+		free(w->running_animation);
+		w->running_animation = NULL;
 		return;
 	}
 
