@@ -249,7 +249,8 @@ bool build_shadow(struct x_connection *c, double opacity, const int width,
 			batch_height = to_u16_checked(shadow_image->height - row);
 		}
 
-		uint32_t offset = row * shadow_image->stride / sizeof(*shadow_image->data);
+		auto offset =
+		    (size_t)row * shadow_image->stride / sizeof(*shadow_image->data);
 		xcb_put_image(c->c, (uint8_t)shadow_image->format, shadow_pixmap, gc,
 		              shadow_image->width, batch_height, 0, to_i16_checked(row),
 		              0, shadow_image->depth, shadow_image->stride * batch_height,
