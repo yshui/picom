@@ -184,6 +184,10 @@ typedef struct session {
 	int root_width;
 	/// Height of root window.
 	int root_height;
+	/// Current desktop number of root window
+	int root_desktop_num;
+	/// Desktop switch direction
+	int root_desktop_switch_direction;
 	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode

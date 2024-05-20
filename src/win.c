@@ -2312,6 +2312,15 @@ bool win_process_animation_and_state_change(struct session *ps, struct managed_w
 		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_MAPPED):
 			trigger = w->in_openclose ? ANIMATION_TRIGGER_OPEN
 			                          : ANIMATION_TRIGGER_SHOW;
+
+			if (ps->root_desktop_switch_direction != 0) {
+				trigger = 
+					(ps->root_desktop_switch_direction < 0 &&
+					 ps->root_desktop_switch_direction >= -1) ||
+					 ps->root_desktop_switch_direction > 1 ?
+						ANIMATION_TRIGGER_WORKSPACE_IN_INVERSE  :
+						ANIMATION_TRIGGER_WORKSPACE_IN;
+			}
 			break;
 		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_DESTROYED):
 			if ((!ps->o.no_fading_destroyed_argb || !win_has_alpha(w)) &&
@@ -2329,6 +2338,15 @@ bool win_process_animation_and_state_change(struct session *ps, struct managed_w
 			break;
 		case WSTATE_PAIR(WSTATE_MAPPED, WSTATE_UNMAPPED):
 			trigger = ANIMATION_TRIGGER_HIDE;
+
+			if (ps->root_desktop_switch_direction != 0) {
+				trigger = 
+					(ps->root_desktop_switch_direction < 0 &&
+					 ps->root_desktop_switch_direction >= -1) ||
+					 ps->root_desktop_switch_direction > 1 ?
+						ANIMATION_TRIGGER_WORKSPACE_OUT_INVERSE :
+						ANIMATION_TRIGGER_WORKSPACE_OUT;
+			}
 			break;
 		default:
 			log_error("Impossible state transition from %d to %d", old_state,

@@ -95,7 +95,11 @@ enum animation_trigger {
 	ANIMATION_TRIGGER_OPEN,
 	/// When a window is closed
 	ANIMATION_TRIGGER_CLOSE,
-	ANIMATION_TRIGGER_LAST = ANIMATION_TRIGGER_CLOSE,
+	ANIMATION_TRIGGER_WORKSPACE_IN,
+	ANIMATION_TRIGGER_WORKSPACE_IN_INVERSE,
+	ANIMATION_TRIGGER_WORKSPACE_OUT,
+	ANIMATION_TRIGGER_WORKSPACE_OUT_INVERSE,
+	ANIMATION_TRIGGER_LAST = ANIMATION_TRIGGER_WORKSPACE_OUT_INVERSE,
 };
 
 static const char *animation_trigger_names[] attr_unused = {
@@ -105,6 +109,10 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_DECREASE_OPACITY] = "decrease-opacity",
     [ANIMATION_TRIGGER_OPEN] = "open",
     [ANIMATION_TRIGGER_CLOSE] = "close",
+    [ANIMATION_TRIGGER_WORKSPACE_IN] = "workspace-in",
+    [ANIMATION_TRIGGER_WORKSPACE_IN_INVERSE] = "workspace-in-inverse",
+    [ANIMATION_TRIGGER_WORKSPACE_OUT] = "workspace-out",
+    [ANIMATION_TRIGGER_WORKSPACE_OUT_INVERSE] = "workspace-out-inverse",
 };
 
 struct script;
