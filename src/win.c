@@ -2245,11 +2245,10 @@ bool win_process_animation_and_state_change(struct session *ps, struct managed_w
 	bool will_never_render = !w->ever_damaged && w->state != WSTATE_MAPPED;
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
-		assert(w->running_animation == NULL);
 		bool state_changed = w->previous.state != w->state;
 		w->previous.state = w->state;
 		w->opacity = win_calc_opacity_target(ps, w);
-		return state_changed;
+		return state_changed || (w->running_animation != NULL);
 	}
 
 	auto win_ctx = win_script_context_prepare(ps, w);
