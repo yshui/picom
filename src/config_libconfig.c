@@ -422,6 +422,7 @@ static struct script *compile_win_script_from_string(const char *input, int *out
 	config_t tmp_config;
 	config_setting_t *setting;
 	config_init(&tmp_config);
+	config_set_auto_convert(&tmp_config, true);
 	config_read_string(&tmp_config, input);
 	setting = config_root_setting(&tmp_config);
 
