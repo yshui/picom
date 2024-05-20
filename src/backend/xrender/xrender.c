@@ -494,9 +494,6 @@ xrender_copy_area(struct backend_base *base, ivec2 origin, image_handle target_h
 static bool xrender_blur(struct backend_base *base, ivec2 origin,
                          image_handle target_handle, const struct backend_blur_args *args) {
 	auto bctx = (struct xrender_blur_context *)args->blur_context;
-	auto source_mask = args->source_image
-	                       ? (struct xrender_image_data_inner *)args->source_mask->image
-	                       : NULL;
 	auto source = (struct xrender_image_data_inner *)args->source_image;
 	auto target = (struct xrender_image_data_inner *)target_handle;
 	if (bctx->method == BLUR_METHOD_NONE) {
@@ -547,22 +544,18 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	xcb_render_picture_t src_pict = source->pict;
 	auto mask_pict = xd->alpha_pict[(int)(args->opacity * MAX_ALPHA)];
 	bool mask_allocated = false;
-	auto mask_pict_origin = args->source_mask->origin;
-	if (source_mask != NULL) {
+	ivec2 mask_pict_origin = {};
+	if (args->source_mask != NULL) {
 		// Translate the target mask region to the mask's coordinate
 		auto mask_extent = *pixman_region32_extents(args->target_mask);
 		region_translate_rect(
 		    mask_extent, ivec2_neg(ivec2_add(origin, args->source_mask->origin)));
+		mask_pict_origin = args->source_mask->origin;
 		mask_pict = xrender_process_mask(xd, args->source_mask, mask_extent,
 		                                 args->opacity != 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_pict_origin, &mask_allocated);
 		mask_pict_origin.x -= extent_resized->x1;
 		mask_pict_origin.y -= extent_resized->y1;
-	} else {
-		// Sampling the 1x1 alpha pict out-of-bound while the X server is under
-		// heavy load, which it will be if blur is enabled, produces unpredictable
-		// results... This is a workaround for that.
-		mask_pict_origin = (ivec2){0, 0};
 	}
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
 	x_set_picture_clip_region(c, target->pict, 0, 0, args->target_mask);
