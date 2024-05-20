@@ -2256,6 +2256,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 	w->opacity = win_ctx.opacity;
 	if (w->previous.state == w->state && win_ctx.opacity_before == win_ctx.opacity) {
 		// No state changes, if there's a animation running, we just continue it.
+	advance_animation:
 		if (w->running_animation == NULL) {
 			return;
 		}
@@ -2351,7 +2352,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], w->base.id, w->name);
-		return;
+		goto advance_animation;
 	}
 
 	if (trigger == ANIMATION_TRIGGER_INVALID || ps->o.animations[trigger].script == NULL) {
