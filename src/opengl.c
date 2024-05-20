@@ -51,7 +51,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!ps->c.e.has_glx) {
 		log_error("No GLX extension.");
 		goto glx_init_end;
 	}

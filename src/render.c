@@ -1003,13 +1003,13 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 /// region_real = the damage region
 void paint_all(session_t *ps, struct managed_win *t) {
 	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
-		if (ps->xsync_exists && !x_fence_sync(&ps->c, ps->sync_fence)) {
+		if (ps->c.e.has_sync && !x_fence_sync(&ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
 			xcb_sync_destroy_fence(ps->c.c, ps->sync_fence);
 			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
-			ps->xsync_exists = false;
+			ps->c.e.has_sync = false;
 		}
 	}
 

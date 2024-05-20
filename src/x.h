@@ -55,6 +55,37 @@ typedef struct pending_reply {
 	enum pending_reply_action action;
 } pending_reply_t;
 
+struct x_extensions {
+	/// The X Damage extension's base event number.
+	int damage_event;
+	/// The X Damage extension's base error number.
+	int damage_error;
+	/// The X Fixes extension's base error number.
+	int fixes_error;
+	/// The X GLX extension's presence.
+	bool has_glx;
+	/// The X GLX extension's base error number.
+	int glx_error;
+	/// The X Present extension's presence.
+	bool has_present;
+	/// The X RandR extension's presence.
+	bool has_randr;
+	/// The X RandR extension's base event number.
+	int randr_event;
+	/// The X Render extension's base error number.
+	int render_error;
+	/// The X Shape extension's presence.
+	bool has_shape;
+	/// The X Shape extension's base event number.
+	int shape_event;
+	/// The X Sync extension's presence.
+	bool has_sync;
+	/// The X Sync extension's base event number.
+	int sync_event;
+	/// The X Sync extension's base error number.
+	int sync_error;
+};
+
 struct x_connection {
 	// Public fields
 	// These are part of the public ABI, changing these
@@ -76,6 +107,8 @@ struct x_connection {
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
 	xcb_screen_t *screen_info;
+	/// Information about the X extensions.
+	struct x_extensions e;
 };
 
 /// Monitor info
