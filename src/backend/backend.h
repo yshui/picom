@@ -128,13 +128,13 @@ struct backend_blit_args {
 	/// Scale factor for the horizontal and vertical direction (X for horizontal,
 	/// Y for vertical).
 	vec2 scale;
-	/// Corner radius of the source image. The corners of
+	/// Corner radius of the source image BEFORE scaling. The corners of
 	/// the source image will be rounded.
 	double corner_radius;
-	/// Effective size of the source image, set where the corners
+	/// Effective size of the source image BEFORE scaling, set where the corners
 	/// of the image are.
 	ivec2 effective_size;
-	/// Border width of the source image. This is used with
+	/// Border width of the source image BEFORE scaling. This is used with
 	/// `corner_radius` to create a border for the rounded corners.
 	/// Setting this has no effect if `corner_radius` is 0.
 	int border_width;

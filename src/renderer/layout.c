@@ -49,8 +49,7 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 	out_layer->window.origin =
 	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
 	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
-	out_layer->window.size = vec2_as((vec2){.width = w->widthb * out_layer->scale.x,
-	                                        .height = w->heightb * out_layer->scale.y});
+	out_layer->window.size = vec2_as((vec2){.width = w->widthb, .height = w->heightb});
 	out_layer->crop.origin = vec2_as((vec2){
 	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_X),
 	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_Y),
@@ -70,16 +69,19 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 		                   .y = w->g.y + w->shadow_dy +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
 		out_layer->shadow.size =
-		    vec2_as((vec2){.width = w->shadow_width * out_layer->shadow_scale.x,
-		                   .height = w->shadow_height * out_layer->shadow_scale.y});
+		    vec2_as((vec2){.width = w->shadow_width, .height = w->shadow_height});
 	} else {
 		out_layer->shadow.origin = (ivec2){};
 		out_layer->shadow.size = (ivec2){};
 		out_layer->shadow_scale = SCALE_IDENTITY;
 	}
 
+	struct ibox window_scaled = {
+	    .origin = out_layer->window.origin,
+	    .size = ivec2_scale_floor(out_layer->window.size, out_layer->scale),
+	};
 	struct ibox screen = {.origin = {0, 0}, .size = size};
-	if (!ibox_overlap(out_layer->window, screen) || !ibox_overlap(out_layer->crop, screen)) {
+	if (!ibox_overlap(window_scaled, screen) || !ibox_overlap(out_layer->crop, screen)) {
 		goto out;
 	}
 

@@ -96,6 +96,8 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
                    const struct win_option *wintype_options,
                    const struct x_monitors *monitors, const struct backend_command *end) {
 	auto w = layer->win;
+	auto shadow_size_scaled = vec2_as(
+	    vec2_floor(vec2_scale(ivec2_as(layer->shadow.size), layer->shadow_scale)));
 	if (!w->shadow) {
 		return 0;
 	}
@@ -105,8 +107,8 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	pixman_region32_clear(&cmd->target_mask);
 	pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
 	                           layer->shadow.origin.x, layer->shadow.origin.y,
-	                           (unsigned)layer->shadow.size.width,
-	                           (unsigned)layer->shadow.size.height);
+	                           (unsigned)shadow_size_scaled.width,
+	                           (unsigned)shadow_size_scaled.height);
 	log_trace("Calculate shadow for %#010x (%s)", w->base.id, w->name);
 	log_region(TRACE, &cmd->target_mask);
 	if (!wintype_options[w->window_type].full_shadow) {

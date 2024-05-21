@@ -140,6 +140,39 @@ safe_isinf(double a) {
 		(uint32_t) __to_tmp;                                                     \
 	})
 
+static inline uint16_t u64_to_u16_saturated(uint64_t val) {
+	if (val > UINT16_MAX) {
+		return UINT16_MAX;
+	}
+	return (uint16_t)val;
+}
+static inline uint16_t double_to_u16_saturated(double val) {
+	BUG_ON(safe_isnan(val));
+	if (val < 0) {
+		return 0;
+	}
+	if (val > UINT16_MAX) {
+		return UINT16_MAX;
+	}
+	return (uint16_t)val;
+}
+static inline uint16_t i64_to_u16_saturated(int64_t val) {
+	if (val < 0) {
+		return 0;
+	}
+	if (val > UINT16_MAX) {
+		return UINT16_MAX;
+	}
+	return (uint16_t)val;
+}
+
+#define to_u16_saturated(val)                                                            \
+	_Generic((val),                                                                  \
+	    double: double_to_u16_saturated,                                             \
+	    float: double_to_u16_saturated,                                              \
+	    uint64_t: u64_to_u16_saturated,                                              \
+	    default: i64_to_u16_saturated)((val))
+
 static inline int32_t double_to_i32_saturated(double val) {
 	BUG_ON(safe_isnan(val));
 	if (val < INT32_MIN) {
