@@ -96,11 +96,11 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
                    const struct win_option *wintype_options,
                    const struct x_monitors *monitors, const struct backend_command *end) {
 	auto w = layer->win;
-	auto shadow_size_scaled = vec2_as(
-	    vec2_floor(vec2_scale(ivec2_as(layer->shadow.size), layer->shadow_scale)));
 	if (!w->shadow) {
 		return 0;
 	}
+
+	auto shadow_size_scaled = ivec2_scale_floor(layer->shadow.size, layer->shadow_scale);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->shadow.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_SHADOW;
