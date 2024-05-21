@@ -140,6 +140,39 @@ safe_isinf(double a) {
 		(uint32_t) __to_tmp;                                                     \
 	})
 
+static inline int32_t double_to_i32_saturated(double val) {
+	BUG_ON(safe_isnan(val));
+	if (val < INT32_MIN) {
+		return INT32_MIN;
+	}
+	if (val > INT32_MAX) {
+		return INT32_MAX;
+	}
+	return (int32_t)val;
+}
+static inline int32_t u64_to_i32_saturated(uint64_t val) {
+	if (val > INT32_MAX) {
+		return INT32_MAX;
+	}
+	return (int32_t)val;
+}
+static inline int32_t i64_to_i32_saturated(int64_t val) {
+	if (val < INT32_MIN) {
+		return INT32_MIN;
+	}
+	if (val > INT32_MAX) {
+		return INT32_MAX;
+	}
+	return (int32_t)val;
+}
+
+#define to_i32_saturated(val)                                                            \
+	_Generic((val),                                                                  \
+	    double: double_to_i32_saturated,                                             \
+	    float: double_to_i32_saturated,                                              \
+	    uint64_t: u64_to_i32_saturated,                                              \
+	    default: i64_to_i32_saturated)((val))
+
 /* Are two types/vars the same type (ignoring qualifiers)? */
 #define is_same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
 

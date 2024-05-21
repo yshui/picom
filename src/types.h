@@ -60,6 +60,8 @@ struct ibox {
 	ivec2 size;
 };
 
+static const vec2 SCALE_IDENTITY = {1.0, 1.0};
+
 static inline ivec2 ivec2_add(ivec2 a, ivec2 b) {
 	return (ivec2){
 	    .x = a.x + b.x,

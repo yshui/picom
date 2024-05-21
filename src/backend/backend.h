@@ -142,8 +142,6 @@ struct backend_blit_args {
 	bool color_inverted;
 };
 
-static const vec2 SCALE_IDENTITY = {1.0, 1.0};
-
 enum backend_image_format {
 	/// A format that can be used for normal rendering, and binding
 	/// X pixmaps.
