@@ -15,14 +15,12 @@
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
 
-#include "uthash_extra.h"
-
 #include <libconfig.h>
 
 #include "compiler.h"
 #include "kernel.h"
+#include "list.h"
 #include "log.h"
-#include "region.h"
 #include "types.h"
 #include "win_defs.h"
 
@@ -141,11 +139,18 @@ struct debug_options {
 
 extern struct debug_options global_debug_options;
 
+struct included_config_file {
+	char *path;
+	struct list_node siblings;
+};
+
 /// Structure representing all options.
 typedef struct options {
 	// === Config ===
 	/// Path to the config file
 	char *config_file_path;
+	/// List of config files included by the main config file
+	struct list_node included_config_files;
 	// === Debugging ===
 	bool monitor_repaint;
 	bool print_diagnostics;

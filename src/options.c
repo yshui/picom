@@ -955,6 +955,13 @@ void options_destroy(struct options *options) {
 	}
 	free(options->all_scripts);
 	memset(options->animations, 0, sizeof(options->animations));
+
+	list_foreach_safe(struct included_config_file, i, &options->included_config_files,
+	                  siblings) {
+		free(i->path);
+		list_remove(&i->siblings);
+		free(i);
+	}
 }
 
 // vim: set noet sw=8 ts=8 :

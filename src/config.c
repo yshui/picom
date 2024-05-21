@@ -712,5 +712,6 @@ bool parse_config(options_t *opt, const char *config_file) {
 	};
 	// clang-format on
 
+	list_init_head(&opt->included_config_files);
 	return parse_config_libconfig(opt, config_file);
 }
