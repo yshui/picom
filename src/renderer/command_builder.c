@@ -50,8 +50,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	if (w->corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
-	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
-	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
+	region_scale_floor(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale_floor(&cmd->opaque_region, layer->window.origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 	pixman_region32_intersect(&cmd->opaque_region, &cmd->opaque_region, &crop);
 	cmd->op = BACKEND_COMMAND_BLIT;
@@ -76,7 +76,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd -= 1;
 
 	pixman_region32_copy(&cmd->target_mask, frame_region);
-	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
+	region_scale_floor(&cmd->target_mask, cmd->origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 	pixman_region32_init(&cmd->opaque_region);
 	cmd->op = BACKEND_COMMAND_BLIT;
@@ -99,14 +99,16 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	if (!w->shadow) {
 		return 0;
 	}
+
+	auto shadow_size_scaled = ivec2_scale_floor(layer->shadow.size, layer->shadow_scale);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->shadow.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_SHADOW;
 	pixman_region32_clear(&cmd->target_mask);
 	pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
 	                           layer->shadow.origin.x, layer->shadow.origin.y,
-	                           (unsigned)layer->shadow.size.width,
-	                           (unsigned)layer->shadow.size.height);
+	                           (unsigned)shadow_size_scaled.width,
+	                           (unsigned)shadow_size_scaled.height);
 	log_trace("Calculate shadow for %#010x (%s)", w->base.id, w->name);
 	log_region(TRACE, &cmd->target_mask);
 	if (!wintype_options[w->window_type].full_shadow) {
@@ -176,7 +178,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	} else {
 		return 0;
 	}
-	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale_floor(&cmd->target_mask, layer->window.origin, layer->scale);
 
 	scoped_region_t crop = region_from_box(layer->crop);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);

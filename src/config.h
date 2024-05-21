@@ -15,14 +15,12 @@
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
 
-#include "uthash_extra.h"
-
 #include <libconfig.h>
 
 #include "compiler.h"
 #include "kernel.h"
+#include "list.h"
 #include "log.h"
-#include "region.h"
 #include "types.h"
 #include "win_defs.h"
 
@@ -149,8 +147,18 @@ struct debug_options {
 
 extern struct debug_options global_debug_options;
 
+struct included_config_file {
+	char *path;
+	struct list_node siblings;
+};
+
 /// Structure representing all options.
 typedef struct options {
+	// === Config ===
+	/// Path to the config file
+	char *config_file_path;
+	/// List of config files included by the main config file
+	struct list_node included_config_files;
 	// === Debugging ===
 	bool monitor_repaint;
 	bool print_diagnostics;
@@ -378,13 +386,13 @@ char **xdg_config_dirs(void);
 ///   win_option_mask = whether option overrides for specific window type is set for given
 ///                     options
 ///   hasneg = whether the convolution kernel has negative values
-char *parse_config_libconfig(options_t *, const char *config_file);
+bool parse_config_libconfig(options_t *, const char *config_file);
 
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
-char *parse_config(options_t *, const char *config_file);
+bool parse_config(options_t *, const char *config_file);
 
 /**
  * Parse a backend option argument.

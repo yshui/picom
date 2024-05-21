@@ -29,9 +29,9 @@ struct layer {
 	struct managed_win *win;
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
-	/// Window rectangle in screen coordinates.
+	/// Window rectangle in screen coordinates, before it's scaled.
 	struct ibox window;
-	/// Shadow rectangle in screen coordinates.
+	/// Shadow rectangle in screen coordinates, before it's scaled.
 	struct ibox shadow;
 	/// Scale of the window. The origin of scaling is the top left corner of the
 	/// window.

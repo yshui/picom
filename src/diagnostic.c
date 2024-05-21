@@ -32,7 +32,15 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 #ifdef __FAST_MATH__
 	printf("* Fast Math: Yes\n");
 #endif
-	printf("* Config file used: %s\n", config_file ?: "None");
+	printf("* Config file specified: %s\n", config_file ?: "None");
+	printf("* Config file used: %s\n", ps->o.config_file_path ?: "None");
+	if (!list_is_empty(&ps->o.included_config_files)) {
+		printf("* Included config files:\n");
+		list_foreach(struct included_config_file, i, &ps->o.included_config_files,
+		             siblings) {
+			printf("  - %s\n", i->path);
+		}
+	}
 	printf("\n### Drivers (inaccurate):\n\n");
 	print_drivers(ps->drivers);
 

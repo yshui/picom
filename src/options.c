@@ -939,6 +939,7 @@ void options_destroy(struct options *options) {
 	c2_list_free(&options->window_shader_fg_rules, free);
 	c2_list_free(&options->transparent_clipping_blacklist, NULL);
 
+	free(options->config_file_path);
 	free(options->write_pid_path);
 	free(options->logpath);
 
@@ -954,6 +955,13 @@ void options_destroy(struct options *options) {
 	}
 	free(options->all_scripts);
 	memset(options->animations, 0, sizeof(options->animations));
+
+	list_foreach_safe(struct included_config_file, i, &options->included_config_files,
+	                  siblings) {
+		free(i->path);
+		list_remove(&i->siblings);
+		free(i);
+	}
 }
 
 // vim: set noet sw=8 ts=8 :

@@ -302,8 +302,8 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	bool has_alpha = inner->has_alpha || args->opacity != 1;
 	auto const tmpw = to_u16_checked(inner->size.width);
 	auto const tmph = to_u16_checked(inner->size.height);
-	auto const tmpew = to_u16_checked(args->effective_size.width);
-	auto const tmpeh = to_u16_checked(args->effective_size.height);
+	auto const tmpew = to_u16_saturated(args->effective_size.width * args->scale.x);
+	auto const tmpeh = to_u16_saturated(args->effective_size.height * args->scale.y);
 	const xcb_render_color_t dim_color = {
 	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * args->dim)};
 
@@ -346,8 +346,25 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 		auto tmp_pict = x_create_picture_with_pictfmt(
 		    xd->base.c, inner->size.width, inner->size.height, pictfmt, depth, 0, NULL);
 
-		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-origin.x),
-		                          to_i16_checked(-origin.y), args->target_mask);
+		vec2 inverse_scale = (vec2){
+		    .x = 1.0 / args->scale.x,
+		    .y = 1.0 / args->scale.y,
+		};
+		if (vec2_eq(args->scale, SCALE_IDENTITY)) {
+			x_set_picture_clip_region(
+			    xd->base.c, tmp_pict, to_i16_checked(-origin.x),
+			    to_i16_checked(-origin.y), args->target_mask);
+		} else {
+			// We need to scale the target_mask back so it's in the source's
+			// coordinate space.
+			scoped_region_t source_mask_region;
+			pixman_region32_init(&source_mask_region);
+			pixman_region32_copy(&source_mask_region, args->target_mask);
+			region_scale_ceil(&source_mask_region, origin, inverse_scale);
+			x_set_picture_clip_region(
+			    xd->base.c, tmp_pict, to_i16_checked(-origin.x),
+			    to_i16_checked(-origin.y), &source_mask_region);
+		}
 		// Copy source -> tmp
 		xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC, inner->pict,
 		                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
@@ -398,6 +415,10 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 		}
 
 		set_picture_scale(xd->base.c, tmp_pict, args->scale);
+		// Transformations don't affect the picture's clip region, so we need to
+		// set it again
+		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-origin.x),
+		                          to_i16_checked(-origin.y), args->target_mask);
 
 		xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
 		                     mask_pict, target->pict, 0, 0, mask_pict_dst_x,

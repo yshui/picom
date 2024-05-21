@@ -60,6 +60,15 @@ struct ibox {
 	ivec2 size;
 };
 
+static const vec2 SCALE_IDENTITY = {1.0, 1.0};
+
+static inline vec2 ivec2_as(ivec2 a) {
+	return (vec2){
+	    .x = a.x,
+	    .y = a.y,
+	};
+}
+
 static inline ivec2 ivec2_add(ivec2 a, ivec2 b) {
 	return (ivec2){
 	    .x = a.x + b.x,
@@ -90,6 +99,27 @@ static inline ivec2 vec2_as(vec2 a) {
 	return (ivec2){
 	    .x = (int)fmin(fmax(a.x, INT_MIN), INT_MAX),
 	    .y = (int)fmin(fmax(a.y, INT_MIN), INT_MAX),
+	};
+}
+
+static inline vec2 vec2_add(vec2 a, vec2 b) {
+	return (vec2){
+	    .x = a.x + b.x,
+	    .y = a.y + b.y,
+	};
+}
+
+static inline vec2 vec2_ceil(vec2 a) {
+	return (vec2){
+	    .x = ceil(a.x),
+	    .y = ceil(a.y),
+	};
+}
+
+static inline vec2 vec2_floor(vec2 a) {
+	return (vec2){
+	    .x = floor(a.x),
+	    .y = floor(a.y),
 	};
 }
 
@@ -124,6 +154,16 @@ static inline bool ibox_overlap(struct ibox a, struct ibox b) {
 
 static inline bool ibox_eq(struct ibox a, struct ibox b) {
 	return ivec2_eq(a.origin, b.origin) && ivec2_eq(a.size, b.size);
+}
+
+static inline ivec2 ivec2_scale_ceil(ivec2 a, vec2 scale) {
+	vec2 scaled = vec2_scale(ivec2_as(a), scale);
+	return vec2_as(vec2_ceil(scaled));
+}
+
+static inline ivec2 ivec2_scale_floor(ivec2 a, vec2 scale) {
+	vec2 scaled = vec2_scale(ivec2_as(a), scale);
+	return vec2_as(vec2_floor(scaled));
 }
 
 #define MARGIN_INIT                                                                      \
