@@ -13,7 +13,6 @@
 #include "c2.h"
 #include "common.h"
 #include "config.h"
-#include "err.h"
 #include "log.h"
 #include "script.h"
 #include "string_utils.h"
@@ -561,9 +560,9 @@ static const char **resolve_include(config_t * /* cfg */, const char *include_di
 /**
  * Parse a configuration file from default location.
  *
- * Returns the actually config_file name
+ * Returns if config is successfully parsed.
  */
-char *parse_config_libconfig(options_t *opt, const char *config_file) {
+bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
@@ -578,15 +577,17 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	// libconfig manages string memory itself, so no need to manually free
 	// anything
 	const char *sval = NULL;
+	bool succeeded = false;
 
 	f = open_config_file(config_file, &path);
 	if (!f) {
 		free(path);
 		if (config_file) {
 			log_fatal("Failed to read configuration file \"%s\".", config_file);
-			return ERR_PTR(-1);
+			return false;
 		}
-		return NULL;
+		// No config file found, but that's OK.
+		return true;
 	}
 
 	config_init(&cfg);
@@ -613,7 +614,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 			log_fatal("Error when reading configuration file \"%s\", line "
 			          "%d: %s",
 			          path, config_error_line(&cfg), config_error_text(&cfg));
-			goto err;
+			goto out;
 		}
 	}
 	config_set_auto_convert(&cfg, 1);
@@ -699,7 +700,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval)) {
 		log_error("shadow-exclude-reg is deprecated. Please use "
 		          "clip-shadow-above for more flexible shadow exclusion.");
-		goto err;
+		goto out;
 	}
 	// --inactive-opacity-override
 	lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override);
@@ -731,7 +732,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		log_error("vsync option will take a boolean from now on. \"%s\" in "
 		          "your configuration should be changed to \"%s\"",
 		          sval, parsed_vsync ? "true" : "false");
-		goto err;
+		goto out;
 	}
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
@@ -739,7 +740,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		opt->backend = parse_backend(sval);
 		if (opt->backend >= NUM_BKEND) {
 			log_fatal("Cannot parse backend");
-			goto err;
+			goto out;
 		}
 	}
 	// --log-level
@@ -762,7 +763,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	// --sw-opti
 	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
 		log_error("The sw-opti %s", deprecation_message);
-		goto err;
+		goto out;
 	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
@@ -807,7 +808,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	    !parse_cfg_condlst_with_prefix(
 	        &opt->window_shader_fg_rules, &cfg, "window-shader-fg-rule",
 	        parse_window_shader_prefix, free, (void *)config_get_include_dir(&cfg))) {
-		goto err;
+		goto out;
 	}
 
 	// --blur-method
@@ -815,7 +816,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		int method = parse_blur_method(sval);
 		if (method >= BLUR_METHOD_INVALID) {
 			log_fatal("Invalid blur method %s", sval);
-			goto err;
+			goto out;
 		}
 		opt->blur_method = (enum blur_method)method;
 	}
@@ -840,7 +841,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		opt->blur_kerns = parse_blur_kern_lst(sval, &opt->blur_kernel_count);
 		if (!opt->blur_kerns) {
 			log_fatal("Cannot parse \"blur-kern\"");
-			goto err;
+			goto out;
 		}
 	}
 	// --resize-damage
@@ -868,7 +869,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		          "\"%s\" should be %s.",
 		          sval,
 		          !should_remove ? "replaced by `use-damage = true`" : "removed");
-		goto err;
+		goto out;
 	}
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
@@ -891,7 +892,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
 		log_error("glx-use-gpushader4 has been removed, please remove it "
 		          "from your config file");
-		goto err;
+		goto out;
 	}
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
@@ -952,11 +953,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 		    parse_animations(opt->animations, animations, &opt->number_of_scripts);
 	}
 
-	config_destroy(&cfg);
-	return path;
+	opt->config_file_path = path;
+	path = NULL;
+	succeeded = true;
 
-err:
+out:
 	config_destroy(&cfg);
 	free(path);
-	return ERR_PTR(-1);
+	return succeeded;
 }

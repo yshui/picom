@@ -143,6 +143,9 @@ extern struct debug_options global_debug_options;
 
 /// Structure representing all options.
 typedef struct options {
+	// === Config ===
+	/// Path to the config file
+	char *config_file_path;
 	// === Debugging ===
 	bool monitor_repaint;
 	bool print_diagnostics;
@@ -370,13 +373,13 @@ char **xdg_config_dirs(void);
 ///   win_option_mask = whether option overrides for specific window type is set for given
 ///                     options
 ///   hasneg = whether the convolution kernel has negative values
-char *parse_config_libconfig(options_t *, const char *config_file);
+bool parse_config_libconfig(options_t *, const char *config_file);
 
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
-char *parse_config(options_t *, const char *config_file);
+bool parse_config(options_t *, const char *config_file);
 
 /**
  * Parse a backend option argument.

@@ -32,7 +32,8 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 #ifdef __FAST_MATH__
 	printf("* Fast Math: Yes\n");
 #endif
-	printf("* Config file used: %s\n", config_file ?: "None");
+	printf("* Config file specified: %s\n", config_file ?: "None");
+	printf("* Config file used: %s\n", ps->o.config_file_path ?: "None");
 	printf("\n### Drivers (inaccurate):\n\n");
 	print_drivers(ps->drivers);
 

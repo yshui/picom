@@ -171,11 +171,8 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 
 	xcb_prefetch_extension_data(c.c, &xcb_shape_id);
 
-	char *config_file_to_free = NULL;
 	struct options options;
-	config_file = config_file_to_free = parse_config(&options, config_file);
-
-	if (IS_ERR(config_file_to_free)) {
+	if (!parse_config(&options, config_file)) {
 		return 1;
 	}
 
@@ -255,7 +252,6 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	free(w);
 
 	log_deinit_tls();
-	free(config_file_to_free);
 	c2_state_free(state);
 	destroy_atoms(atoms);
 	options_destroy(&options);

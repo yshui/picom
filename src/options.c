@@ -939,6 +939,7 @@ void options_destroy(struct options *options) {
 	c2_list_free(&options->window_shader_fg_rules, free);
 	c2_list_free(&options->transparent_clipping_blacklist, NULL);
 
+	free(options->config_file_path);
 	free(options->write_pid_path);
 	free(options->logpath);
 

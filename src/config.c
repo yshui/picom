@@ -632,7 +632,7 @@ void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, voi
 	return parse_window_shader_prefix(src, end, cwd);
 }
 
-char *parse_config(options_t *opt, const char *config_file) {
+bool parse_config(options_t *opt, const char *config_file) {
 	// clang-format off
 	*opt = (struct options){
 	    .backend = BKEND_XRENDER,
@@ -712,7 +712,5 @@ char *parse_config(options_t *opt, const char *config_file) {
 	};
 	// clang-format on
 
-	char *ret = NULL;
-	ret = parse_config_libconfig(opt, config_file);
-	return ret;
+	return parse_config_libconfig(opt, config_file);
 }
