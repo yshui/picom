@@ -93,7 +93,7 @@ const char masking_glsl[] = GLSL(330,
 		vec2 maskcoord = texcoord - mask_offset;
 		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
 		if (mask_corner_radius != 0) {
-			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
+			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f - 1;
 			float dist = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
 			    inner_size / 2.0f) - mask_corner_radius;
 			if (dist > 0.0f) {
