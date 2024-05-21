@@ -2363,6 +2363,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		if (ps->file_watch_handle) {
 			file_watch_add(ps->file_watch_handle, ps->o.config_file_path,
 			               config_file_change_cb, ps);
+			list_foreach(struct included_config_file, i,
+			             &ps->o.included_config_files, siblings) {
+				file_watch_add(ps->file_watch_handle, i->path,
+				               config_file_change_cb, ps);
+			}
 		}
 	}
 
