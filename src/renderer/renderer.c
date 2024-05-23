@@ -648,8 +648,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		pixman_region32_fini(&region);
 	}
 
-	if (backend->ops->present) {
-		backend->ops->present(backend);
+	if (backend->ops->present && !backend->ops->present(backend)) {
+		log_warn("Failed to present the frame");
 	}
 
 	// "Un-cull" the render commands, so later damage calculation using those commands
