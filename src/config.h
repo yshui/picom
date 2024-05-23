@@ -354,6 +354,8 @@ typedef struct options {
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
+bool load_plugin(const char *name, const char *include_dir);
+
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, int *count);

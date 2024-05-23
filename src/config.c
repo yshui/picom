@@ -3,13 +3,11 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
 #include <ctype.h>
-#include <errno.h>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,16 +18,11 @@
 
 #include <test.h>
 
-#include "c2.h"
 #include "common.h"
-#include "compiler.h"
 #include "kernel.h"
 #include "log.h"
-#include "region.h"
 #include "string_utils.h"
 #include "types.h"
-#include "utils.h"
-#include "win.h"
 
 #include "config.h"
 
@@ -630,6 +623,18 @@ void *parse_window_shader_prefix(const char *src, const char **end, void *user_d
 void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, void *) {
 	scoped_charp cwd = getcwd(NULL, 0);
 	return parse_window_shader_prefix(src, end, cwd);
+}
+
+bool load_plugin(const char *name, const char *include_dir) {
+	scoped_charp path = locate_auxiliary_file("plugins", optarg, include_dir);
+	void *handle = NULL;
+	if (!path) {
+		handle = dlopen(name, RTLD_LAZY);
+	} else {
+		log_debug("Plugin %s resolved to %s", name, path);
+		handle = dlopen(path, RTLD_LAZY);
+	}
+	return handle != NULL;
 }
 
 bool parse_config(options_t *opt, const char *config_file) {

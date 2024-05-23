@@ -26,6 +26,7 @@
       ! fullscreen
       border_width = 0
   ```
+* picom now has a rudimentary plugin system. At the moment, the only thing you can do with it is loading custom backends.
 
 ## Notable changes
 

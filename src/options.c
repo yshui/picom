@@ -332,6 +332,7 @@ static const struct picom_option picom_options[] = {
     [314] = {"show-all-xerrors", IGNORE(no_argument)},
     ['b'] = {"daemon"          , IGNORE(no_argument)      , "Daemonize process."},
     [256] = {"config"          , IGNORE(required_argument), "Path to the configuration file."},
+    [307] = {"plugins"         , IGNORE(required_argument), "Plugins to load. Can be specified multiple times, each time with a single plugin."},
 
     // Simple flags
     ['c'] = {"shadow"                   , ENABLE(shadow_enable)            , "Enabled client-side shadows on windows."},
@@ -691,6 +692,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
                       bool *fork, int *exit_code) {
 	setup_longopts();
 
+	scoped_charp current_working_dir = getcwd(NULL, 0);
 	int o = 0, longopt_idx = -1;
 
 	// Pre-parse the command line arguments to check for --config and invalid
@@ -706,7 +708,6 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'h') {
 			usage(argv[0], 0);
 			return true;
-
 		} else if (o == 'b') {
 			*fork = true;
 		} else if (o == 314) {
@@ -714,10 +715,17 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 318) {
 			printf("%s\n", PICOM_VERSION);
 			return true;
+		} else if (o == 307) {
+			// --plugin
+			if (!load_plugin(optarg, current_working_dir)) {
+				log_error("Failed to load plugin %s", optarg);
+				goto err;
+			}
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
 			goto err;
 		}
+		// TODO(yshui) maybe log-level should be handled here.
 	}
 
 	// Check for abundant positional arguments
