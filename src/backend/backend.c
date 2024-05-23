@@ -21,9 +21,10 @@ static struct backend_info {
 	bool can_present;
 } *backend_registry = NULL;
 
-bool backend_register(uint64_t major, uint64_t minor, const char *name,
-                      struct backend_base *(*init)(session_t *ps, xcb_window_t target),
-                      bool can_present) {
+bool PICOM_PUBLIC_API backend_register(uint64_t major, uint64_t minor, const char *name,
+                                       struct backend_base *(*init)(session_t *ps,
+                                                                    xcb_window_t target),
+                                       bool can_present) {
 	if (major != PICOM_BACKEND_MAJOR) {
 		log_error("Backend %s has incompatible major version %" PRIu64
 		          ", expected %lu",

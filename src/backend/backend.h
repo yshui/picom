@@ -463,9 +463,10 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 /// `name` is the name of the backend, `init` is the function to initialize the backend,
 /// `can_present` should be true if the backend can present the back buffer to the screen,
 /// false otherwise (e.g. if the backend does off screen rendering, etc.)
-bool backend_register(uint64_t major, uint64_t minor, const char *name,
-                      struct backend_base *(*init)(session_t *ps, xcb_window_t target),
-                      bool can_present);
+bool PICOM_PUBLIC_API backend_register(uint64_t major, uint64_t minor, const char *name,
+                                       struct backend_base *(*init)(session_t *ps,
+                                                                    xcb_window_t target),
+                                       bool can_present);
 struct backend_info *backend_find(const char *name);
 struct backend_base *
 backend_init(struct backend_info *info, session_t *ps, xcb_window_t target);

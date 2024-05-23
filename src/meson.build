@@ -86,7 +86,8 @@ subdir('backend')
 
 picom = executable('picom', srcs, c_args: cflags,
   dependencies: [ base_deps, deps, test_h_dep ],
-  install: true, include_directories: picom_inc)
+  install: true, include_directories: picom_inc,
+  export_dynamic: true, gnu_symbol_visibility: 'hidden')
 
 if get_option('unittest')
 	test('picom unittest', picom, args: [ '--unittest' ])
