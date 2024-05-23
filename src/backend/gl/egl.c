@@ -76,10 +76,9 @@ static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 void egl_deinit(backend_t *base) {
 	struct egl_data *gd = (void *)base;
 
-	gl_deinit(&gd->gl);
-
 	// Destroy EGL context
 	if (gd->ctx != EGL_NO_CONTEXT) {
+		gl_deinit(&gd->gl);
 		eglMakeCurrent(gd->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 		eglDestroyContext(gd->display, gd->ctx);
 		gd->ctx = EGL_NO_CONTEXT;
