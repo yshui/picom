@@ -521,6 +521,14 @@ static int glx_max_buffer_age(struct backend_base *base attr_unused) {
 	return 5;        // Why?
 }
 
+#define PICOM_BACKEND_GLX_MAJOR (0UL)
+#define PICOM_BACKEND_GLX_MINOR (1UL)
+
+static void glx_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_GLX_MAJOR;
+	*minor = PICOM_BACKEND_GLX_MINOR;
+}
+
 struct backend_operations glx_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
@@ -535,6 +543,7 @@ struct backend_operations glx_ops = {
     .new_image = gl_new_image,
     .present = glx_present,
     .quirks = backend_no_quirks,
+    .version = glx_version,
     .release_image = gl_release_image,
 
     .init = glx_init,

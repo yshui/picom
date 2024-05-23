@@ -208,6 +208,14 @@ static int dummy_max_buffer_age(struct backend_base *base attr_unused) {
 	return 5;
 }
 
+#define PICOM_BACKEND_DUMMY_MAJOR (0UL)
+#define PICOM_BACKEND_DUMMY_MINOR (1UL)
+
+static void dummy_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_DUMMY_MAJOR;
+	*minor = PICOM_BACKEND_DUMMY_MINOR;
+}
+
 struct backend_operations dummy_ops = {
     .apply_alpha = dummy_apply_alpha,
     .back_buffer = dummy_back_buffer,
@@ -221,6 +229,7 @@ struct backend_operations dummy_ops = {
     .new_image = dummy_new_image,
     .bind_pixmap = dummy_bind_pixmap,
     .quirks = backend_no_quirks,
+    .version = dummy_version,
     .release_image = dummy_release_image,
 
     .init = dummy_init,

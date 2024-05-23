@@ -418,6 +418,10 @@ struct backend_operations {
 	/// @return a bitmask of `enum backend_quirk`.
 	uint32_t (*quirks)(struct backend_base *backend_data) __attribute__((nonnull(1)));
 
+	/// Get the version of the backend
+	void (*version)(struct backend_base *backend_data, uint64_t *major, uint64_t *minor)
+	    __attribute__((nonnull(1, 2, 3)));
+
 	/// Check if an optional image format is supported by the backend.
 	bool (*is_format_supported)(struct backend_base *backend_data,
 	                            enum backend_image_format format)

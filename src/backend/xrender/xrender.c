@@ -1024,6 +1024,14 @@ static int xrender_max_buffer_age(struct backend_base *base) {
 	return ((struct xrender_data *)base)->vsync ? 2 : 1;
 }
 
+#define PICOM_BACKEND_XRENDER_MAJOR (0UL)
+#define PICOM_BACKEND_XRENDER_MINOR (1UL)
+
+static void xrender_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_XRENDER_MAJOR;
+	*minor = PICOM_BACKEND_XRENDER_MINOR;
+}
+
 struct backend_operations xrender_ops = {
     .apply_alpha = xrender_apply_alpha,
     .back_buffer = xrender_back_buffer,
@@ -1038,6 +1046,7 @@ struct backend_operations xrender_ops = {
     .new_image = xrender_new_image,
     .present = xrender_present,
     .quirks = xrender_quirks,
+    .version = xrender_version,
     .release_image = xrender_release_image,
 
     .init = xrender_init,
