@@ -339,6 +339,14 @@ static void egl_diagnostics(backend_t *base) {
 	}
 }
 
+static int egl_max_buffer_age(backend_t *base attr_unused) {
+	if (!eglext.has_EGL_EXT_buffer_age) {
+		return 0;
+	}
+
+	return 5;        // Why?
+}
+
 struct backend_operations egl_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
@@ -369,7 +377,7 @@ struct backend_operations egl_ops = {
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,
     .get_shader_attributes = gl_get_shader_attributes,
-    .max_buffer_age = 5,        // Why?
+    .max_buffer_age = egl_max_buffer_age,
 };
 
 struct eglext_info eglext = {0};

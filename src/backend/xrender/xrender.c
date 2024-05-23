@@ -1020,6 +1020,10 @@ uint32_t xrender_quirks(struct backend_base *base) {
 	return ((struct xrender_data *)base)->quirks;
 }
 
+static int xrender_max_buffer_age(struct backend_base *base) {
+	return ((struct xrender_data *)base)->vsync ? 2 : 1;
+}
+
 struct backend_operations xrender_ops = {
     .apply_alpha = xrender_apply_alpha,
     .back_buffer = xrender_back_buffer,
@@ -1042,7 +1046,7 @@ struct backend_operations xrender_ops = {
     //             `render_shadow`, and `backend_compat_shadow_from_mask` for
     //             `shadow_from_mask`
     .buffer_age = xrender_buffer_age,
-    .max_buffer_age = 2,
+    .max_buffer_age = xrender_max_buffer_age,
     .create_blur_context = xrender_create_blur_context,
     .destroy_blur_context = xrender_destroy_blur_context,
     .get_blur_size = xrender_get_blur_size

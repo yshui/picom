@@ -517,6 +517,10 @@ static void glx_diagnostics(backend_t *base) {
 	}
 }
 
+static int glx_max_buffer_age(struct backend_base *base attr_unused) {
+	return 5;        // Why?
+}
+
 struct backend_operations glx_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
@@ -547,7 +551,7 @@ struct backend_operations glx_ops = {
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,
     .get_shader_attributes = gl_get_shader_attributes,
-    .max_buffer_age = 5,        // Why?
+    .max_buffer_age = glx_max_buffer_age,
 };
 
 struct glxext_info glxext = {0};

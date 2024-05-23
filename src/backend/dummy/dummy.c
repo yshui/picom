@@ -204,6 +204,10 @@ bool dummy_is_format_supported(struct backend_base *base attr_unused,
 	return true;
 }
 
+static int dummy_max_buffer_age(struct backend_base *base attr_unused) {
+	return 5;
+}
+
 struct backend_operations dummy_ops = {
     .apply_alpha = dummy_apply_alpha,
     .back_buffer = dummy_back_buffer,
@@ -222,7 +226,7 @@ struct backend_operations dummy_ops = {
     .init = dummy_init,
     .deinit = dummy_deinit,
     .buffer_age = dummy_buffer_age,
-    .max_buffer_age = 5,
+    .max_buffer_age = dummy_max_buffer_age,
 
     .create_blur_context = dummy_create_blur_context,
     .destroy_blur_context = dummy_destroy_blur_context,

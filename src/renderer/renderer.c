@@ -154,7 +154,7 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 		}
 		sum_kernel_preprocess(renderer->shadow_kernel);
 	}
-	renderer->max_buffer_age = backend->ops->max_buffer_age + 1;
+	renderer->max_buffer_age = backend->ops->max_buffer_age(backend) + 1;
 	return true;
 }
 

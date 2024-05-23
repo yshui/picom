@@ -450,7 +450,7 @@ struct backend_operations {
 	bool (*last_render_time)(backend_t *backend_data, struct timespec *ts);
 
 	/// The maximum number buffer_age might return.
-	int max_buffer_age;
+	int (*max_buffer_age)(backend_t *backend_data);
 
 	// ===========    Post-processing   ============
 	/// Create a blur context that can be used to call `blur` for images with a

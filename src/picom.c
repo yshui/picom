@@ -437,7 +437,7 @@ void add_damage(session_t *ps, const region_t *damage) {
 		return;
 	}
 
-	if (!damage) {
+	if (!damage || ps->damage_ring.count <= 0) {
 		return;
 	}
 	log_trace("Adding damage: ");
@@ -1418,9 +1418,9 @@ static bool redirect_start(session_t *ps) {
 
 	if (!ps->o.use_legacy_backends) {
 		assert(ps->backend_data);
-		ps->damage_ring.count = ps->backend_data->ops->max_buffer_age;
-		ps->layout_manager =
-		    layout_manager_new((unsigned)ps->backend_data->ops->max_buffer_age);
+		ps->damage_ring.count =
+		    ps->backend_data->ops->max_buffer_age(ps->backend_data);
+		ps->layout_manager = layout_manager_new((unsigned)ps->damage_ring.count);
 	} else {
 		ps->damage_ring.count = maximum_buffer_age(ps);
 	}
