@@ -41,6 +41,7 @@
 #include <picom/types.h>
 #include <test.h>
 
+#include "api_internal.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -660,6 +661,7 @@ static bool initialize_backend(session_t *ps) {
 		// Reinitialize win_data
 		ps->backend_data =
 		    backend_init(ps->o.backend, ps, session_get_target_window(ps));
+		api_backend_plugins_invoke(backend_name(ps->o.backend), ps->backend_data);
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
 			quit(ps);
