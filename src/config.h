@@ -158,11 +158,13 @@ typedef struct options {
 	bool debug_mode;
 	// === General ===
 	/// Use the legacy backends?
-	bool legacy_backends;
+	bool use_legacy_backends;
 	/// Path to write PID to.
 	char *write_pid_path;
-	/// The backend in use.
-	int backend;
+	/// Name of the backend
+	struct backend_info *backend;
+	/// The backend in use (for legacy backends).
+	int legacy_backend;
 	/// Log level.
 	int log_level;
 	/// Whether to sync X drawing with X Sync fence to avoid certain delay
@@ -407,7 +409,6 @@ static inline attr_pure int parse_backend(const char *str) {
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
-	log_error("Invalid backend argument: %s", str);
 	return NUM_BKEND;
 }
 

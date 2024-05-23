@@ -120,6 +120,8 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 		return NULL;
 	}
 
+	log_warn("The egl backend is still experimental, use with care.");
+
 	gd = ccalloc(1, struct egl_data);
 	gd->display = eglGetPlatformDisplayEXT(EGL_PLATFORM_X11_EXT, ps->c.dpy,
 	                                       (EGLint[]){
@@ -388,4 +390,11 @@ void eglext_init(EGLDisplay dpy) {
 	check_ext(EGL_MESA_query_driver);
 #endif
 #undef check_ext
+}
+
+BACKEND_ENTRYPOINT(egl_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "egl",
+	                      egl_ops.init, true)) {
+		log_error("Failed to register egl backend");
+	}
 }

@@ -13,6 +13,10 @@
 #include "types.h"
 #include "x.h"
 
+#define PICOM_BACKEND_MAJOR (1UL)
+#define PICOM_BACKEND_MINOR (0UL)
+#define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
+
 typedef struct session session_t;
 struct managed_win;
 
@@ -450,12 +454,30 @@ struct backend_operations {
 
 	enum device_status (*device_status)(backend_t *backend_data);
 };
-
-extern struct backend_operations *backend_list[];
-
+struct backend_info;
 bool backend_execute(struct backend_base *backend, image_handle target, unsigned ncmds,
                      const struct backend_command cmds[ncmds]);
+
+/// Register a new backend, `major` and `minor` should be the version of the picom backend
+/// interface. You should just pass `PICOM_BACKEND_MAJOR` and `PICOM_BACKEND_MINOR` here.
+/// `name` is the name of the backend, `init` is the function to initialize the backend,
+/// `can_present` should be true if the backend can present the back buffer to the screen,
+/// false otherwise (e.g. if the backend does off screen rendering, etc.)
+bool backend_register(uint64_t major, uint64_t minor, const char *name,
+                      struct backend_base *(*init)(session_t *ps, xcb_window_t target),
+                      bool can_present);
+struct backend_info *backend_find(const char *name);
+struct backend_base *
+backend_init(struct backend_info *info, session_t *ps, xcb_window_t target);
+struct backend_info *backend_iter(void);
+struct backend_info *backend_iter_next(struct backend_info *info);
+const char *backend_name(struct backend_info *info);
+bool backend_can_present(struct backend_info *info);
 void log_backend_command_(enum log_level level, const char *func,
                           const struct backend_command *cmd);
 #define log_backend_command(level, cmd)                                                  \
 	log_backend_command_(LOG_LEVEL_##level, __func__, &(cmd));
+
+/// Define a backend entry point. (Note constructor priority 202 is used here because 1xx
+/// is reversed by test.h, and 201 is used for logging initialization.)
+#define BACKEND_ENTRYPOINT(func) static void __attribute__((constructor(202))) func(void)

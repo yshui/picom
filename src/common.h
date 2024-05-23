@@ -462,7 +462,7 @@ static inline xcb_window_t get_tgt_window(session_t *ps) {
  * Check if current backend uses GLX.
  */
 static inline bool bkend_use_glx(session_t *ps) {
-	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
+	return BKEND_GLX == ps->o.legacy_backend || BKEND_XR_GLX_HYBRID == ps->o.legacy_backend;
 }
 
 /**

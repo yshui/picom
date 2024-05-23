@@ -575,3 +575,10 @@ void glxext_init(Display *dpy, int screen) {
 #endif
 #undef check_ext
 }
+
+BACKEND_ENTRYPOINT(glx_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "glx",
+	                      glx_ops.init, true)) {
+		log_error("Failed to register glx backend");
+	}
+}

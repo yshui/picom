@@ -867,7 +867,12 @@ static void xrender_get_blur_size(void *blur_context, int *width, int *height) {
 struct backend_operations xrender_ops;
 static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	if (ps->o.dithered_present) {
-		log_warn("\"dithered-present\" is not supported by the xrender backend.");
+		log_warn("\"dithered-present\" is not supported by the xrender backend, "
+		         "it will be ignored.");
+	}
+	if (ps->o.max_brightness < 1.0) {
+		log_warn("\"max-brightness\" is not supported by the xrender backend, it "
+		         "will be ignored.");
 	}
 
 	auto xd = ccalloc(1, struct xrender_data);
@@ -1042,5 +1047,12 @@ struct backend_operations xrender_ops = {
     .get_blur_size = xrender_get_blur_size
     // end
 };
+
+BACKEND_ENTRYPOINT(xrender_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "xrender",
+	                      xrender_ops.init, true)) {
+		log_error("Failed to register xrender backend");
+	}
+}
 
 // vim: set noet sw=8 ts=8:

@@ -743,9 +743,10 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
 	if (config_lookup_string(&cfg, "backend", &sval)) {
-		opt->backend = parse_backend(sval);
-		if (opt->backend >= NUM_BKEND) {
-			log_fatal("Cannot parse backend");
+		opt->legacy_backend = parse_backend(sval);
+		opt->backend = backend_find(sval);
+		if (opt->legacy_backend >= NUM_BKEND && opt->backend == NULL) {
+			log_fatal("Invalid backend: %s", sval);
 			goto out;
 		}
 	}

@@ -227,3 +227,10 @@ struct backend_operations dummy_ops = {
     .destroy_blur_context = dummy_destroy_blur_context,
     .get_blur_size = dummy_get_blur_size,
 };
+
+BACKEND_ENTRYPOINT(dummy_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "dummy",
+	                      dummy_ops.init, false)) {
+		log_error("Failed to register dummy backend");
+	}
+}
