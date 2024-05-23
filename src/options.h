@@ -7,10 +7,10 @@
 #include <stdbool.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t
 
+#include <picom/types.h>
+
 #include "compiler.h"
 #include "config.h"
-#include "types.h"
-#include "win.h"        // for wintype_t
 
 typedef struct session session_t;
 

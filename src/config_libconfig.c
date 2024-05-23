@@ -10,6 +10,7 @@
 #include <libconfig.h>
 #include <libgen.h>
 
+#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "config.h"

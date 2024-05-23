@@ -2,11 +2,13 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 
-#include "backend/backend.h"
-#include "types.h"
+#include <stdbool.h>
 
 struct command_builder;
+struct backend_command;
 struct layout;
+struct x_monitors;
+struct win_option;
 
 struct command_builder *command_builder_new(void);
 void command_builder_free(struct command_builder *);

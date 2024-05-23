@@ -4,9 +4,10 @@
 #include <pixman.h>
 #include <stdint.h>
 #include <xcb/xproto.h>
-#include "backend/backend.h"
+
+#include <picom/types.h>
+
 #include "region.h"
-#include "types.h"
 
 struct layer_key {
 	/// Window generation, (see `struct wm::generation` for explanation of what a

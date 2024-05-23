@@ -7,9 +7,8 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
-#include <backend/backend.h>
-
-#include "uthash_extra.h"
+#include <picom/backend.h>
+#include <picom/types.h>
 
 #include "c2.h"
 #include "compiler.h"
@@ -17,8 +16,6 @@
 #include "region.h"
 #include "render.h"
 #include "script.h"
-#include "transition.h"
-#include "types.h"
 #include "utils.h"
 #include "win_defs.h"
 #include "x.h"

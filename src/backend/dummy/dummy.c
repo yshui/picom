@@ -1,6 +1,8 @@
 #include <uthash.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
@@ -8,7 +10,6 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
 #include "x.h"

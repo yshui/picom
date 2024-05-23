@@ -16,12 +16,12 @@
 #include <xcb/xfixes.h>
 
 #include <libconfig.h>
+#include <picom/types.h>
 
 #include "compiler.h"
 #include "kernel.h"
 #include "list.h"
 #include "log.h"
-#include "types.h"
 #include "win_defs.h"
 
 typedef struct session session_t;
@@ -57,15 +57,6 @@ typedef struct win_option {
 	double opacity;
 	bool clip_shadow_above;
 } win_option_t;
-
-enum blur_method {
-	BLUR_METHOD_NONE = 0,
-	BLUR_METHOD_KERNEL,
-	BLUR_METHOD_BOX,
-	BLUR_METHOD_GAUSSIAN,
-	BLUR_METHOD_DUAL_KAWASE,
-	BLUR_METHOD_INVALID,
-};
 
 typedef struct _c2_lptr c2_lptr_t;
 

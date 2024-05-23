@@ -16,13 +16,13 @@
 #include <unistd.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
+#include <picom/types.h>
 #include <test.h>
 
 #include "common.h"
 #include "kernel.h"
 #include "log.h"
 #include "string_utils.h"
-#include "types.h"
 
 #include "config.h"
 

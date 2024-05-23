@@ -12,6 +12,8 @@
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "backend/driver.h"
@@ -22,7 +24,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"

@@ -15,7 +15,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/sync.h>
-#include <errno.h>
+#include <ev.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <libgen.h>
@@ -38,17 +38,15 @@
 #include <xcb/xcb_aux.h>
 #include <xcb/xfixes.h>
 
-#include <ev.h>
+#include <picom/types.h>
 #include <test.h>
 
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
-#include "err.h"
 #include "inspect.h"
 #include "kernel.h"
 #include "picom.h"
-#include "transition.h"
 #include "win_defs.h"
 #include "wm.h"
 #ifdef CONFIG_OPENGL
@@ -70,7 +68,6 @@
 #include "renderer/layout.h"
 #include "renderer/renderer.h"
 #include "statistics.h"
-#include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
 #include "vblank.h"

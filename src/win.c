@@ -15,8 +15,9 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
 
+#include <picom/types.h>
+
 #include "atom.h"
-#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
@@ -27,10 +28,6 @@
 #include "picom.h"
 #include "region.h"
 #include "render.h"
-#include "string_utils.h"
-#include "transition.h"
-#include "types.h"
-#include "uthash_extra.h"
 #include "utils.h"
 #include "win_defs.h"
 #include "wm.h"

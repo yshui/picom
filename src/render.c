@@ -10,9 +10,10 @@
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
+#include <picom/types.h>
+
 #include "common.h"
 #include "options.h"
-#include "transition.h"
 
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
@@ -29,13 +30,11 @@
 #include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 #include "vsync.h"
 #include "win.h"
 #include "x.h"
 
-#include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "render.h"
 

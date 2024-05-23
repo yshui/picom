@@ -20,15 +20,15 @@
 #include <unistd.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
+#include "backend/backend.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "list.h"
 #include "log.h"
 #include "string_utils.h"
-#include "transition.h"
-#include "types.h"
-#include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"

@@ -5,6 +5,7 @@
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
 
+#include "backend/backend.h"
 #include "backend/driver.h"
 #include "common.h"
 #include "config.h"
