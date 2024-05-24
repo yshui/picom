@@ -6,7 +6,6 @@
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
-#include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
 #include "config.h"
@@ -413,7 +412,7 @@ void init_backend_base(struct backend_base *base, session_t *ps) {
 	base->c = &ps->c;
 	base->loop = ps->loop;
 	base->busy = false;
-	base->ops = NULL;
+	base->ops = (struct backend_operations){};
 }
 
 uint32_t backend_no_quirks(struct backend_base *base attr_unused) {

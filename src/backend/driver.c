@@ -83,8 +83,8 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 	free(randr_version);
 
 	// If the backend supports driver detection, use that as well
-	if (backend_data && backend_data->ops->detect_driver) {
-		ret |= backend_data->ops->detect_driver(backend_data);
+	if (backend_data && backend_data->ops.detect_driver) {
+		ret |= backend_data->ops.detect_driver(backend_data);
 	}
 	return ret;
 }

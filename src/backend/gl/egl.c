@@ -4,8 +4,6 @@
  */
 
 #include <X11/Xlib-xcb.h>
-#include <assert.h>
-#include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -105,7 +103,7 @@ static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
 	return eglSwapInterval(dpy, interval);
 }
 
-struct backend_operations egl_ops;
+const struct backend_operations egl_ops;
 /**
  * Initialize OpenGL.
  */
@@ -154,7 +152,7 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 
 	eglext_init(gd->display);
 	init_backend_base(&gd->gl.base, ps);
-	gd->gl.base.ops = &egl_ops;
+	gd->gl.base.ops = egl_ops;
 	if (!eglext.has_EGL_KHR_image_pixmap) {
 		log_error("EGL_KHR_image_pixmap not available.");
 		goto end;
@@ -355,7 +353,7 @@ static void egl_version(struct backend_base * /*base*/, uint64_t *major, uint64_
 	*minor = PICOM_BACKEND_EGL_MINOR;
 }
 
-struct backend_operations egl_ops = {
+const struct backend_operations egl_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
     .blit = gl_blit,

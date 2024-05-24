@@ -11,7 +11,6 @@
  */
 
 #include <X11/Xlib-xcb.h>
-#include <assert.h>
 #include <limits.h>
 #include <pixman.h>
 #include <stdbool.h>
@@ -31,7 +30,6 @@
 #include "config.h"
 #include "log.h"
 #include "picom.h"
-#include "region.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
@@ -225,7 +223,7 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
 	return vsync_enabled;
 }
 
-struct backend_operations glx_ops;
+const struct backend_operations glx_ops;
 /**
  * Initialize OpenGL.
  */
@@ -234,7 +232,7 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	glxext_init(ps->c.dpy, ps->c.screen);
 	auto gd = ccalloc(1, struct _glx_data);
 	init_backend_base(&gd->gl.base, ps);
-	gd->gl.base.ops = &glx_ops;
+	gd->gl.base.ops = glx_ops;
 
 	gd->target_win = target;
 
@@ -529,7 +527,7 @@ static void glx_version(struct backend_base * /*base*/, uint64_t *major, uint64_
 	*minor = PICOM_BACKEND_GLX_MINOR;
 }
 
-struct backend_operations glx_ops = {
+const struct backend_operations glx_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
     .bind_pixmap = glx_bind_pixmap,

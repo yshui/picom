@@ -36,15 +36,7 @@ struct managed_win;
 struct ev_loop;
 struct backend_operations;
 
-typedef struct backend_base {
-	struct backend_operations *ops;
-	struct x_connection *c;
-	struct ev_loop *loop;
-
-	/// Whether the backend can accept new render request at the moment
-	bool busy;
-	// ...
-} backend_t;
+typedef struct backend_base backend_t;
 
 // This mimics OpenGL's ARB_robustness extension, which enables detection of GPU context
 // resets.
@@ -473,6 +465,16 @@ struct backend_operations {
 	void (*diagnostics)(backend_t *backend_data);
 
 	enum device_status (*device_status)(backend_t *backend_data);
+};
+
+struct backend_base {
+	struct backend_operations ops;
+	struct x_connection *c;
+	struct ev_loop *loop;
+
+	/// Whether the backend can accept new render request at the moment
+	bool busy;
+	// ...
 };
 
 /// Register a new backend, `major` and `minor` should be the version of the picom backend

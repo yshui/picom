@@ -51,11 +51,11 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 			printf(" Cannot initialize backend %s\n", backend_name(i));
 			continue;
 		}
-		if (backend_data->ops->diagnostics) {
+		if (backend_data->ops.diagnostics) {
 			printf("\n### Backend: %s\n\n", backend_name(i));
-			backend_data->ops->diagnostics(backend_data);
+			backend_data->ops.diagnostics(backend_data);
 		}
-		backend_data->ops->deinit(backend_data);
+		backend_data->ops.deinit(backend_data);
 	}
 }
 

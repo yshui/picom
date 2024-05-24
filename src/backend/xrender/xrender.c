@@ -865,7 +865,7 @@ static void xrender_get_blur_size(void *blur_context, int *width, int *height) {
 	*width = ctx->resize_width;
 	*height = ctx->resize_height;
 }
-struct backend_operations xrender_ops;
+const struct backend_operations xrender_ops;
 static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	if (ps->o.dithered_present) {
 		log_warn("\"dithered-present\" is not supported by the xrender backend, "
@@ -878,7 +878,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 
 	auto xd = ccalloc(1, struct xrender_data);
 	init_backend_base(&xd->base, ps);
-	xd->base.ops = &xrender_ops;
+	xd->base.ops = xrender_ops;
 
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
 		double o = (double)i / (double)MAX_ALPHA;
@@ -1032,7 +1032,7 @@ static void xrender_version(struct backend_base * /*base*/, uint64_t *major, uin
 	*minor = PICOM_BACKEND_XRENDER_MINOR;
 }
 
-struct backend_operations xrender_ops = {
+const struct backend_operations xrender_ops = {
     .apply_alpha = xrender_apply_alpha,
     .back_buffer = xrender_back_buffer,
     .bind_pixmap = xrender_bind_pixmap,

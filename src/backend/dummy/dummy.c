@@ -29,12 +29,12 @@ struct dummy_data {
 	struct dummy_image back_buffer;
 };
 
-struct backend_operations dummy_ops;
+const struct backend_operations dummy_ops;
 
 struct backend_base *dummy_init(session_t *ps attr_unused, xcb_window_t target attr_unused) {
 	auto ret = ccalloc(1, struct dummy_data);
 	init_backend_base(&ret->base, ps);
-	ret->base.ops = &dummy_ops;
+	ret->base.ops = dummy_ops;
 	list_init_head(&ret->non_pixmap_images);
 	return &ret->base;
 }
@@ -216,7 +216,7 @@ static void dummy_version(struct backend_base * /*base*/, uint64_t *major, uint6
 	*minor = PICOM_BACKEND_DUMMY_MINOR;
 }
 
-struct backend_operations dummy_ops = {
+const struct backend_operations dummy_ops = {
     .apply_alpha = dummy_apply_alpha,
     .back_buffer = dummy_back_buffer,
     .blit = dummy_blit,
