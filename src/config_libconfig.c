@@ -358,7 +358,7 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 					    config_setting_source_line(suppressions_setting));
 					return NULL;
 				}
-				suppressions |= 1 << suppression;
+				suppressions |= 1U << suppression;
 			}
 		}
 		config_setting_remove(setting, "suppressions");
