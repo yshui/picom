@@ -2,9 +2,7 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <assert.h>
-#include <ctype.h>
 #include <limits.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -12,13 +10,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <picom/types.h>
 #include <test.h>
 
 #include <time.h>
 
 #include "compiler.h"
 #include "log.h"
-#include "types.h"
 
 #define ARR_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 

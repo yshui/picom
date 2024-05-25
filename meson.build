@@ -84,6 +84,15 @@ install_data('bin/picom-trans', install_dir: get_option('bindir'))
 install_data('picom.desktop', install_dir: 'share/applications')
 install_data('picom.desktop', install_dir: get_option('sysconfdir') / 'xdg' / 'autostart')
 
+pkgconf = import('pkgconfig')
+
+picom_pc = pkgconf.generate(
+  name: 'picom-api',
+  description: 'picom API headers',
+  requires: [ 'pixman-1', 'xcb' ],
+  subdirs: 'picom',
+)
+
 if get_option('compton')
 	install_data('compton.desktop', install_dir: 'share/applications')
 	install_data('media/icons/48x48/compton.png',

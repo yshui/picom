@@ -3,6 +3,7 @@
 
 #pragma once
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 
 #include "compiler.h"

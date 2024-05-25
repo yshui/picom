@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
 #pragma once
 
@@ -9,6 +9,15 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+enum blur_method {
+	BLUR_METHOD_NONE = 0,
+	BLUR_METHOD_KERNEL,
+	BLUR_METHOD_BOX,
+	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_DUAL_KAWASE,
+	BLUR_METHOD_INVALID,
+};
 
 /// Enumeration type to represent switches.
 typedef enum {

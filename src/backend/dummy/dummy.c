@@ -1,6 +1,8 @@
 #include <uthash.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
@@ -8,7 +10,6 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
 #include "x.h"
@@ -28,12 +29,12 @@ struct dummy_data {
 	struct dummy_image back_buffer;
 };
 
-struct backend_operations dummy_ops;
+const struct backend_operations dummy_ops;
 
 struct backend_base *dummy_init(session_t *ps attr_unused, xcb_window_t target attr_unused) {
 	auto ret = ccalloc(1, struct dummy_data);
 	init_backend_base(&ret->base, ps);
-	ret->base.ops = &dummy_ops;
+	ret->base.ops = dummy_ops;
 	list_init_head(&ret->non_pixmap_images);
 	return &ret->base;
 }
@@ -203,7 +204,19 @@ bool dummy_is_format_supported(struct backend_base *base attr_unused,
 	return true;
 }
 
-struct backend_operations dummy_ops = {
+static int dummy_max_buffer_age(struct backend_base *base attr_unused) {
+	return 5;
+}
+
+#define PICOM_BACKEND_DUMMY_MAJOR (0UL)
+#define PICOM_BACKEND_DUMMY_MINOR (1UL)
+
+static void dummy_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_DUMMY_MAJOR;
+	*minor = PICOM_BACKEND_DUMMY_MINOR;
+}
+
+const struct backend_operations dummy_ops = {
     .apply_alpha = dummy_apply_alpha,
     .back_buffer = dummy_back_buffer,
     .blit = dummy_blit,
@@ -216,14 +229,22 @@ struct backend_operations dummy_ops = {
     .new_image = dummy_new_image,
     .bind_pixmap = dummy_bind_pixmap,
     .quirks = backend_no_quirks,
+    .version = dummy_version,
     .release_image = dummy_release_image,
 
     .init = dummy_init,
     .deinit = dummy_deinit,
     .buffer_age = dummy_buffer_age,
-    .max_buffer_age = 5,
+    .max_buffer_age = dummy_max_buffer_age,
 
     .create_blur_context = dummy_create_blur_context,
     .destroy_blur_context = dummy_destroy_blur_context,
     .get_blur_size = dummy_get_blur_size,
 };
+
+BACKEND_ENTRYPOINT(dummy_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "dummy",
+	                      dummy_ops.init, false)) {
+		log_error("Failed to register dummy backend");
+	}
+}

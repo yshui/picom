@@ -6,22 +6,20 @@
 
 // === Includes ===
 
+#include <X11/Xutil.h>
 #include <locale.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <xcb/xproto.h>
 
-#include <X11/Xutil.h>
-#include "backend/backend.h"
+#include <picom/types.h>
+
 #include "c2.h"
 #include "common.h"
-#include "compiler.h"
 #include "config.h"
 #include "log.h"        // XXX clean up
 #include "region.h"
 #include "render.h"
-#include "types.h"
-#include "utils.h"
 #include "win.h"
 #include "x.h"
 

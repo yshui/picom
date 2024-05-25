@@ -3,11 +3,12 @@
 #include <stddef.h>
 #include <uthash.h>
 
+#include <picom/types.h>
+
 #include "command_builder.h"
 #include "common.h"
 #include "list.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "wm.h"

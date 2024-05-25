@@ -9,13 +9,13 @@
 #include <time.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
-#include "backend/backend.h"
+#include <picom/types.h>
+
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 
 #include "backend/backend_common.h"

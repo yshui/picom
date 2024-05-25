@@ -43,21 +43,6 @@ typedef struct winprop_info {
 	uint32_t length;
 } winprop_info_t;
 
-struct xvisual_info {
-	/// Bit depth of the red component
-	int red_size;
-	/// Bit depth of the green component
-	int green_size;
-	/// Bit depth of the blue component
-	int blue_size;
-	/// Bit depth of the alpha component
-	int alpha_size;
-	/// The depth of X visual
-	int visual_depth;
-
-	xcb_visualid_t visual;
-};
-
 enum pending_reply_action {
 	PENDING_REPLY_ACTION_IGNORE,
 	PENDING_REPLY_ACTION_ABORT,

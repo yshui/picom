@@ -12,6 +12,8 @@
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "backend/driver.h"
@@ -22,7 +24,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
@@ -864,15 +865,20 @@ static void xrender_get_blur_size(void *blur_context, int *width, int *height) {
 	*width = ctx->resize_width;
 	*height = ctx->resize_height;
 }
-struct backend_operations xrender_ops;
+const struct backend_operations xrender_ops;
 static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	if (ps->o.dithered_present) {
-		log_warn("\"dithered-present\" is not supported by the xrender backend.");
+		log_warn("\"dithered-present\" is not supported by the xrender backend, "
+		         "it will be ignored.");
+	}
+	if (ps->o.max_brightness < 1.0) {
+		log_warn("\"max-brightness\" is not supported by the xrender backend, it "
+		         "will be ignored.");
 	}
 
 	auto xd = ccalloc(1, struct xrender_data);
 	init_backend_base(&xd->base, ps);
-	xd->base.ops = &xrender_ops;
+	xd->base.ops = xrender_ops;
 
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
 		double o = (double)i / (double)MAX_ALPHA;
@@ -1014,7 +1020,19 @@ uint32_t xrender_quirks(struct backend_base *base) {
 	return ((struct xrender_data *)base)->quirks;
 }
 
-struct backend_operations xrender_ops = {
+static int xrender_max_buffer_age(struct backend_base *base) {
+	return ((struct xrender_data *)base)->vsync ? 2 : 1;
+}
+
+#define PICOM_BACKEND_XRENDER_MAJOR (0UL)
+#define PICOM_BACKEND_XRENDER_MINOR (1UL)
+
+static void xrender_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_XRENDER_MAJOR;
+	*minor = PICOM_BACKEND_XRENDER_MINOR;
+}
+
+const struct backend_operations xrender_ops = {
     .apply_alpha = xrender_apply_alpha,
     .back_buffer = xrender_back_buffer,
     .bind_pixmap = xrender_bind_pixmap,
@@ -1028,6 +1046,7 @@ struct backend_operations xrender_ops = {
     .new_image = xrender_new_image,
     .present = xrender_present,
     .quirks = xrender_quirks,
+    .version = xrender_version,
     .release_image = xrender_release_image,
 
     .init = xrender_init,
@@ -1036,11 +1055,18 @@ struct backend_operations xrender_ops = {
     //             `render_shadow`, and `backend_compat_shadow_from_mask` for
     //             `shadow_from_mask`
     .buffer_age = xrender_buffer_age,
-    .max_buffer_age = 2,
+    .max_buffer_age = xrender_max_buffer_age,
     .create_blur_context = xrender_create_blur_context,
     .destroy_blur_context = xrender_destroy_blur_context,
     .get_blur_size = xrender_get_blur_size
     // end
 };
+
+BACKEND_ENTRYPOINT(xrender_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "xrender",
+	                      xrender_ops.init, true)) {
+		log_error("Failed to register xrender backend");
+	}
+}
 
 // vim: set noet sw=8 ts=8:

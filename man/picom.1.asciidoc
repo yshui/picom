@@ -76,6 +76,9 @@ OPTIONS
 *--write-pid-path* 'PATH'::
 	Write process ID to a file. it is recommended to use an absolute path.
 
+*--plugins* 'PATH'::
+	Specify plugins to load. Plugins will first be searched in current working directory (unless specified in the config file, in which case this step is skipped), then in `$XDG_CONFIG_HOME/picom/plugins`, then in `$XDG_CONFIG_DIRS/picom/plugins`. If all of the above fail, the plugin name is passed directly to the dynamic loader. Can be specified multiple times to load more than one plugins.
+
 *--shadow-color* 'STRING'::
 	Color of shadow, as a hex string ('#000000')
 

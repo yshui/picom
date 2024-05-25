@@ -15,7 +15,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/sync.h>
-#include <errno.h>
+#include <ev.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <libgen.h>
@@ -38,17 +38,16 @@
 #include <xcb/xcb_aux.h>
 #include <xcb/xfixes.h>
 
-#include <ev.h>
+#include <picom/types.h>
 #include <test.h>
 
+#include "api_internal.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
-#include "err.h"
 #include "inspect.h"
 #include "kernel.h"
 #include "picom.h"
-#include "transition.h"
 #include "win_defs.h"
 #include "wm.h"
 #ifdef CONFIG_OPENGL
@@ -70,7 +69,6 @@
 #include "renderer/layout.h"
 #include "renderer/renderer.h"
 #include "statistics.h"
-#include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
 #include "vblank.h"
@@ -154,7 +152,7 @@ enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unus
 
 	struct timespec render_time;
 	bool completed =
-	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	    ps->backend_data->ops.last_render_time(ps->backend_data, &render_time);
 	if (!completed) {
 		// Render hasn't completed yet, we can't start another render.
 		// Check again at the next vblank.
@@ -440,7 +438,7 @@ void add_damage(session_t *ps, const region_t *damage) {
 		return;
 	}
 
-	if (!damage) {
+	if (!damage || ps->damage_ring.count <= 0) {
 		return;
 	}
 	log_trace("Adding damage: ");
@@ -577,14 +575,14 @@ static void destroy_backend(session_t *ps) {
 
 	HASH_ITER2(ps->shaders, shader) {
 		if (shader->backend_shader != NULL) {
-			ps->backend_data->ops->destroy_shader(ps->backend_data,
-			                                      shader->backend_shader);
+			ps->backend_data->ops.destroy_shader(ps->backend_data,
+			                                     shader->backend_shader);
 			shader->backend_shader = NULL;
 		}
 	}
 
 	if (ps->backend_data && ps->root_image) {
-		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+		ps->backend_data->ops.release_image(ps->backend_data, ps->root_image);
 		ps->root_image = NULL;
 	}
 
@@ -595,11 +593,11 @@ static void destroy_backend(session_t *ps) {
 		}
 		// deinit backend
 		if (ps->backend_blur_context) {
-			ps->backend_data->ops->destroy_blur_context(
+			ps->backend_data->ops.destroy_blur_context(
 			    ps->backend_data, ps->backend_blur_context);
 			ps->backend_blur_context = NULL;
 		}
-		ps->backend_data->ops->deinit(ps->backend_data);
+		ps->backend_data->ops.deinit(ps->backend_data);
 		ps->backend_data = NULL;
 	}
 }
@@ -637,7 +635,7 @@ static bool initialize_blur(session_t *ps) {
 	enum backend_image_format format = ps->o.dithered_present
 	                                       ? BACKEND_IMAGE_FORMAT_PIXMAP_HIGH
 	                                       : BACKEND_IMAGE_FORMAT_PIXMAP;
-	ps->backend_blur_context = ps->backend_data->ops->create_blur_context(
+	ps->backend_blur_context = ps->backend_data->ops.create_blur_context(
 	    ps->backend_data, ps->o.blur_method, format, args);
 	return ps->backend_blur_context != NULL;
 }
@@ -658,18 +656,17 @@ static int mark_pixmap_stale(struct win *w, void *data) {
 
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
-	if (!ps->o.legacy_backends) {
+	if (!ps->o.use_legacy_backends) {
 		assert(!ps->backend_data);
 		// Reinitialize win_data
-		assert(backend_list[ps->o.backend]);
 		ps->backend_data =
-		    backend_list[ps->o.backend]->init(ps, session_get_target_window(ps));
+		    backend_init(ps->o.backend, ps, session_get_target_window(ps));
+		api_backend_plugins_invoke(backend_name(ps->o.backend), ps->backend_data);
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
 			quit(ps);
 			return false;
 		}
-		ps->backend_data->ops = backend_list[ps->o.backend];
 
 		if (!initialize_blur(ps)) {
 			log_fatal("Failed to prepare for background blur, aborting...");
@@ -677,24 +674,30 @@ static bool initialize_backend(session_t *ps) {
 		}
 
 		// Create shaders
-		HASH_ITER2(ps->shaders, shader) {
-			assert(shader->backend_shader == NULL);
-			shader->backend_shader = ps->backend_data->ops->create_shader(
-			    ps->backend_data, shader->source);
-			if (shader->backend_shader == NULL) {
-				log_warn("Failed to create shader for shader file %s, "
-				         "this shader will not be used",
-				         shader->key);
-			} else {
-				if (ps->backend_data->ops->get_shader_attributes) {
-					shader->attributes =
-					    ps->backend_data->ops->get_shader_attributes(
-					        ps->backend_data, shader->backend_shader);
+		if (!ps->backend_data->ops.create_shader && ps->shaders) {
+			log_warn("Shaders are not supported by selected backend %s, "
+			         "they will be ignored",
+			         backend_name(ps->o.backend));
+		} else {
+			HASH_ITER2(ps->shaders, shader) {
+				assert(shader->backend_shader == NULL);
+				shader->backend_shader = ps->backend_data->ops.create_shader(
+				    ps->backend_data, shader->source);
+				if (shader->backend_shader == NULL) {
+					log_warn("Failed to create shader for shader "
+					         "file %s, this shader will not be used",
+					         shader->key);
 				} else {
 					shader->attributes = 0;
+					if (ps->backend_data->ops.get_shader_attributes) {
+						shader->attributes =
+						    ps->backend_data->ops.get_shader_attributes(
+						        ps->backend_data,
+						        shader->backend_shader);
+					}
+					log_debug("Shader %s has attributes %" PRIu64,
+					          shader->key, shader->attributes);
 				}
-				log_debug("Shader %s has attributes %" PRIu64,
-				          shader->key, shader->attributes);
 			}
 		}
 
@@ -716,7 +719,7 @@ static bool initialize_backend(session_t *ps) {
 	// The old backends binds pixmap lazily, nothing to do here
 	return true;
 err:
-	ps->backend_data->ops->deinit(ps->backend_data);
+	ps->backend_data->ops.deinit(ps->backend_data);
 	ps->backend_data = NULL;
 	quit(ps);
 	return false;
@@ -736,9 +739,9 @@ static void configure_root(session_t *ps) {
 	bool has_root_change = false;
 	if (ps->redirected) {
 		// On root window changes
-		if (!ps->o.legacy_backends) {
+		if (!ps->o.use_legacy_backends) {
 			assert(ps->backend_data);
-			has_root_change = ps->backend_data->ops->root_change != NULL;
+			has_root_change = ps->backend_data->ops.root_change != NULL;
 		} else {
 			// Old backend can handle root change
 			has_root_change = true;
@@ -779,13 +782,13 @@ static void configure_root(session_t *ps) {
 		ps->damage_ring.cursor = ps->damage_ring.count - 1;
 #ifdef CONFIG_OPENGL
 		// GLX root change callback
-		if (BKEND_GLX == ps->o.backend && ps->o.legacy_backends) {
+		if (BKEND_GLX == ps->o.legacy_backend && ps->o.use_legacy_backends) {
 			glx_on_root_change(ps);
 		}
 #endif
 		if (has_root_change) {
 			if (ps->backend_data != NULL) {
-				ps->backend_data->ops->root_change(ps->backend_data, ps);
+				ps->backend_data->ops.root_change(ps->backend_data, ps);
 			}
 			// Old backend's root_change is not a specific function
 		} else {
@@ -1079,7 +1082,7 @@ void root_damaged(session_t *ps) {
 
 	if (ps->backend_data) {
 		if (ps->root_image) {
-			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+			ps->backend_data->ops.release_image(ps->backend_data, ps->root_image);
 			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
@@ -1113,7 +1116,7 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 			free(r);
 
-			ps->root_image = ps->backend_data->ops->bind_pixmap(
+			ps->root_image = ps->backend_data->ops.bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
 			ps->root_image_generation += 1;
 			if (!ps->root_image) {
@@ -1375,10 +1378,10 @@ uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
 		// take over the screen.
-		assert(!ps->o.legacy_backends);
+		assert(!ps->o.use_legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->present) {
+	if (!ps->o.use_legacy_backends && !backend_can_present(ps->o.backend)) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -1415,11 +1418,11 @@ static bool redirect_start(session_t *ps) {
 		return false;
 	}
 
-	if (!ps->o.legacy_backends) {
+	if (!ps->o.use_legacy_backends) {
 		assert(ps->backend_data);
-		ps->damage_ring.count = ps->backend_data->ops->max_buffer_age;
-		ps->layout_manager =
-		    layout_manager_new((unsigned)ps->backend_data->ops->max_buffer_age);
+		ps->damage_ring.count =
+		    ps->backend_data->ops.max_buffer_age(ps->backend_data);
+		ps->layout_manager = layout_manager_new((unsigned)ps->damage_ring.count);
 	} else {
 		ps->damage_ring.count = maximum_buffer_age(ps);
 	}
@@ -1431,7 +1434,8 @@ static bool redirect_start(session_t *ps) {
 	}
 
 	ps->frame_pacing = ps->o.frame_pacing && ps->o.vsync;
-	if ((ps->o.legacy_backends || ps->o.benchmark || !ps->backend_data->ops->last_render_time) &&
+	if ((ps->o.use_legacy_backends || ps->o.benchmark ||
+	     !ps->backend_data->ops.last_render_time) &&
 	    ps->frame_pacing) {
 		// Disable frame pacing if we are using a legacy backend or if we are in
 		// benchmark mode, or if the backend doesn't report render time
@@ -1777,7 +1781,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		static int paint = 0;
 
 		log_verbose("Render start, frame %d", paint);
-		if (!ps->o.legacy_backends) {
+		if (!ps->o.use_legacy_backends) {
 			uint64_t after_damage_us = 0;
 			now = get_time_timespec();
 			auto render_start_us =
@@ -2211,7 +2215,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	if (ps->o.legacy_backends) {
+	if (ps->o.use_legacy_backends) {
 		ps->shadow_context =
 		    (void *)gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
 		sum_kernel_preprocess((conv *)ps->shadow_context);
@@ -2332,9 +2336,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		// The old backends doesn't have a automatic redirection mode
 		log_info("The compositor is started in automatic redirection mode.");
-		assert(!ps->o.legacy_backends);
+		assert(!ps->o.use_legacy_backends);
 
-		if (backend_list[ps->o.backend]->present) {
+		if (backend_can_present(ps->o.backend)) {
 			// If the backend has `present`, we couldn't be in automatic
 			// redirection mode unless we are in debug mode.
 			assert(ps->o.debug_mode);
@@ -2348,7 +2352,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	apply_driver_workarounds(ps, ps->drivers);
 
 	// Initialize filters, must be preceded by OpenGL context creation
-	if (ps->o.legacy_backends && !init_render(ps)) {
+	if (ps->o.use_legacy_backends && !init_render(ps)) {
 		log_fatal("Failed to initialize the backend");
 		exit(1);
 	}
@@ -2371,7 +2375,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	if (bkend_use_glx(ps) && ps->o.legacy_backends) {
+	if (bkend_use_glx(ps) && ps->o.use_legacy_backends) {
 		auto gl_logger = gl_string_marker_logger_new();
 		if (gl_logger) {
 			log_info("Enabling gl string marker");
@@ -2618,7 +2622,7 @@ static void session_destroy(session_t *ps) {
 		ps->damage_ring.x_region = XCB_NONE;
 	}
 
-	if (!ps->o.legacy_backends) {
+	if (!ps->o.use_legacy_backends) {
 		// backend is deinitialized in unredirect()
 		assert(ps->backend_data == NULL);
 	} else {
@@ -2635,7 +2639,7 @@ static void session_destroy(session_t *ps) {
 	// Flush all events
 	xcb_aux_sync(ps->c.c);
 	ev_io_stop(ps->loop, &ps->xiow);
-	if (ps->o.legacy_backends) {
+	if (ps->o.use_legacy_backends) {
 		free_conv((conv *)ps->shadow_context);
 	}
 	destroy_atoms(ps->atoms);
@@ -2684,6 +2688,18 @@ static void session_run(session_t *ps) {
 #define PICOM_MAIN(...) main(__VA_ARGS__)
 #endif
 
+/// Early initialization of logging system. To catch early logs, especially
+/// from backend entrypoint functions.
+static void __attribute__((constructor(201))) init_early_logging(void) {
+	log_init_tls();
+	log_set_level_tls(LOG_LEVEL_WARN);
+
+	auto stderr_logger = stderr_logger_new();
+	if (stderr_logger != NULL) {
+		log_add_target_tls(stderr_logger);
+	}
+}
+
 /**
  * The function that everybody knows.
  */
@@ -2691,16 +2707,6 @@ int PICOM_MAIN(int argc, char **argv) {
 	// Set locale so window names with special characters are interpreted
 	// correctly
 	setlocale(LC_ALL, "");
-
-	// Initialize logging system for early logging
-	log_init_tls();
-
-	{
-		auto stderr_logger = stderr_logger_new();
-		if (stderr_logger) {
-			log_add_target_tls(stderr_logger);
-		}
-	}
 
 	parse_debug_options(&global_debug_options);
 

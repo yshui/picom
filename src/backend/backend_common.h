@@ -7,15 +7,14 @@
 
 #include <stdbool.h>
 
-#include "backend.h"
 #include "config.h"
-#include "region.h"
 
 struct session;
 struct win;
 struct conv;
 struct backend_base;
 struct backend_operations;
+struct x_connection;
 
 struct dual_kawase_params {
 	/// Number of downsample passes

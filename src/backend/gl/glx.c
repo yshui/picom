@@ -11,7 +11,6 @@
  */
 
 #include <X11/Xlib-xcb.h>
-#include <assert.h>
 #include <limits.h>
 #include <pixman.h>
 #include <stdbool.h>
@@ -31,7 +30,6 @@
 #include "config.h"
 #include "log.h"
 #include "picom.h"
-#include "region.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
@@ -225,7 +223,7 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
 	return vsync_enabled;
 }
 
-struct backend_operations glx_ops;
+const struct backend_operations glx_ops;
 /**
  * Initialize OpenGL.
  */
@@ -234,7 +232,7 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	glxext_init(ps->c.dpy, ps->c.screen);
 	auto gd = ccalloc(1, struct _glx_data);
 	init_backend_base(&gd->gl.base, ps);
-	gd->gl.base.ops = &glx_ops;
+	gd->gl.base.ops = glx_ops;
 
 	gd->target_win = target;
 
@@ -517,7 +515,19 @@ static void glx_diagnostics(backend_t *base) {
 	}
 }
 
-struct backend_operations glx_ops = {
+static int glx_max_buffer_age(struct backend_base *base attr_unused) {
+	return 5;        // Why?
+}
+
+#define PICOM_BACKEND_GLX_MAJOR (0UL)
+#define PICOM_BACKEND_GLX_MINOR (1UL)
+
+static void glx_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_GLX_MAJOR;
+	*minor = PICOM_BACKEND_GLX_MINOR;
+}
+
+const struct backend_operations glx_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
     .bind_pixmap = glx_bind_pixmap,
@@ -531,6 +541,7 @@ struct backend_operations glx_ops = {
     .new_image = gl_new_image,
     .present = glx_present,
     .quirks = backend_no_quirks,
+    .version = glx_version,
     .release_image = gl_release_image,
 
     .init = glx_init,
@@ -547,7 +558,7 @@ struct backend_operations glx_ops = {
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,
     .get_shader_attributes = gl_get_shader_attributes,
-    .max_buffer_age = 5,        // Why?
+    .max_buffer_age = glx_max_buffer_age,
 };
 
 struct glxext_info glxext = {0};
@@ -574,4 +585,11 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_MESA_query_renderer);
 #endif
 #undef check_ext
+}
+
+BACKEND_ENTRYPOINT(glx_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "glx",
+	                      glx_ops.init, true)) {
+		log_error("Failed to register glx backend");
+	}
 }

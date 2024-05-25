@@ -40,7 +40,9 @@
 #include <xcb/sync.h>
 #include <xcb/xproto.h>
 
-#include "uthash_extra.h"
+#include <picom/backend.h>
+#include <picom/types.h>
+
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
 #endif
@@ -51,16 +53,11 @@
 #endif
 
 // FIXME This list of includes should get shorter
-#include "backend/backend.h"
 #include "backend/driver.h"
-#include "compiler.h"
 #include "config.h"
-#include "list.h"
 #include "region.h"
 #include "render.h"
 #include "statistics.h"
-#include "types.h"
-#include "utils.h"
 #include "win_defs.h"
 #include "x.h"
 
@@ -462,7 +459,7 @@ static inline xcb_window_t get_tgt_window(session_t *ps) {
  * Check if current backend uses GLX.
  */
 static inline bool bkend_use_glx(session_t *ps) {
-	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
+	return BKEND_GLX == ps->o.legacy_backend || BKEND_XR_GLX_HYBRID == ps->o.legacy_backend;
 }
 
 /**
