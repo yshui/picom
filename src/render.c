@@ -10,9 +10,10 @@
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
+#include <picom/types.h>
+
 #include "common.h"
 #include "options.h"
-#include "transition.h"
 
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
@@ -29,13 +30,11 @@
 #include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 #include "vsync.h"
 #include "win.h"
 #include "x.h"
 
-#include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "render.h"
 
@@ -113,7 +112,8 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
  * Check if current backend uses XRender for rendering.
  */
 static inline bool bkend_use_xrender(session_t *ps) {
-	return BKEND_XRENDER == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
+	return BKEND_XRENDER == ps->o.legacy_backend ||
+	       BKEND_XR_GLX_HYBRID == ps->o.legacy_backend;
 }
 
 int maximum_buffer_age(session_t *ps) {
@@ -154,7 +154,7 @@ static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 
 /// Set the input/output clip region of the target buffer (not the actual target!)
 static inline void attr_nonnull(1, 2) set_tgt_clip(session_t *ps, region_t *reg) {
-	switch (ps->o.backend) {
+	switch (ps->o.legacy_backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID:
 		x_set_picture_clip_region(&ps->c, ps->tgt_buffer.pict, 0, 0, reg);
@@ -243,7 +243,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
             int fullhei, double opacity, bool argb, bool neg, int cr,
             xcb_render_picture_t pict, glx_texture_t *ptex, const region_t *reg_paint,
             const glx_prog_main_t *pprogram, clip_t *clip) {
-	switch (ps->o.backend) {
+	switch (ps->o.legacy_backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
 		auto alpha_step = (int)(opacity * MAX_ALPHA);
@@ -381,7 +381,7 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 	}
 
 #ifdef CONFIG_OPENGL
-	if (BKEND_GLX == ps->o.backend && !glx_tex_bound(ppaint->ptex, XCB_NONE)) {
+	if (BKEND_GLX == ps->o.legacy_backend && !glx_tex_bound(ppaint->ptex, XCB_NONE)) {
 		return false;
 	}
 #endif
@@ -562,7 +562,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 			dim_opacity *= window_opacity;
 		}
 
-		switch (ps->o.backend) {
+		switch (ps->o.legacy_backend) {
 		case BKEND_XRENDER:
 		case BKEND_XR_GLX_HYBRID: {
 			auto cval = (uint16_t)(0xffff * dim_opacity);
@@ -656,7 +656,7 @@ static bool get_root_tile(session_t *ps) {
 	ps->root_tile_fill = fill;
 	ps->root_tile_paint.pixmap = pixmap;
 #ifdef CONFIG_OPENGL
-	if (BKEND_GLX == ps->o.backend) {
+	if (BKEND_GLX == ps->o.legacy_backend) {
 		return paint_bind_tex(ps, &ps->root_tile_paint, 0, 0, true, 0, visual, false);
 	}
 #endif
@@ -775,7 +775,8 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 	bool should_clip =
 	    (w->corner_radius > 0) && (!ps->o.wintype_option[w->window_type].full_shadow);
 	if (should_clip) {
-		if (ps->o.backend == BKEND_XRENDER || ps->o.backend == BKEND_XR_GLX_HYBRID) {
+		if (ps->o.legacy_backend == BKEND_XRENDER ||
+		    ps->o.legacy_backend == BKEND_XR_GLX_HYBRID) {
 			uint32_t max_ntraps = to_u32_checked(w->corner_radius);
 			xcb_render_trapezoid_t traps[4 * max_ntraps + 3];
 			uint32_t n = make_rounded_window_shape(
@@ -913,7 +914,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 		factor_center = pct * 8.0 / (1.1 - pct);
 	}
 
-	switch (ps->o.backend) {
+	switch (ps->o.legacy_backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
 		// Normalize blur kernels
@@ -1043,14 +1044,14 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			}
 		}
 
-		if (BKEND_GLX != ps->o.backend) {
+		if (BKEND_GLX != ps->o.legacy_backend) {
 			ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
 			    &ps->c, ps->c.screen_info->root_visual, ps->tgt_buffer.pixmap,
 			    0, 0);
 		}
 	}
 
-	if (BKEND_XRENDER == ps->o.backend) {
+	if (BKEND_XRENDER == ps->o.legacy_backend) {
 		x_set_picture_clip_region(&ps->c, ps->tgt_picture, 0, 0, &region);
 	}
 
@@ -1170,7 +1171,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 
 #ifdef CONFIG_OPENGL
 			// If rounded corners backup the region first
-			if (w->corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+			if (w->corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
 				const int16_t x = w->g.x;
 				const int16_t y = w->g.y;
 				auto const wid = to_u16_checked(w->widthb);
@@ -1193,7 +1194,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 #ifdef CONFIG_OPENGL
 			// Rounded corners for XRender is implemented inside render()
 			// Round window corners
-			if (w->corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+			if (w->corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
 				auto const wid = to_u16_checked(w->widthb);
 				auto const hei = to_u16_checked(w->heightb);
 				glx_round_corners_dst(ps, w, w->glx_texture_bg, w->g.x,
@@ -1237,7 +1238,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 
 	auto rwidth = to_u16_checked(ps->root_width);
 	auto rheight = to_u16_checked(ps->root_height);
-	switch (ps->o.backend) {
+	switch (ps->o.legacy_backend) {
 	case BKEND_XRENDER:
 		if (ps->o.monitor_repaint) {
 			// Copy the screen content to a new picture, and highlight the
@@ -1375,7 +1376,7 @@ static bool init_alpha_picts(session_t *ps) {
 }
 
 bool init_render(session_t *ps) {
-	if (ps->o.backend == BKEND_DUMMY) {
+	if (ps->o.legacy_backend == BKEND_DUMMY) {
 		return false;
 	}
 
@@ -1400,7 +1401,7 @@ bool init_render(session_t *ps) {
 	}
 
 	// Initialize window GL shader
-	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
+	if (BKEND_GLX == ps->o.legacy_backend && ps->o.glx_fshader_win_str) {
 #ifdef CONFIG_OPENGL
 		if (!glx_load_prog_main(NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win)) {
 			return false;
@@ -1429,7 +1430,7 @@ bool init_render(session_t *ps) {
 		    ccalloc(ps->o.blur_kernel_count, struct x_convolution_kernel *);
 
 		bool ret = false;
-		if (ps->o.backend == BKEND_GLX) {
+		if (ps->o.legacy_backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
 			ret = glx_init_blur(ps);
 #else
@@ -1465,7 +1466,7 @@ bool init_render(session_t *ps) {
 	}
 
 	// Initialize our rounded corners fragment shader
-	if (ps->o.corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+	if (ps->o.corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
 		if (!glx_init_rounded_corners(ps)) {
 			log_error("Failed to init rounded corners shader.");

@@ -26,12 +26,14 @@
       ! fullscreen
       border_width = 0
   ```
+* picom now has a rudimentary plugin system. At the moment, the only thing you can do with it is loading custom backends.
 
 ## Notable changes
 
 * `override_redirect` in rules now only matches top-level windows that doesn't have a client window. Some window managers (e.g. awesome) set override_redirect for all window manager frame windows, causing this rule to match against everything (#625).
 * Marginally improve performance when resizing/opening/closing windows. (#1190)
 * Type and format specifiers are no longer used in rules. These specifiers are what you put after the colon (':') in rules, e.g. the `:32c` in `"_GTK_FRAME_EXTENTS@:32c"`. Now this information is ignored and the property is matched regardless of format or type.
+* `backend` is now a required option. picom will not start if one is not specified explicitly.
 
 ## Deprecated features
 

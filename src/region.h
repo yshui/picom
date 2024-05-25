@@ -2,12 +2,12 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <pixman.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
 #include "log.h"
-#include "types.h"
 #include "utils.h"
 
 typedef struct pixman_region32 pixman_region32_t;

@@ -36,6 +36,7 @@
 #include "log.h"
 #include "string_utils.h"
 #include "test.h"
+#include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"

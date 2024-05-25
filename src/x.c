@@ -832,11 +832,18 @@ void x_create_convolution_kernel(const conv *kernel, double center,
 	buf[1] = DOUBLE_TO_XFIXED(kernel->h);
 
 	double sum = center;
+	bool has_neg = false;
 	for (int i = 0; i < kernel->w * kernel->h; i++) {
 		if (i == kernel->w * kernel->h / 2) {
+			// Ignore center
 			continue;
 		}
 		sum += kernel->data[i];
+		if (kernel->data[i] < 0 && !has_neg) {
+			has_neg = true;
+			log_warn("A X convolution kernel with negative values may not "
+			         "work properly.");
+		}
 	}
 
 	// Note for floating points a / b != a * (1 / b), but this shouldn't have any real

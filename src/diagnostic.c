@@ -5,6 +5,7 @@
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
 
+#include "backend/backend.h"
 #include "backend/driver.h"
 #include "common.h"
 #include "config.h"
@@ -44,17 +45,17 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 	printf("\n### Drivers (inaccurate):\n\n");
 	print_drivers(ps->drivers);
 
-	for (int i = 0; i < NUM_BKEND; i++) {
-		if (backend_list[i] && backend_list[i]->diagnostics) {
-			printf("\n### Backend: %s\n\n", BACKEND_STRS[i]);
-			auto data = backend_list[i]->init(ps, session_get_target_window(ps));
-			if (!data) {
-				printf(" Cannot initialize this backend\n");
-			} else {
-				backend_list[i]->diagnostics(data);
-				backend_list[i]->deinit(data);
-			}
+	for (auto i = backend_iter(); i; i = backend_iter_next(i)) {
+		auto backend_data = backend_init(i, ps, session_get_target_window(ps));
+		if (!backend_data) {
+			printf(" Cannot initialize backend %s\n", backend_name(i));
+			continue;
 		}
+		if (backend_data->ops.diagnostics) {
+			printf("\n### Backend: %s\n\n", backend_name(i));
+			backend_data->ops.diagnostics(backend_data);
+		}
+		backend_data->ops.deinit(backend_data);
 	}
 }
 

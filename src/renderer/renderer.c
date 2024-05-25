@@ -69,19 +69,19 @@ static void renderer_reallocate_culled_masks(struct renderer *r, size_t capacity
 
 void renderer_free(struct backend_base *backend, struct renderer *r) {
 	if (r->white_image) {
-		backend->ops->release_image(backend, r->white_image);
+		backend->ops.release_image(backend, r->white_image);
 	}
 	if (r->black_image) {
-		backend->ops->release_image(backend, r->black_image);
+		backend->ops.release_image(backend, r->black_image);
 	}
 	if (r->back_image) {
-		backend->ops->release_image(backend, r->back_image);
+		backend->ops.release_image(backend, r->back_image);
 	}
 	if (r->monitor_repaint_pixel) {
-		backend->ops->release_image(backend, r->monitor_repaint_pixel);
+		backend->ops.release_image(backend, r->monitor_repaint_pixel);
 	}
 	if (r->shadow_blur_context) {
-		backend->ops->destroy_blur_context(backend, r->shadow_blur_context);
+		backend->ops.destroy_blur_context(backend, r->shadow_blur_context);
 	}
 	if (r->shadow_kernel) {
 		free_conv(r->shadow_kernel);
@@ -97,7 +97,7 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	}
 	if (r->monitor_repaint_copy) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
-			backend->ops->release_image(backend, r->monitor_repaint_copy[i]);
+			backend->ops.release_image(backend, r->monitor_repaint_copy[i]);
 		}
 		free(r->monitor_repaint_copy);
 	}
@@ -109,21 +109,21 @@ static bool
 renderer_init(struct renderer *renderer, struct backend_base *backend,
               double shadow_radius, struct color shadow_color, bool dithered_present) {
 	auto has_high_precision =
-	    backend->ops->is_format_supported(backend, BACKEND_IMAGE_FORMAT_PIXMAP_HIGH);
+	    backend->ops.is_format_supported(backend, BACKEND_IMAGE_FORMAT_PIXMAP_HIGH);
 	renderer->format = has_high_precision && dithered_present
 	                       ? BACKEND_IMAGE_FORMAT_PIXMAP_HIGH
 	                       : BACKEND_IMAGE_FORMAT_PIXMAP;
 	renderer->back_image = NULL;
 	renderer->white_image =
-	    backend->ops->new_image(backend, renderer->format, (ivec2){1, 1});
-	if (!renderer->white_image || !backend->ops->clear(backend, renderer->white_image,
-	                                                   (struct color){1, 1, 1, 1})) {
+	    backend->ops.new_image(backend, renderer->format, (ivec2){1, 1});
+	if (!renderer->white_image || !backend->ops.clear(backend, renderer->white_image,
+	                                                  (struct color){1, 1, 1, 1})) {
 		return false;
 	}
 	renderer->black_image =
-	    backend->ops->new_image(backend, renderer->format, (ivec2){1, 1});
-	if (!renderer->black_image || !backend->ops->clear(backend, renderer->black_image,
-	                                                   (struct color){0, 0, 0, 1})) {
+	    backend->ops.new_image(backend, renderer->format, (ivec2){1, 1});
+	if (!renderer->black_image || !backend->ops.clear(backend, renderer->black_image,
+	                                                  (struct color){0, 0, 0, 1})) {
 		return false;
 	}
 	renderer->canvas_size = (ivec2){0, 0};
@@ -132,7 +132,7 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 		    .size = (int)shadow_radius,
 		    .deviation = gaussian_kernel_std_for_size(shadow_radius, 0.5 / 256.0),
 		};
-		renderer->shadow_blur_context = backend->ops->create_blur_context(
+		renderer->shadow_blur_context = backend->ops.create_blur_context(
 		    backend, BLUR_METHOD_GAUSSIAN, BACKEND_IMAGE_FORMAT_MASK, &args);
 		if (!renderer->shadow_blur_context) {
 			log_error("Failed to create shadow blur context");
@@ -154,7 +154,7 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 		}
 		sum_kernel_preprocess(renderer->shadow_kernel);
 	}
-	renderer->max_buffer_age = backend->ops->max_buffer_age + 1;
+	renderer->max_buffer_age = backend->ops.max_buffer_age(backend) + 1;
 	return true;
 }
 
@@ -176,23 +176,23 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 		return true;
 	}
 	if (r->back_image) {
-		backend->ops->release_image(backend, r->back_image);
+		backend->ops.release_image(backend, r->back_image);
 	}
 	if (r->back_buffer_copy) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
-			backend->ops->release_image(backend, r->back_buffer_copy[i]);
+			backend->ops.release_image(backend, r->back_buffer_copy[i]);
 		}
 		free(r->back_buffer_copy);
 		r->back_buffer_copy = NULL;
 	}
 	if (r->monitor_repaint_copy) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
-			backend->ops->release_image(backend, r->monitor_repaint_copy[i]);
+			backend->ops.release_image(backend, r->monitor_repaint_copy[i]);
 		}
 		free(r->monitor_repaint_copy);
 		r->monitor_repaint_copy = NULL;
 	}
-	r->back_image = backend->ops->new_image(backend, r->format, root_size);
+	r->back_image = backend->ops.new_image(backend, r->format, root_size);
 	if (r->back_image != NULL) {
 		r->canvas_size = root_size;
 		return true;
@@ -205,16 +205,16 @@ static bool
 renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct managed_win *w) {
 	ivec2 size = {.width = w->widthb, .height = w->heightb};
 	bool succeeded = false;
-	auto image = backend->ops->new_image(backend, BACKEND_IMAGE_FORMAT_MASK, size);
-	if (!image || !backend->ops->clear(backend, image, (struct color){0, 0, 0, 0})) {
+	auto image = backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_MASK, size);
+	if (!image || !backend->ops.clear(backend, image, (struct color){0, 0, 0, 0})) {
 		log_error("Failed to create mask image");
 		goto err;
 	}
 
 	auto bound_region_local = win_get_bounding_shape_global_by_val(w);
 	pixman_region32_translate(&bound_region_local, -w->g.x, -w->g.y);
-	succeeded = backend->ops->copy_area(backend, (ivec2){0, 0}, (image_handle)image,
-	                                    r->white_image, &bound_region_local);
+	succeeded = backend->ops.copy_area(backend, (ivec2){0, 0}, (image_handle)image,
+	                                   r->white_image, &bound_region_local);
 	pixman_region32_fini(&bound_region_local);
 	if (!succeeded) {
 		log_error("Failed to fill the mask");
@@ -225,7 +225,7 @@ renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct mana
 
 err:
 	if (image != NULL) {
-		backend->ops->release_image(backend, image);
+		backend->ops.release_image(backend, image);
 	}
 	return succeeded;
 }
@@ -243,11 +243,11 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 
 	// Apply the properties on the mask image and blit the result into a larger
 	// image, each side larger by `2 * radius` so there is space for blurring.
-	normalized_mask_image = backend->ops->new_image(
+	normalized_mask_image = backend->ops.new_image(
 	    backend, BACKEND_IMAGE_FORMAT_MASK,
 	    (ivec2){mask_size.width + 2 * radius, mask_size.height + 2 * radius});
-	if (!normalized_mask_image || !backend->ops->clear(backend, normalized_mask_image,
-	                                                   (struct color){0, 0, 0, 0})) {
+	if (!normalized_mask_image || !backend->ops.clear(backend, normalized_mask_image,
+	                                                  (struct color){0, 0, 0, 0})) {
 		log_error("Failed to create mask image");
 		goto out;
 	}
@@ -276,8 +276,8 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 		pixman_region32_init_rect(&target_mask, radius, radius,
 		                          (unsigned)mask_size.width,
 		                          (unsigned)mask_size.height);
-		succeeded = backend->ops->blit(backend, (ivec2){radius, radius},
-		                               normalized_mask_image, &args);
+		succeeded = backend->ops.blit(backend, (ivec2){radius, radius},
+		                              normalized_mask_image, &args);
 		pixman_region32_fini(&target_mask);
 		if (!succeeded) {
 			log_error("Failed to blit for shadow generation");
@@ -297,7 +297,7 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 		                          (unsigned)(mask_size.width + 2 * radius),
 		                          (unsigned)(mask_size.height + 2 * radius));
 		succeeded =
-		    backend->ops->blur(backend, (ivec2){0, 0}, normalized_mask_image, &args);
+		    backend->ops.blur(backend, (ivec2){0, 0}, normalized_mask_image, &args);
 		pixman_region32_fini(&target_mask);
 		if (!succeeded) {
 			log_error("Failed to blur for shadow generation");
@@ -306,19 +306,19 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 	}
 	// Finally, we blit with this mask to colorize the shadow
 	succeeded = false;
-	shadow_image = backend->ops->new_image(
+	shadow_image = backend->ops.new_image(
 	    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
 	    (ivec2){mask_size.width + 2 * radius, mask_size.height + 2 * radius});
 	if (!shadow_image ||
-	    !backend->ops->clear(backend, shadow_image, (struct color){0, 0, 0, 0})) {
+	    !backend->ops.clear(backend, shadow_image, (struct color){0, 0, 0, 0})) {
 		log_error("Failed to allocate shadow image");
 		goto out;
 	}
 
 	shadow_color_pixel =
-	    backend->ops->new_image(backend, BACKEND_IMAGE_FORMAT_PIXMAP, (ivec2){1, 1});
+	    backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_PIXMAP, (ivec2){1, 1});
 	if (!shadow_color_pixel ||
-	    !backend->ops->clear(backend, shadow_color_pixel, r->shadow_color)) {
+	    !backend->ops.clear(backend, shadow_color_pixel, r->shadow_color)) {
 		log_error("Failed to create shadow color image");
 		goto out;
 	}
@@ -348,19 +348,19 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 	};
 	pixman_region32_init_rect(&target_mask, 0, 0, (unsigned)shadow_size.width,
 	                          (unsigned)shadow_size.height);
-	succeeded = backend->ops->blit(backend, (ivec2){0, 0}, shadow_image, &args);
+	succeeded = backend->ops.blit(backend, (ivec2){0, 0}, shadow_image, &args);
 	pixman_region32_fini(&target_mask);
 
 out:
 	if (normalized_mask_image) {
-		backend->ops->release_image(backend, normalized_mask_image);
+		backend->ops.release_image(backend, normalized_mask_image);
 	}
 	if (shadow_color_pixel) {
-		backend->ops->release_image(backend, shadow_color_pixel);
+		backend->ops.release_image(backend, shadow_color_pixel);
 	}
 	if (!succeeded && shadow_image) {
 		log_error("Failed to draw shadow image");
-		backend->ops->release_image(backend, shadow_image);
+		backend->ops.release_image(backend, shadow_image);
 		shadow_image = NULL;
 	}
 	return shadow_image;
@@ -368,7 +368,7 @@ out:
 
 static bool renderer_bind_shadow(struct renderer *r, struct backend_base *backend,
                                  struct managed_win *w) {
-	if (backend->ops->quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
+	if (backend->ops.quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
 		xcb_pixmap_t shadow = XCB_NONE;
 		xcb_render_picture_t pict = XCB_NONE;
 
@@ -379,7 +379,7 @@ static bool renderer_bind_shadow(struct renderer *r, struct backend_base *backen
 
 		auto visual =
 		    x_get_visual_for_standard(backend->c, XCB_PICT_STANDARD_ARGB_32);
-		w->shadow_image = backend->ops->bind_pixmap(
+		w->shadow_image = backend->ops.bind_pixmap(
 		    backend, shadow, x_get_visual_info(backend->c, visual));
 	} else {
 		if (!w->mask_image && !renderer_bind_mask(r, backend, w)) {
@@ -467,16 +467,16 @@ void renderer_ensure_images_ready(struct renderer *r, struct backend_base *backe
                                   bool monitor_repaint) {
 	if (monitor_repaint) {
 		if (!r->monitor_repaint_pixel) {
-			r->monitor_repaint_pixel = backend->ops->new_image(
+			r->monitor_repaint_pixel = backend->ops.new_image(
 			    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (ivec2){1, 1});
 			BUG_ON(!r->monitor_repaint_pixel);
-			backend->ops->clear(backend, r->monitor_repaint_pixel,
-			                    (struct color){.alpha = 0.5, .red = 0.5});
+			backend->ops.clear(backend, r->monitor_repaint_pixel,
+			                   (struct color){.alpha = 0.5, .red = 0.5});
 		}
 		if (!r->monitor_repaint_copy) {
 			r->monitor_repaint_copy = ccalloc(r->max_buffer_age, image_handle);
 			for (int i = 0; i < r->max_buffer_age; i++) {
-				r->monitor_repaint_copy[i] = backend->ops->new_image(
+				r->monitor_repaint_copy[i] = backend->ops.new_image(
 				    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
 				    (ivec2){.width = r->canvas_size.width,
 				            .height = r->canvas_size.height});
@@ -493,10 +493,10 @@ void renderer_ensure_images_ready(struct renderer *r, struct backend_base *backe
 	if (global_debug_options.consistent_buffer_age && !r->back_buffer_copy) {
 		r->back_buffer_copy = ccalloc(r->max_buffer_age, image_handle);
 		for (int i = 0; i < r->max_buffer_age; i++) {
-			r->back_buffer_copy[i] = backend->ops->new_image(
-			    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
-			    (ivec2){.width = r->canvas_size.width,
-			            .height = r->canvas_size.height});
+			r->back_buffer_copy[i] =
+			    backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_PIXMAP,
+			                           (ivec2){.width = r->canvas_size.width,
+			                                   .height = r->canvas_size.height});
 			BUG_ON(!r->back_buffer_copy[i]);
 		}
 	}
@@ -554,19 +554,19 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	pixman_region32_init(&damage_region);
 	pixman_region32_copy(&damage_region, &screen_region);
 	ivec2 blur_size = {};
-	if (backend->ops->get_blur_size && blur_context) {
-		backend->ops->get_blur_size(blur_context, &blur_size.width, &blur_size.height);
+	if (backend->ops.get_blur_size && blur_context) {
+		backend->ops.get_blur_size(blur_context, &blur_size.width, &blur_size.height);
 	}
 	auto buffer_age =
-	    (use_damage || monitor_repaint) ? backend->ops->buffer_age(backend) : 0;
+	    (use_damage || monitor_repaint) ? backend->ops.buffer_age(backend) : 0;
 	if (buffer_age > 0 && global_debug_options.consistent_buffer_age) {
 		int past_frame =
 		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;
 		region_t region;
 		pixman_region32_init_rect(&region, 0, 0, (unsigned)r->canvas_size.width,
 		                          (unsigned)r->canvas_size.height);
-		backend->ops->copy_area(backend, (ivec2){}, backend->ops->back_buffer(backend),
-		                        r->back_buffer_copy[past_frame], &region);
+		backend->ops.copy_area(backend, (ivec2){}, backend->ops.back_buffer(backend),
+		                       r->back_buffer_copy[past_frame], &region);
 		pixman_region32_fini(&region);
 	}
 	if (buffer_age > 0 && (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
@@ -595,17 +595,17 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		                     xcb_sync_reset_fence(backend->c->c, xsync_fence));
 	}
 
-	if (backend->ops->prepare) {
-		backend->ops->prepare(backend, &layout->commands[0].target_mask);
+	if (backend->ops.prepare) {
+		backend->ops.prepare(backend, &layout->commands[0].target_mask);
 	}
 
 	if (monitor_repaint && buffer_age <= r->max_buffer_age) {
 		// Restore the area of back buffer that was tainted by monitor repaint
 		int past_frame =
 		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;
-		backend->ops->copy_area(backend, (ivec2){}, backend->ops->back_buffer(backend),
-		                        r->monitor_repaint_copy[past_frame],
-		                        &r->monitor_repaint_region[past_frame]);
+		backend->ops.copy_area(backend, (ivec2){}, backend->ops.back_buffer(backend),
+		                       r->monitor_repaint_copy[past_frame],
+		                       &r->monitor_repaint_region[past_frame]);
 	}
 
 	if (!backend_execute(backend, r->back_image, layout->number_of_commands,
@@ -616,9 +616,9 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 
 	if (monitor_repaint) {
 		// Keep a copy of un-tainted back image
-		backend->ops->copy_area(backend, (ivec2){},
-		                        r->monitor_repaint_copy[r->frame_index],
-		                        r->back_image, &damage_region);
+		backend->ops.copy_area(backend, (ivec2){},
+		                       r->monitor_repaint_copy[r->frame_index],
+		                       r->back_image, &damage_region);
 		pixman_region32_copy(&r->monitor_repaint_region[r->frame_index], &damage_region);
 
 		struct backend_blit_args blit = {
@@ -631,25 +631,23 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		    .scale = SCALE_IDENTITY,
 		};
 		log_trace("Blit for monitor repaint");
-		backend->ops->blit(backend, (ivec2){}, r->back_image, &blit);
+		backend->ops.blit(backend, (ivec2){}, r->back_image, &blit);
 	}
 
-	backend->ops->copy_area_quantize(backend, (ivec2){},
-	                                 backend->ops->back_buffer(backend),
-	                                 r->back_image, &damage_region);
+	backend->ops.copy_area_quantize(backend, (ivec2){}, backend->ops.back_buffer(backend),
+	                                r->back_image, &damage_region);
 
 	if (global_debug_options.consistent_buffer_age) {
 		region_t region;
 		pixman_region32_init_rect(&region, 0, 0, (unsigned)r->canvas_size.width,
 		                          (unsigned)r->canvas_size.height);
-		backend->ops->copy_area(backend, (ivec2){},
-		                        r->back_buffer_copy[r->frame_index],
-		                        backend->ops->back_buffer(backend), &region);
+		backend->ops.copy_area(backend, (ivec2){}, r->back_buffer_copy[r->frame_index],
+		                       backend->ops.back_buffer(backend), &region);
 		pixman_region32_fini(&region);
 	}
 
-	if (backend->ops->present) {
-		backend->ops->present(backend);
+	if (backend->ops.present && !backend->ops.present(backend)) {
+		log_warn("Failed to present the frame");
 	}
 
 	// "Un-cull" the render commands, so later damage calculation using those commands

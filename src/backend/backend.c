@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+#include <inttypes.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
+
+#include <picom/types.h>
 
 #include "backend/backend.h"
 #include "common.h"
@@ -9,24 +12,73 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "types.h"
 #include "win.h"
 #include "x.h"
 
-extern struct backend_operations xrender_ops, dummy_ops;
-#ifdef CONFIG_OPENGL
-extern struct backend_operations glx_ops;
-extern struct backend_operations egl_ops;
-#endif
+static struct backend_info {
+	UT_hash_handle hh;
+	const char *name;
+	struct backend_base *(*init)(session_t *ps, xcb_window_t target);
+	bool can_present;
+} *backend_registry = NULL;
 
-struct backend_operations *backend_list[NUM_BKEND] = {
-    [BKEND_XRENDER] = &xrender_ops,
-    [BKEND_DUMMY] = &dummy_ops,
-#ifdef CONFIG_OPENGL
-    [BKEND_GLX] = &glx_ops,
-    [BKEND_EGL] = &egl_ops,
-#endif
-};
+PICOM_PUBLIC_API bool
+backend_register(uint64_t major, uint64_t minor, const char *name,
+                 struct backend_base *(*init)(session_t *ps, xcb_window_t target),
+                 bool can_present) {
+	if (major != PICOM_BACKEND_MAJOR) {
+		log_error("Backend %s has incompatible major version %" PRIu64
+		          ", expected %lu",
+		          name, major, PICOM_BACKEND_MAJOR);
+		return false;
+	}
+	if (minor > PICOM_BACKEND_MINOR) {
+		log_error("Backend %s has incompatible minor version %" PRIu64
+		          ", expected %lu",
+		          name, minor, PICOM_BACKEND_MINOR);
+		return false;
+	}
+	struct backend_info *info = NULL;
+	HASH_FIND_STR(backend_registry, name, info);
+	if (info) {
+		log_error("Backend %s is already registered", name);
+		return false;
+	}
+
+	info = cmalloc(struct backend_info);
+	info->name = name;
+	info->init = init;
+	info->can_present = can_present;
+	HASH_ADD_KEYPTR(hh, backend_registry, info->name, strlen(info->name), info);
+	return true;
+}
+
+struct backend_info *backend_find(const char *name) {
+	struct backend_info *info = NULL;
+	HASH_FIND_STR(backend_registry, name, info);
+	return info;
+}
+
+struct backend_base *
+backend_init(struct backend_info *info, session_t *ps, xcb_window_t target) {
+	return info->init(ps, target);
+}
+
+struct backend_info *backend_iter(void) {
+	return backend_registry;
+}
+
+struct backend_info *backend_iter_next(struct backend_info *info) {
+	return info->hh.next;
+}
+
+const char *backend_name(struct backend_info *info) {
+	return info->name;
+}
+
+bool backend_can_present(struct backend_info *info) {
+	return info->can_present;
+}
 
 void handle_device_reset(session_t *ps) {
 	log_error("Device reset detected");
@@ -66,22 +118,22 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 				continue;
 			}
 			succeeded =
-			    backend->ops->blit(backend, cmd->origin, target, &cmd->blit);
+			    backend->ops.blit(backend, cmd->origin, target, &cmd->blit);
 			break;
 		case BACKEND_COMMAND_COPY_AREA:
 			if (!pixman_region32_not_empty(cmd->copy_area.region)) {
 				continue;
 			}
-			succeeded = backend->ops->copy_area(backend, cmd->origin, target,
-			                                    cmd->copy_area.source_image,
-			                                    cmd->copy_area.region);
+			succeeded = backend->ops.copy_area(backend, cmd->origin, target,
+			                                   cmd->copy_area.source_image,
+			                                   cmd->copy_area.region);
 			break;
 		case BACKEND_COMMAND_BLUR:
 			if (!pixman_region32_not_empty(cmd->blur.target_mask)) {
 				continue;
 			}
 			succeeded =
-			    backend->ops->blur(backend, cmd->origin, target, &cmd->blur);
+			    backend->ops.blur(backend, cmd->origin, target, &cmd->blur);
 			break;
 		case BACKEND_COMMAND_INVALID:
 		default: assert(false);

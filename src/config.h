@@ -16,12 +16,12 @@
 #include <xcb/xfixes.h>
 
 #include <libconfig.h>
+#include <picom/types.h>
 
 #include "compiler.h"
 #include "kernel.h"
 #include "list.h"
 #include "log.h"
-#include "types.h"
 #include "win_defs.h"
 
 typedef struct session session_t;
@@ -57,15 +57,6 @@ typedef struct win_option {
 	double opacity;
 	bool clip_shadow_above;
 } win_option_t;
-
-enum blur_method {
-	BLUR_METHOD_NONE = 0,
-	BLUR_METHOD_KERNEL,
-	BLUR_METHOD_BOX,
-	BLUR_METHOD_GAUSSIAN,
-	BLUR_METHOD_DUAL_KAWASE,
-	BLUR_METHOD_INVALID,
-};
 
 typedef struct _c2_lptr c2_lptr_t;
 
@@ -166,11 +157,13 @@ typedef struct options {
 	bool debug_mode;
 	// === General ===
 	/// Use the legacy backends?
-	bool legacy_backends;
+	bool use_legacy_backends;
 	/// Path to write PID to.
 	char *write_pid_path;
-	/// The backend in use.
-	int backend;
+	/// Name of the backend
+	struct backend_info *backend;
+	/// The backend in use (for legacy backends).
+	int legacy_backend;
 	/// Log level.
 	int log_level;
 	/// Whether to sync X drawing with X Sync fence to avoid certain delay
@@ -360,6 +353,8 @@ typedef struct options {
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
+bool load_plugin(const char *name, const char *include_dir);
+
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, int *count);
@@ -415,7 +410,6 @@ static inline attr_pure int parse_backend(const char *str) {
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
-	log_error("Invalid backend argument: %s", str);
 	return NUM_BKEND;
 }
 

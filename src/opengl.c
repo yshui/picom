@@ -642,7 +642,7 @@ static inline GLuint glx_gen_texture(GLenum tex_tgt, int width, int height) {
  */
 bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, int y,
                       int width, int height) {
-	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID) {
+	if (ps->o.legacy_backend != BKEND_GLX && ps->o.legacy_backend != BKEND_XR_GLX_HYBRID) {
 		return true;
 	}
 
@@ -698,7 +698,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, i
  */
 bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, int width,
                      int height, bool repeat, const struct glx_fbconfig_info *fbcfg) {
-	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID) {
+	if (ps->o.legacy_backend != BKEND_GLX && ps->o.legacy_backend != BKEND_XR_GLX_HYBRID) {
 		return true;
 	}
 

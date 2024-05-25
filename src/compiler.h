@@ -126,6 +126,8 @@
 #else
 # define thread_local _Pragma("GCC error \"No thread local storage support\"") __error__
 #endif
+
+#define PICOM_PUBLIC_API __attribute__((visibility("default")))
 // clang-format on
 
 typedef unsigned long ulong;

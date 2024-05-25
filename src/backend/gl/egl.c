@@ -4,8 +4,6 @@
  */
 
 #include <X11/Xlib-xcb.h>
-#include <assert.h>
-#include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,10 +74,9 @@ static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 void egl_deinit(backend_t *base) {
 	struct egl_data *gd = (void *)base;
 
-	gl_deinit(&gd->gl);
-
 	// Destroy EGL context
 	if (gd->ctx != EGL_NO_CONTEXT) {
+		gl_deinit(&gd->gl);
 		eglMakeCurrent(gd->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 		eglDestroyContext(gd->display, gd->ctx);
 		gd->ctx = EGL_NO_CONTEXT;
@@ -106,7 +103,7 @@ static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
 	return eglSwapInterval(dpy, interval);
 }
 
-struct backend_operations egl_ops;
+const struct backend_operations egl_ops;
 /**
  * Initialize OpenGL.
  */
@@ -120,6 +117,8 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 		log_error("X11 platform not available.");
 		return NULL;
 	}
+
+	log_warn("The egl backend is still experimental, use with care.");
 
 	gd = ccalloc(1, struct egl_data);
 	gd->display = eglGetPlatformDisplayEXT(EGL_PLATFORM_X11_EXT, ps->c.dpy,
@@ -153,7 +152,7 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 
 	eglext_init(gd->display);
 	init_backend_base(&gd->gl.base, ps);
-	gd->gl.base.ops = &egl_ops;
+	gd->gl.base.ops = egl_ops;
 	if (!eglext.has_EGL_KHR_image_pixmap) {
 		log_error("EGL_KHR_image_pixmap not available.");
 		goto end;
@@ -338,7 +337,23 @@ static void egl_diagnostics(backend_t *base) {
 	}
 }
 
-struct backend_operations egl_ops = {
+static int egl_max_buffer_age(backend_t *base attr_unused) {
+	if (!eglext.has_EGL_EXT_buffer_age) {
+		return 0;
+	}
+
+	return 5;        // Why?
+}
+
+#define PICOM_BACKEND_EGL_MAJOR (0UL)
+#define PICOM_BACKEND_EGL_MINOR (1UL)
+
+static void egl_version(struct backend_base * /*base*/, uint64_t *major, uint64_t *minor) {
+	*major = PICOM_BACKEND_EGL_MAJOR;
+	*minor = PICOM_BACKEND_EGL_MINOR;
+}
+
+const struct backend_operations egl_ops = {
     .apply_alpha = gl_apply_alpha,
     .back_buffer = gl_back_buffer,
     .blit = gl_blit,
@@ -352,6 +367,7 @@ struct backend_operations egl_ops = {
     .new_image = gl_new_image,
     .present = egl_present,
     .quirks = backend_no_quirks,
+    .version = egl_version,
     .release_image = gl_release_image,
 
     .init = egl_init,
@@ -368,7 +384,7 @@ struct backend_operations egl_ops = {
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,
     .get_shader_attributes = gl_get_shader_attributes,
-    .max_buffer_age = 5,        // Why?
+    .max_buffer_age = egl_max_buffer_age,
 };
 
 struct eglext_info eglext = {0};
@@ -389,4 +405,11 @@ void eglext_init(EGLDisplay dpy) {
 	check_ext(EGL_MESA_query_driver);
 #endif
 #undef check_ext
+}
+
+BACKEND_ENTRYPOINT(egl_register) {
+	if (!backend_register(PICOM_BACKEND_MAJOR, PICOM_BACKEND_MINOR, "egl",
+	                      egl_ops.init, true)) {
+		log_error("Failed to register egl backend");
+	}
 }

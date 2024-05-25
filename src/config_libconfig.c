@@ -10,6 +10,7 @@
 #include <libconfig.h>
 #include <libgen.h>
 
+#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "config.h"
@@ -358,7 +359,7 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 					    config_setting_source_line(suppressions_setting));
 					return NULL;
 				}
-				suppressions |= 1 << suppression;
+				suppressions |= 1U << suppression;
 			}
 		}
 		config_setting_remove(setting, "suppressions");
@@ -628,6 +629,37 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// Get options from the configuration file. We don't do range checking
 	// right now. It will be done later
 
+	// Load user specified plugins at the very beginning, because list of backends
+	// depends on the plugins loaded.
+	auto plugins = config_lookup(&cfg, "plugins");
+	if (plugins != NULL) {
+		sval = config_setting_get_string(plugins);
+		if (sval) {
+			if (!load_plugin(sval, NULL)) {
+				log_fatal("Failed to load plugin \"%s\".", sval);
+				goto out;
+			}
+		} else if (config_setting_is_array(plugins) || config_setting_is_list(plugins)) {
+			for (int i = 0; i < config_setting_length(plugins); i++) {
+				sval = config_setting_get_string_elem(plugins, i);
+				if (!sval) {
+					log_fatal("Invalid value for \"plugins\" at line "
+					          "%d.",
+					          config_setting_source_line(plugins));
+					goto out;
+				}
+				if (!load_plugin(sval, NULL)) {
+					log_fatal("Failed to load plugin \"%s\".", sval);
+					goto out;
+				}
+			}
+		} else {
+			log_fatal("Invalid value for \"plugins\" at line %d.",
+			          config_setting_source_line(plugins));
+			goto out;
+		}
+	}
+
 	// --dbus
 	lcfg_lookup_bool(&cfg, "dbus", &opt->dbus);
 
@@ -743,9 +775,10 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
 	if (config_lookup_string(&cfg, "backend", &sval)) {
-		opt->backend = parse_backend(sval);
-		if (opt->backend >= NUM_BKEND) {
-			log_fatal("Cannot parse backend");
+		opt->legacy_backend = parse_backend(sval);
+		opt->backend = backend_find(sval);
+		if (opt->legacy_backend >= NUM_BKEND && opt->backend == NULL) {
+			log_fatal("Invalid backend: %s", sval);
 			goto out;
 		}
 	}

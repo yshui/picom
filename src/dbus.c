@@ -20,15 +20,15 @@
 #include <unistd.h>
 #include <xcb/xcb.h>
 
+#include <picom/types.h>
+
+#include "backend/backend.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "list.h"
 #include "log.h"
 #include "string_utils.h"
-#include "transition.h"
-#include "types.h"
-#include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"
@@ -853,7 +853,6 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		dbus_set_error_const(err, DBUS_ERROR_INVALID_ARGS, NULL);
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
-	assert((size_t)ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
 
 #define append(tgt, type, ret)                                                           \
 	if (!strcmp(#tgt, target)) {                                                     \
@@ -863,6 +862,18 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		return DBUS_HANDLER_RESULT_HANDLED;                                      \
 	}
 #define append_session_option(tgt, type) append(tgt, type, ps->o.tgt)
+
+	if (!strcmp("backend", target)) {
+		assert(!ps->o.use_legacy_backends ||
+		       (size_t)ps->o.legacy_backend < ARR_SIZE(BACKEND_STRS));
+		const char *name = ps->o.use_legacy_backends
+		                       ? BACKEND_STRS[ps->o.legacy_backend]
+		                       : backend_name(ps->o.backend);
+		if (reply != NULL && !cdbus_append_string(reply, name)) {
+			return DBUS_HANDLER_RESULT_NEED_MEMORY;
+		}
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
 
 	append(version, string, PICOM_VERSION);
 	append(pid, int32, getpid());
@@ -875,7 +886,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	append(unredir_if_possible_delay, int32, (int32_t)ps->o.unredir_if_possible_delay);
 	append(refresh_rate, int32, 0);
 	append(sw_opti, boolean, false);
-	append(backend, string, BACKEND_STRS[ps->o.backend]);
+	append(backend, string, BACKEND_STRS[ps->o.legacy_backend]);
 
 	append_session_option(unredir_if_possible, boolean);
 	append_session_option(write_pid_path, string);

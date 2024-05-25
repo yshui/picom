@@ -11,6 +11,8 @@
 #include <xcb/xcb_event.h>
 #include <xcb/xproto.h>
 
+#include <picom/types.h>
+
 #include "atom.h"
 #include "c2.h"
 #include "common.h"
@@ -20,7 +22,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"

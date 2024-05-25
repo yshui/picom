@@ -4,7 +4,8 @@
 #pragma once
 #include <stdbool.h>
 #include <xcb/sync.h>
-#include "types.h"
+
+#include <picom/types.h>
 
 struct renderer;
 struct layout_manager;
