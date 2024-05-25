@@ -22,6 +22,8 @@ This fork adds some fixes/enhancements that may not be considered correcty/fully
 * Desktop Switching Animation support https://github.com/yshui/picom/pull/1262
 * Corner Radius Fix for GLX backend https://github.com/yshui/picom/pull/1261
 
+If you want to use the old animation developed by [@dccsillag](https://github.com/dccsillag/picom) it is still available under the [implement-window-animations](https://github.com/pijulius/picom/tree/implement-window-animations) branch.
+
 ## Build
 
 ### Dependencies
