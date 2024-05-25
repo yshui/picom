@@ -2526,8 +2526,10 @@ static void session_destroy(session_t *ps) {
 	command_builder_free(ps->command_builder);
 	ps->command_builder = NULL;
 
-	file_watch_destroy(ps->loop, ps->file_watch_handle);
-	ps->file_watch_handle = NULL;
+	if (ps->file_watch_handle) {
+		file_watch_destroy(ps->loop, ps->file_watch_handle);
+		ps->file_watch_handle = NULL;
+	}
 
 	// Stop listening to events on root window
 	xcb_change_window_attributes(ps->c.c, ps->c.screen_info->root, XCB_CW_EVENT_MASK,
