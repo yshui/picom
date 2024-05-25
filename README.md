@@ -19,8 +19,8 @@ See [Releases](https://github.com/yshui/picom/releases)
 
 This fork adds some fixes/enhancements that may not be considered correcty/fully integrated but they do work for me personally and use them 24/7 so will have it here for everyone to play with :)
 
-* Desktop Switching Animation support https://github.com/pijulius/picom/commit/cee741a462466156d79f491f12b675388c6deb22
-* Corner Radius Fix for GLX backend https://github.com/pijulius/picom/commit/fcc32ee232e0a1a1632a4683a830580af9618112 https://github.com/pijulius/picom/commit/6dc467167649e23e1fa776dadfe566066609df90
+* Desktop Switching Animation support https://github.com/yshui/picom/pull/1262
+* Corner Radius Fix for GLX backend https://github.com/yshui/picom/pull/1261
 
 ## Build
 
