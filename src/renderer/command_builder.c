@@ -36,7 +36,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
 	pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
 	                          layer->window.origin.y);
-	if (w->frame_opacity < 1) {
+	if (w->frame_opacity < 1 && !w->frame_opacity_for_same_colors) {
 		pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask, frame_region);
 	}
 	pixman_region32_init(&cmd->opaque_region);
@@ -62,6 +62,10 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .target_mask = &cmd->target_mask,
 	    .corner_radius = w->corner_radius,
 	    .opacity = layer->opacity,
+	    .frame_opacity = w->frame_opacity,
+	    .frame_opacity_for_same_colors = w->frame_opacity_for_same_colors,
+	    .frame_opacity_for_same_colors_tolerance = w->frame_opacity_for_same_colors_tolerance,
+	    .frame_opacity_for_same_colors_multiplier = w->frame_opacity_for_same_colors_multiplier,
 	    .dim = dim,
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
@@ -70,7 +74,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness};
 
-	if (w->frame_opacity == 1 || w->frame_opacity == 0) {
+	if (w->frame_opacity == 1 || w->frame_opacity == 0 || w->frame_opacity_for_same_colors) {
 		return 1;
 	}
 	cmd -= 1;
@@ -376,7 +380,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 		if (layer->win->shadow) {
 			ncmds += 1;
 		}
-		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0) {
+		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0 && !layer->win->frame_opacity_for_same_colors) {
 			// Needs to draw the frame separately
 			ncmds += 1;
 		}

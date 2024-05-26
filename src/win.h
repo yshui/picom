@@ -245,6 +245,12 @@ struct managed_win {
 	// Frame-opacity-related members
 	/// Current window frame opacity. Affected by window opacity.
 	double frame_opacity;
+	// Makes colors matching the frame transparent too
+	bool frame_opacity_for_same_colors;
+	// Tolerance for similar colors (0 exact match, 1 all colors, default 0.5)
+	double frame_opacity_for_same_colors_tolerance;
+	// Make different colors opaque by a factor of x (default 5)
+	int frame_opacity_for_same_colors_multiplier;
 	/// Frame extents. Acquired from _NET_FRAME_EXTENTS.
 	margin_t frame_extents;
 

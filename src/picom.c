@@ -866,6 +866,9 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 
 		if (win_has_frame(w)) {
 			w->frame_opacity = ps->o.frame_opacity;
+			w->frame_opacity_for_same_colors = ps->o.frame_opacity_for_same_colors;
+			w->frame_opacity_for_same_colors_tolerance = ps->o.frame_opacity_for_same_colors_tolerance;
+			w->frame_opacity_for_same_colors_multiplier = ps->o.frame_opacity_for_same_colors_multiplier;
 		} else {
 			w->frame_opacity = 1.0;
 		}

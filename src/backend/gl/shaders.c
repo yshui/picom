@@ -128,6 +128,14 @@ const char blit_shader_glsl[] = GLSL(330,
 	uniform float max_brightness;
 	layout(location = UNIFORM_TIME_LOC)
 	uniform float time;
+	layout(location = UNIFORM_FRAME_OPACITY_LOC)
+	uniform float frame_opacity;
+	layout(location = UNIFORM_FRAME_OPACITY_FSC_LOC)
+	uniform bool frame_opacity_fsc;
+	layout(location = UNIFORM_FRAME_OPACITY_FSCT_LOC)
+	uniform float frame_opacity_fsct;
+	layout(location = UNIFORM_FRAME_OPACITY_FSCM_LOC)
+	uniform int frame_opacity_fscm;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
 	float rectangle_sdf(vec2 point, vec2 half_size) {
@@ -136,13 +144,26 @@ const char blit_shader_glsl[] = GLSL(330,
 	}
 
 	vec4 default_post_processing(vec4 c) {
+		float additional_opacity = 1;
+		if (frame_opacity_fsc && frame_opacity > 0 && frame_opacity < 1) {
+			vec4 frame_color = texture(tex, vec2(0.0, 0.01));
+			float color_diff = max(max(c.r - frame_color.r, c.g - frame_color.g), c.b - frame_color.b);
+			if (color_diff < 0)
+				color_diff *= -1;
+			if (color_diff <= frame_opacity_fsct) {
+				additional_opacity = frame_opacity * (1 + color_diff * frame_opacity_fscm);
+
+				if (additional_opacity > 1)
+					additional_opacity = 1;
+			}
+		}
 		vec4 border_color = texture(tex, vec2(0.0, 0.5));
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
 			border_color = vec4(border_color.aaa - border_color.rgb, border_color.a);
 		}
-		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
-		border_color = vec4(border_color.rgb * (1.0 - dim), border_color.a) * opacity;
+		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity * additional_opacity;
+		border_color = vec4(border_color.rgb * (1.0 - dim), border_color.a) * opacity * additional_opacity;
 
 		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
 		// Ref: https://en.wikipedia.org/wiki/Relative_luminance

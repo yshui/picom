@@ -268,6 +268,12 @@ typedef struct options {
 	/// Frame opacity. Relative to window opacity, also affects shadow
 	/// opacity.
 	double frame_opacity;
+	// Enable frame opacity for colors that match the frame
+	bool frame_opacity_for_same_colors;
+	// Tolerance for similar colors (0 exact match, 1 all colors, default 0.5)
+	double frame_opacity_for_same_colors_tolerance;
+	// Make different colors opaque by a factor of x (default 5)
+	int frame_opacity_for_same_colors_multiplier;
 	/// Whether to detect _NET_WM_WINDOW_OPACITY on client windows. Used on window
 	/// managers that don't pass _NET_WM_WINDOW_OPACITY to frame windows.
 	bool detect_client_opacity;

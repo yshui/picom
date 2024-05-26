@@ -686,6 +686,9 @@ bool parse_config(options_t *opt, const char *config_file) {
 	    .inactive_opacity_override = false,
 	    .active_opacity = 1.0,
 	    .frame_opacity = 1.0,
+	    .frame_opacity_for_same_colors = false,
+	    .frame_opacity_for_same_colors_tolerance = 0.5,
+	    .frame_opacity_for_same_colors_multiplier = 5,
 	    .detect_client_opacity = false,
 
 	    .blur_method = BLUR_METHOD_NONE,

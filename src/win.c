@@ -803,6 +803,9 @@ winmode_t win_calc_mode_raw(const struct managed_win *w) {
 		if (win_has_frame(w)) {
 			// The client window doesn't have alpha, but we have a WM
 			// frame window, which has alpha.
+			if (w->frame_opacity_for_same_colors)
+				return WMODE_TRANS;
+
 			return WMODE_FRAME_TRANS;
 		}
 		// Although the WM window has alpha, the frame window has 0 size,
@@ -810,6 +813,9 @@ winmode_t win_calc_mode_raw(const struct managed_win *w) {
 	}
 
 	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
+		if (w->frame_opacity_for_same_colors)
+			return WMODE_TRANS;
+
 		return WMODE_FRAME_TRANS;
 	}
 
@@ -1503,6 +1509,9 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	    // The following ones are updated during paint or paint preprocess
 	    .to_paint = false,
 	    .frame_opacity = 1.0,
+	    .frame_opacity_for_same_colors = false,
+	    .frame_opacity_for_same_colors_tolerance = 0.5,
+	    .frame_opacity_for_same_colors_multiplier = 5,
 	    .dim = false,
 	    .invert_color = false,
 	    .blur_background = false,
