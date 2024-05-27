@@ -147,6 +147,14 @@ struct backend_blit_args {
 	int border_width;
 	/// Whether the source image should be inverted.
 	bool color_inverted;
+	/// Opacity of the frame.
+	double frame_opacity;
+	// Enable frame opacity for colors that match the frame
+	bool frame_opacity_for_same_colors;
+	// Tolerance for similar colors (0 exact match, 1 all colors, default 0.5)
+	double frame_opacity_for_same_colors_tolerance;
+	// Make different colors opaque by a factor of x (default 5)
+	int frame_opacity_for_same_colors_multiplier;
 };
 
 enum backend_image_format {
