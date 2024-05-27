@@ -56,10 +56,17 @@ typedef struct pending_reply {
 } pending_reply_t;
 
 struct x_connection {
+	// Public fields
+	// These are part of the public ABI, changing these
+	// requires bumping PICOM_API_MAJOR.
 	/// XCB connection.
 	xcb_connection_t *c;
 	/// Display in use.
 	Display *dpy;
+	/// Default screen
+	int screen;
+
+	// Private fields
 	/// Head pointer of the error ignore linked list.
 	pending_reply_t *pending_reply_head;
 	/// Pointer to the <code>next</code> member of tail element of the error
@@ -67,8 +74,6 @@ struct x_connection {
 	pending_reply_t **pending_reply_tail;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
-	/// Default screen
-	int screen;
 	/// Information about the default screen
 	xcb_screen_t *screen_info;
 };
