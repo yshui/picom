@@ -80,31 +80,6 @@ bool backend_can_present(struct backend_info *info) {
 	return info->can_present;
 }
 
-void handle_device_reset(session_t *ps) {
-	log_error("Device reset detected");
-	// Wait for reset to complete
-	// Although ideally the backend should return DEVICE_STATUS_NORMAL after a reset
-	// is completed, it's not always possible.
-	//
-	// According to ARB_robustness (emphasis mine):
-	//
-	//     "If a reset status other than NO_ERROR is returned and subsequent
-	//     calls return NO_ERROR, the context reset was encountered and
-	//     completed. If a reset status is repeatedly returned, the context **may**
-	//     be in the process of resetting."
-	//
-	//  Which means it may also not be in the process of resetting. For example on
-	//  AMDGPU devices, Mesa OpenGL always return CONTEXT_RESET after a reset has
-	//  started, completed or not.
-	//
-	//  So here we blindly wait 5 seconds and hope ourselves best of the luck.
-	sleep(5);
-
-	// Reset picom
-	log_info("Resetting picom after device reset");
-	ev_break(ps->loop, EVBREAK_ALL);
-}
-
 /// Execute a list of backend commands on the backend
 /// @param target     the image to render into
 /// @param root_image the image containing the desktop background

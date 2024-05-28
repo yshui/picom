@@ -1679,6 +1679,22 @@ static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 	}
 }
 
+/**
+ * Turn on the program reset flag.
+ *
+ * This will result in the compositor resetting itself after next paint.
+ */
+static void reset_enable(EV_P_ ev_signal *w attr_unused, int revents attr_unused) {
+	log_info("picom is resetting...");
+	ev_break(EV_A_ EVBREAK_ALL);
+}
+
+static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused) {
+	session_t *ps = session_ptr(w, int_signal);
+	log_info("picom is quitting...");
+	quit(ps);
+}
+
 static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	assert(!ps->backend_busy);
 	assert(ps->render_queued);
@@ -1786,6 +1802,35 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			now = get_time_timespec();
 			auto render_start_us =
 			    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+			if (ps->backend_data->ops.device_status &&
+			    ps->backend_data->ops.device_status(ps->backend_data) !=
+			        DEVICE_STATUS_NORMAL) {
+				log_error("Device reset detected");
+				// Wait for reset to complete
+				// Although ideally the backend should return
+				// DEVICE_STATUS_NORMAL after a reset is completed, it's
+				// not always possible.
+				//
+				// According to ARB_robustness (emphasis mine):
+				//
+				//     "If a reset status other than NO_ERROR is returned
+				//     and subsequent calls return NO_ERROR, the context
+				//     reset was encountered and completed. If a reset
+				//     status is repeatedly returned, the context **may**
+				//     be in the process of resetting."
+				//
+				//  Which means it may also not be in the process of
+				//  resetting. For example on AMDGPU devices, Mesa OpenGL
+				//  always return CONTEXT_RESET after a reset has started,
+				//  completed or not.
+				//
+				//  So here we blindly wait 5 seconds and hope ourselves
+				//  best of the luck.
+				sleep(5);
+				log_info("Resetting picom after device reset");
+				reset_enable(ps->loop, NULL, 0);
+				return;
+			}
 			layout_manager_append_layout(
 			    ps->layout_manager, ps->wm, ps->root_image_generation,
 			    (ivec2){.width = ps->root_width, .height = ps->root_height});
@@ -1881,22 +1926,6 @@ static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused
 		ev_handle(ps, ev);
 		free(ev);
 	}
-}
-
-/**
- * Turn on the program reset flag.
- *
- * This will result in the compositor resetting itself after next paint.
- */
-static void reset_enable(EV_P_ ev_signal *w attr_unused, int revents attr_unused) {
-	log_info("picom is resetting...");
-	ev_break(EV_A_ EVBREAK_ALL);
-}
-
-static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused) {
-	session_t *ps = session_ptr(w, int_signal);
-	log_info("picom is quitting...");
-	quit(ps);
 }
 
 static void config_file_change_cb(void *_ps) {
