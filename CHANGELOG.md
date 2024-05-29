@@ -41,18 +41,19 @@
 * Remove command line options `-n`, `-a`, and `-s`. They were removed more than 10 years ago, it's time to finally get rid of them entirely. (#1254)
 * Remove error message for `--glx-swap-method`, it was deprecated in v6.
 * Remove error message for passing argument to `--vsync` arguments, it was deprecated in v5.
-* Option `--opengl` is now deprecated, use `--backend=glx` instead.
+* Option `--opengl` is now deprecated, use `--backend=glx` instead.
 
 ## Bug fixes
 
 * Fix ghosting artifacts that sometimes occur when window manager is restarted (#1081)
 * Fix a bug where rounded corner is disabled after making a window fullscreen and back (#1216)
 
-## Dependency changes
+## Build changes
 
 * picom now uses some OpenGL 4.3 features.
 * picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
 * `libconfig` is now a mandatory dependency, with a minimal supported version of 1.7.
+* picom doesn't depend on `xcb-dpms` anymore.
 
 # v11.2 (2024-Feb-13)
 
