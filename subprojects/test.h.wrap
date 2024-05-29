@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/yshui/test.h.git
+revision = master
+depth = 1
