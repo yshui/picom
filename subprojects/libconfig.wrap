@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/hyperrealm/libconfig
+revision = f9404f60a435aa06321f4ccd8357364dcb216d46
+depth = 1

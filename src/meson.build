@@ -34,7 +34,22 @@ endforeach
 foreach i : required_xcb_packages
 	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
-base_deps += [dependency('libconfig', version: '>=1.7', required: true)]
+
+libconfig_dep = dependency('libconfig', version: '>=1.7', required: false)
+
+if not libconfig_dep.found()
+	warning('Trying to clone and build libconfig as a subproject.')
+
+	cmake = import('cmake')
+	sub_libconfig_opts = cmake.subproject_options()
+	sub_libconfig_opts.add_cmake_defines({
+		'BUILD_SHARED_LIBS': false,
+	})
+	sub_libconfig = cmake.subproject('libconfig', options: sub_libconfig_opts)
+	base_deps += [sub_libconfig.dependency('config')]
+else
+	base_deps += [libconfig_dep]
+endif
 
 if not cc.has_header('uthash.h')
   error('Dependency uthash not found')
