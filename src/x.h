@@ -407,8 +407,3 @@ uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);
 
 /// Ask X server to send us a notification for the next end of vblank.
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc);
-
-/// Update screen_is_off to reflect the current DPMS state.
-///
-/// Returns true if the DPMS state was successfully queried, false otherwise.
-bool x_check_dpms_status(struct x_connection *c, bool *screen_is_off);

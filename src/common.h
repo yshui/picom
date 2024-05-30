@@ -217,8 +217,6 @@ typedef struct session {
 	xcb_sync_fence_t sync_fence;
 	/// Whether we are rendering the first frame after screen is redirected
 	bool first_frame;
-	/// Whether screen has been turned off
-	bool screen_is_off;
 	/// When last MSC event happened, in useconds.
 	uint64_t last_msc_instant;
 	/// The last MSC number
@@ -332,8 +330,6 @@ typedef struct session {
 	int composite_error;
 	/// Major opcode for X Composite extension.
 	int composite_opcode;
-	/// Whether X DPMS extension exists
-	bool dpms_exists;
 	/// Whether X Shape extension exists.
 	bool shape_exists;
 	/// Event base number for X Shape extension.
