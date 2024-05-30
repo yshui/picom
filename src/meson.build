@@ -45,6 +45,7 @@ if not libconfig_dep.found()
 	sub_libconfig_opts.add_cmake_defines({
 		'BUILD_SHARED_LIBS': false,
 	})
+	sub_libconfig_opts.set_install(false)
 	sub_libconfig = cmake.subproject('libconfig', options: sub_libconfig_opts)
 	base_deps += [sub_libconfig.dependency('config')]
 else
