@@ -544,8 +544,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
-			win_update_bounding_shape(&ps->c, w, ps->shape_exists,
-			                          ps->o.detect_rounded_corners);
+			win_update_bounding_shape(&ps->c, w, ps->o.detect_rounded_corners);
 			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
 
@@ -1692,7 +1691,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	}
 
 	// Get notification when the shape of a window changes
-	if (ps->shape_exists) {
+	if (ps->c.e.has_shape) {
 		xcb_shape_select_input(ps->c.c, new->base.id, 1);
 	}
 
@@ -1900,7 +1899,7 @@ gen_by_val(win_extents);
  * Mark the window shape as updated
  */
 void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
-                               bool shape_exists, bool detect_rounded_corners) {
+                               bool detect_rounded_corners) {
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
 	assert(w->state == WSTATE_MAPPED);
@@ -1909,7 +1908,7 @@ void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
 	// Start with the window rectangular region
 	win_get_region_local(w, &w->bounding_shape);
 
-	if (shape_exists) {
+	if (c->e.has_shape) {
 		w->bounding_shaped = win_bounding_shaped(c, w->base.id);
 	}
 

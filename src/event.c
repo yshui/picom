@@ -103,11 +103,11 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
 	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
 	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			return ((xcb_damage_notify_event_t *)ev)->drawable;
 		}
 
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 			return ((xcb_shape_notify_event_t *)ev)->affected_window;
 		}
 
@@ -135,16 +135,16 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(ClientMessage);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+	if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 		return "Damage";
 	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event) {
+	if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 		return "ShapeNotify";
 	}
 
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
+	if (ps->c.e.has_sync) {
+		int o = ev->response_type - ps->c.e.sync_event;
 		switch (o) {
 			CASESTRRET(XSyncCounterNotify);
 			CASESTRRET(XSyncAlarmNotify);
@@ -770,7 +770,7 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	}
 
 	xcb_window_t wid = ev_window(ps, ev);
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
+	if (ev->response_type != ps->c.e.damage_event + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
 		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	} else {
@@ -840,16 +840,17 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		break;
 	case 0: x_handle_error(&ps->c, (xcb_generic_error_t *)ev); break;
 	default:
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
-		if (ps->randr_exists &&
-		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
+		if (ps->c.e.has_randr &&
+		    ev->response_type ==
+		        (ps->c.e.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			set_root_flags(ps, ROOT_FLAGS_SCREEN_CHANGE);
 			break;
 		}
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			ev_damage_notify(ps, (xcb_damage_notify_event_t *)ev);
 			break;
 		}

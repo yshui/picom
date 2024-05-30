@@ -47,10 +47,9 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 	};
 	free(geometry_reply);
 
-	auto shape_info = xcb_get_extension_data(c->c, &xcb_shape_id);
 	win_on_win_size_change(w, options->shadow_offset_x, options->shadow_offset_y,
 	                       options->shadow_radius);
-	win_update_bounding_shape(c, w, shape_info->present, options->detect_rounded_corners);
+	win_update_bounding_shape(c, w, options->detect_rounded_corners);
 	win_update_prop_fullscreen(c, atoms, w);
 
 	// Determine if the window is focused
@@ -186,6 +185,9 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	auto atoms attr_unused = init_atoms(c.c);
 	auto state = c2_state_new(atoms);
 	options_postprocess_c2_lists(state, &c, &options);
+
+	auto shape_extension = xcb_get_extension_data(c.c, &xcb_shape_id);
+	c.e.has_shape = shape_extension && shape_extension->present;
 
 	auto target = select_window(&c);
 	log_info("Target window: %#x", target);
