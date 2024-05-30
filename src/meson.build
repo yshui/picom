@@ -17,8 +17,8 @@ picom_inc = include_directories(['.', '../include'])
 cflags = []
 
 required_xcb_packages = [
-	'xcb', 'xcb-composite', 'xcb-damage', 'xcb-dpms', 'xcb-glx', 'xcb-present',
-	'xcb-randr', 'xcb-render', 'xcb-shape', 'xcb-sync', 'xcb-xfixes'
+	'xcb', 'xcb-composite', 'xcb-damage', 'xcb-glx', 'xcb-present', 'xcb-randr',
+	'xcb-render', 'xcb-shape', 'xcb-sync', 'xcb-xfixes'
 ]
 
 # Some XCB packages are here because their versioning differs (see check below).
