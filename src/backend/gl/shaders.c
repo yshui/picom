@@ -146,7 +146,7 @@ const char blit_shader_glsl[] = GLSL(330,
 	vec4 default_post_processing(vec4 c) {
 		float additional_opacity = 1;
 		if (frame_opacity_fsc && frame_opacity > 0 && frame_opacity < 1) {
-			vec4 frame_color = texture(tex, vec2(0.01, 0.01));
+			vec4 frame_color = texelFetch(tex, ivec2(border_width + 1, border_width + 1), 0);
 			float color_diff = max(max(c.r - frame_color.r, c.g - frame_color.g), c.b - frame_color.b);
 			if (color_diff < 0)
 				color_diff *= -1;
