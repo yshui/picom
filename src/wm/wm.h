@@ -32,6 +32,31 @@ struct subwin {
 	UT_hash_handle hh;
 };
 
+enum wm_tree_change_type {
+	/// The client window of a toplevel changed
+	WM_TREE_CHANGE_CLIENT,
+	/// A toplevel window is killed on the X server side
+	/// A zombie will be left in its place.
+	WM_TREE_CHANGE_TOPLEVEL_KILLED,
+	/// A new toplevel window appeared
+	WM_TREE_CHANGE_TOPLEVEL_NEW,
+
+	// TODO(yshui): This is a stop-gap measure to make sure we invalidate `reg_ignore`
+	// of windows. Once we get rid of `reg_ignore`, which is only used by the legacy
+	// backends, this event should be removed.
+	//
+	// (`reg_ignore` is the cached cumulative opaque region of all windows above a
+	// window in the stacking order. If it actually is performance critical, we
+	// can probably cache it more cleanly in renderer layout.)
+
+	/// The stacking order of toplevel windows changed. Note, toplevel gone/new
+	/// changes also imply a restack.
+	WM_TREE_CHANGE_TOPLEVEL_RESTACKED,
+
+	/// Nothing changed
+	WM_TREE_CHANGE_NONE,
+};
+
 struct wm *wm_new(void);
 void wm_free(struct wm *wm, struct x_connection *c);
 
@@ -42,7 +67,7 @@ void wm_set_active_leader(struct wm *wm, xcb_window_t leader);
 
 // Note: `wm` keeps track of 2 lists of windows. One is the window stack, which includes
 // all windows that might need to be rendered, which means it would include destroyed
-// windows in case they need to be faded out. This list is accessed by `wm_stack_*` series
+// windows in case they have close animation. This list is accessed by `wm_stack_*` series
 // of functions. The other is a hash table of windows, which does not include destroyed
 // windows. This list is accessed by `wm_find_*`, `wm_foreach`, and `wm_num_windows`.
 // Adding a window to the window stack also automatically adds it to the hash table.
