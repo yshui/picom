@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -23,20 +24,16 @@
 #include "compiler.h"
 #include "config.h"
 #include "dbus.h"
-#include "list.h"
 #include "log.h"
 #include "picom.h"
 #include "region.h"
 #include "render.h"
-#include "utils.h"
-#include "win_defs.h"
-#include "wm.h"
+#include "utils/list.h"
+#include "utils/misc.h"
 #include "x.h"
 
-#ifdef CONFIG_OPENGL
-// TODO(yshui) Get rid of this include
-#include "opengl.h"
-#endif
+#include "defs.h"
+#include "wm.h"
 
 #include "win.h"
 
@@ -1462,6 +1459,13 @@ xcb_window_t win_get_client_window(struct x_connection *c, struct wm *wm,
 
 	return cw;
 }
+
+#ifdef CONFIG_OPENGL
+void free_win_res_glx(session_t *ps, struct managed_win *w);
+#else
+static inline void free_win_res_glx(session_t * /*ps*/, struct managed_win * /*w*/) {
+}
+#endif
 
 /**
  * Free all resources in a <code>struct _win</code>.

@@ -6,12 +6,12 @@
 #include <inttypes.h>
 #include <xcb/xcb_aux.h>
 
-#include "../picom.h"
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "command_builder.h"
 #include "damage.h"
 #include "layout.h"
+#include "picom.h"
 
 struct renderer {
 	/// Intermediate image to hold what will be presented to the back buffer.

@@ -3,7 +3,6 @@
 
 #pragma once
 #include <stdbool.h>
-#include "compiler.h"
 
 // ========================== Interpolators ==========================
 

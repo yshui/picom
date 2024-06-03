@@ -5,7 +5,7 @@
 
 #include "common.h"
 #include "layout.h"
-#include "win.h"
+#include "wm/win.h"
 
 /// Generate commands for rendering the body of the window in `layer`.
 ///

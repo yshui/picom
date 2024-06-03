@@ -1,6 +1,11 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
+#include <assert.h>
 #include <uthash.h>
 
 #include "cache.h"
+#include "misc.h"
 
 struct cache_handle *cache_get(struct cache *c, const char *key, size_t keylen) {
 	struct cache_handle *e;

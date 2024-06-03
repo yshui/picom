@@ -27,12 +27,12 @@
 
 #include "compiler.h"
 #include "config.h"
-#include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "utils.h"
+#include "utils/kernel.h"
+#include "utils/misc.h"
 #include "vsync.h"
-#include "win.h"
+#include "wm/win.h"
 #include "x.h"
 
 #include "backend/backend_common.h"

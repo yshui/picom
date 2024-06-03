@@ -2,6 +2,7 @@
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 
 /// Common functions and definitions for configuration parsing
@@ -19,10 +20,10 @@
 #include <picom/types.h>
 
 #include "compiler.h"
-#include "kernel.h"
-#include "list.h"
 #include "log.h"
-#include "win_defs.h"
+#include "utils/kernel.h"
+#include "utils/list.h"
+#include "wm/defs.h"
 
 typedef struct session session_t;
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #include <assert.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -10,13 +13,11 @@
 
 #ifdef CONFIG_OPENGL
 #include <epoxy/gl.h>
-#include "backend/gl/gl_common.h"
-#include "backend/gl/glx.h"
 #endif
 
 #include "compiler.h"
 #include "log.h"
-#include "utils.h"
+#include "utils/misc.h"
 
 thread_local struct log *tls_logger;
 

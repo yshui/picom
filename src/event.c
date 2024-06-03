@@ -22,10 +22,9 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "utils.h"
-#include "win.h"
-#include "win_defs.h"
-#include "wm.h"
+#include "utils/misc.h"
+#include "wm/defs.h"
+#include "wm/wm.h"
 #include "x.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly

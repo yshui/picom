@@ -10,8 +10,8 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "uthash_extra.h"
-#include "utils.h"
+#include "utils/misc.h"
+#include "utils/uthash_extra.h"
 #include "x.h"
 
 struct dummy_image {

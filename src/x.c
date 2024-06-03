@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -20,15 +21,12 @@
 #include <xcb/xfixes.h>
 
 #include "atom.h"
-#ifdef CONFIG_OPENGL
-#include "backend/gl/glx.h"
-#endif
 #include "common.h"
 #include "compiler.h"
-#include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "utils.h"
+#include "utils/kernel.h"
+#include "utils/misc.h"
 #include "x.h"
 
 // === Error handling ===

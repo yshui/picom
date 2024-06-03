@@ -20,12 +20,11 @@
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
-#include "kernel.h"
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "utils.h"
-#include "win.h"
+#include "utils/kernel.h"
+#include "utils/misc.h"
 #include "x.h"
 
 struct xrender_image_data_inner {

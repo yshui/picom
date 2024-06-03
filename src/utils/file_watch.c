@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #include <errno.h>
 #include <string.h>
 #ifdef HAS_INOTIFY
@@ -17,9 +20,8 @@
 #include <uthash.h>
 
 #include "file_watch.h"
-#include "list.h"
 #include "log.h"
-#include "utils.h"
+#include "misc.h"
 
 struct watched_file {
 	int wd;

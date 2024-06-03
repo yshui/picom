@@ -6,14 +6,15 @@
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
-#include "backend/backend_common.h"
 #include "common.h"
 #include "config.h"
-#include "kernel.h"
 #include "log.h"
-#include "utils.h"
-#include "win.h"
+#include "utils/kernel.h"
+#include "utils/misc.h"
+#include "wm/win.h"
 #include "x.h"
+
+#include "backend_common.h"
 
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 #include <stdbool.h>
 #include <xcb/damage.h>
@@ -12,12 +14,12 @@
 
 #include "c2.h"
 #include "compiler.h"
-#include "list.h"
+#include "defs.h"
 #include "region.h"
 #include "render.h"
-#include "script.h"
-#include "utils.h"
-#include "win_defs.h"
+#include "transition/script.h"
+#include "utils/list.h"
+#include "utils/misc.h"
 #include "x.h"
 #include "xcb/xproto.h"
 

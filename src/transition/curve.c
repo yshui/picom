@@ -6,9 +6,10 @@
 #include <stddef.h>
 
 #include "compiler.h"
-#include "string_utils.h"
-#include "transition.h"
-#include "utils.h"
+#include "utils/misc.h"
+#include "utils/str.h"
+
+#include "curve.h"
 
 static double curve_sample_linear(const struct curve *this attr_unused, double progress) {
 	return progress;

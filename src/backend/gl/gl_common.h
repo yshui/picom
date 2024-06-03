@@ -7,7 +7,7 @@
 #include <xcb/xproto.h>
 
 #include "backend/backend.h"
-#include "backend/backend_common.h"
+
 #include "log.h"
 #include "region.h"
 

@@ -15,12 +15,11 @@
 #include "c2.h"
 #include "common.h"
 #include "config.h"
-#include "err.h"
 #include "log.h"
 #include "options.h"
-#include "utils.h"
-#include "win.h"
-#include "win_defs.h"
+#include "utils/misc.h"
+#include "wm/defs.h"
+#include "wm/win.h"
 #include "x.h"
 
 static struct managed_win *

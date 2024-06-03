@@ -1,15 +1,6 @@
 // SPDX-License-Identifier: MIT
-/*
- * Compton - a compositor for X11
- *
- * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
- *
- * Copyright (c) 2011-2013, Christopher Jeffrey
- * Copyright (c) 2018, Yuxuan Shui <yshuiv7@gmail.com>
- *
- * See LICENSE-mit for more information.
- *
- */
+// Copyright (c) 2011-2013, Christopher Jeffrey
+// Copyright (c) 2018, Yuxuan Shui <yshuiv7@gmail.com>
 
 #pragma once
 
@@ -28,7 +19,6 @@
 // === Includes ===
 
 // For some special functions
-#include <assert.h>
 #include <stdbool.h>
 #include <sys/time.h>
 #include <time.h>
@@ -36,6 +26,7 @@
 #include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
+#include <uthash.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xproto.h>
@@ -57,8 +48,8 @@
 #include "config.h"
 #include "region.h"
 #include "render.h"
-#include "statistics.h"
-#include "win_defs.h"
+#include "utils/statistics.h"
+#include "wm/defs.h"
 #include "x.h"
 
 // === Constants ===0

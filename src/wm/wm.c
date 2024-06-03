@@ -4,12 +4,13 @@
 #include <uthash.h>
 #include <xcb/xproto.h>
 
-#include "list.h"
 #include "log.h"
-#include "uthash_extra.h"
+#include "utils/list.h"
+#include "utils/uthash_extra.h"
+#include "x.h"
+
 #include "win.h"
 #include "wm.h"
-#include "x.h"
 
 struct wm {
 	/// Current window generation, start from 1. 0 is reserved for using as

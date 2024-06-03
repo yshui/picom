@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: MIT
-/*
- * Compton - a compositor for X11
- *
- * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
- *
- * Copyright (c) 2011-2013, Christopher Jeffrey
- * See LICENSE-mit for more information.
- *
- */
+// Copyright (c) 2011-2013, Christopher Jeffrey
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <X11/Xlib.h>
 #include <ctype.h>
@@ -26,13 +19,13 @@
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
-#include "list.h"
 #include "log.h"
-#include "string_utils.h"
-#include "utils.h"
-#include "win.h"
-#include "win_defs.h"
-#include "wm.h"
+#include "utils/list.h"
+#include "utils/misc.h"
+#include "utils/str.h"
+#include "wm/defs.h"
+#include "wm/win.h"
+#include "wm/wm.h"
 
 #include "dbus.h"
 

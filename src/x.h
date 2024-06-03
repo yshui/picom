@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 #include <X11/Xlib.h>
 #include <stdbool.h>
@@ -13,9 +14,9 @@
 
 #include "atom.h"
 #include "compiler.h"
-#include "kernel.h"
 #include "log.h"
 #include "region.h"
+#include "utils/kernel.h"
 
 typedef struct session session_t;
 struct atom;

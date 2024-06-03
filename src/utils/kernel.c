@@ -6,8 +6,7 @@
 
 #include "compiler.h"
 #include "kernel.h"
-#include "log.h"
-#include "utils.h"
+#include "misc.h"
 
 /// Sum a region convolution kernel. Region is defined by a width x height rectangle whose
 /// top left corner is at (x, y)

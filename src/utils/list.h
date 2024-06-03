@@ -1,8 +1,8 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 #include <stdbool.h>
-#include <stddef.h>
-
-#include "utils.h"
 
 struct list_node {
 	struct list_node *next, *prev;

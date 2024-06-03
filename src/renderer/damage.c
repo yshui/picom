@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #include "damage.h"
 
 #include "layout.h"
 #include "region.h"
-#include "win.h"
+#include "wm/win.h"
 static inline bool attr_unused layer_key_eq(const struct layer_key *a,
                                             const struct layer_key *b) {
 	if (!a->generation || !b->generation) {

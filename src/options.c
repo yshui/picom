@@ -13,13 +13,14 @@
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
 #include "backend/backend.h"
+#include "c2.h"
 #include "common.h"
 #include "config.h"
 #include "log.h"
 #include "options.h"
-#include "string_utils.h"
-#include "utils.h"
-#include "win.h"
+#include "transition/script.h"
+#include "utils/misc.h"
+#include "utils/str.h"
 #include "x.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"

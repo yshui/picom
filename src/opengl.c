@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: MIT
-/*
- * Compton - a compositor for X11
- *
- * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
- *
- * Copyright (c) 2011-2013, Christopher Jeffrey
- * See LICENSE-mit for more information.
- *
- */
+// Copyright (c) 2011-2013, Christopher Jeffrey
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,14 +13,13 @@
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
-#include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "string_utils.h"
-#include "uthash_extra.h"
-#include "utils.h"
-#include "win.h"
-#include "wm.h"
+#include "utils/kernel.h"
+#include "utils/misc.h"
+#include "utils/str.h"
+#include "wm/win.h"
+#include "wm/wm.h"
 
 #include "opengl.h"
 
@@ -1537,4 +1528,14 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 	gl_check_err();
 
 	return true;
+}
+
+/**
+ * Free GLX part of win.
+ */
+void free_win_res_glx(session_t *ps, struct managed_win *w) {
+	free_paint_glx(ps, &w->paint);
+	free_paint_glx(ps, &w->shadow_paint);
+	free_glx_bc(ps, &w->glx_blur_cache);
+	free_texture(ps, &w->glx_texture_bg);
 }

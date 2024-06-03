@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #include <assert.h>
 
 #include <ev.h>
@@ -21,7 +24,6 @@
 #endif
 
 #include "compiler.h"
-#include "list.h"        // for container_of
 #include "log.h"
 #include "vblank.h"
 #include "x.h"

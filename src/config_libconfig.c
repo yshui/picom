@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2012-2014 Richard Grenville <pyxlcy@gmail.com>
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <limits.h>
 #include <stdio.h>
@@ -15,10 +16,10 @@
 #include "common.h"
 #include "config.h"
 #include "log.h"
-#include "script.h"
-#include "string_utils.h"
-#include "utils.h"
-#include "win.h"
+#include "transition/script.h"
+#include "utils/misc.h"
+#include "utils/str.h"
+#include "wm/win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 

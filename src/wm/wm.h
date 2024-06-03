@@ -15,8 +15,9 @@
 #include <uthash.h>
 #include <xcb/xproto.h>
 
+#include <picom/types.h>
+
 #include "compiler.h"
-#include "utils.h"
 
 struct wm;
 struct managed_win;
