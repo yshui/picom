@@ -541,6 +541,7 @@ TEST_CASE(c2_parse) {
 
 	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_NOTEQUAL(cond, NULL);
+	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL);
 	TEST_EQUAL(cond, NULL);
