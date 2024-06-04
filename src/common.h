@@ -272,12 +272,9 @@ typedef struct session {
 
 	// === Expose event related ===
 	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
-	/// XXX why do we need this array?
+	/// This is a reuse temporary buffer for handling root expose events.
+	/// This is a dynarr.
 	rect_t *expose_rects;
-	/// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
-	int size_expose;
-	/// Index of the next free slot in <code>expose_rects</code>.
-	int n_expose;
 
 	struct wm *wm;
 

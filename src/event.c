@@ -22,6 +22,7 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
+#include "utils/dynarr.h"
 #include "utils/misc.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
@@ -495,9 +496,9 @@ static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event
 	}
 }
 
-static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
+static inline void expose_root(session_t *ps, const rect_t *rects, size_t nrects) {
 	region_t region;
-	pixman_region32_init_rects(&region, rects, nrects);
+	pixman_region32_init_rects(&region, rects, (int)nrects);
 	add_damage(ps, &region);
 	pixman_region32_fini(&region);
 }
@@ -505,27 +506,19 @@ static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 	if (ev->window == ps->c.screen_info->root ||
 	    (ps->overlay && ev->window == ps->overlay)) {
-		int more = ev->count + 1;
-		if (ps->n_expose == ps->size_expose) {
-			if (ps->expose_rects) {
-				ps->expose_rects =
-				    crealloc(ps->expose_rects, ps->size_expose + more);
-				ps->size_expose += more;
-			} else {
-				ps->expose_rects = ccalloc(more, rect_t);
-				ps->size_expose = more;
-			}
-		}
+		dynarr_reserve(ps->expose_rects, ev->count + 1);
 
-		ps->expose_rects[ps->n_expose].x1 = ev->x;
-		ps->expose_rects[ps->n_expose].y1 = ev->y;
-		ps->expose_rects[ps->n_expose].x2 = ev->x + ev->width;
-		ps->expose_rects[ps->n_expose].y2 = ev->y + ev->height;
-		ps->n_expose++;
+		rect_t new_rect = {
+		    .x1 = ev->x,
+		    .y1 = ev->y,
+		    .x2 = ev->x + ev->width,
+		    .y2 = ev->y + ev->height,
+		};
+		dynarr_push(ps->expose_rects, new_rect);
 
 		if (ev->count == 0) {
-			expose_root(ps, ps->expose_rects, ps->n_expose);
-			ps->n_expose = 0;
+			expose_root(ps, ps->expose_rects, dynarr_len(ps->expose_rects));
+			dynarr_clear_pod(ps->expose_rects);
 		}
 	}
 }
