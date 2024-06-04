@@ -12,6 +12,7 @@
 #include "damage.h"
 #include "layout.h"
 #include "picom.h"
+#include "utils/dynarr.h"
 
 struct renderer {
 	/// Intermediate image to hold what will be presented to the back buffer.
@@ -41,31 +42,9 @@ struct renderer {
 	void *shadow_blur_context;
 	struct conv *shadow_kernel;
 
+	/// A dynarr of region_t for storing culled masks
 	region_t *culled_masks;
-	size_t culled_masks_capacity;
 };
-
-static void renderer_reallocate_culled_masks(struct renderer *r, size_t capacity) {
-	if (capacity <= r->culled_masks_capacity &&
-	    capacity > max2(1, r->culled_masks_capacity / 2)) {
-		return;
-	}
-	for (size_t i = capacity; i < r->culled_masks_capacity; i++) {
-		pixman_region32_fini(&r->culled_masks[i]);
-	}
-	void *new_storage = NULL;
-	if (capacity > 0) {
-		new_storage = realloc(r->culled_masks, sizeof(region_t[capacity]));
-		allocchk(new_storage);
-	} else {
-		free(r->culled_masks);
-	}
-	r->culled_masks = new_storage;
-	for (size_t i = r->culled_masks_capacity; i < capacity; i++) {
-		pixman_region32_init(&r->culled_masks[i]);
-	}
-	r->culled_masks_capacity = capacity;
-}
 
 void renderer_free(struct backend_base *backend, struct renderer *r) {
 	if (r->white_image) {
@@ -101,7 +80,7 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 		}
 		free(r->monitor_repaint_copy);
 	}
-	renderer_reallocate_culled_masks(r, 0);
+	dynarr_free(r->culled_masks, pixman_region32_fini);
 	free(r);
 }
 
@@ -155,6 +134,7 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 		sum_kernel_preprocess(renderer->shadow_kernel);
 	}
 	renderer->max_buffer_age = backend->ops.max_buffer_age(backend) + 1;
+	renderer->culled_masks = dynarr_new(region_t, 0);
 	return true;
 }
 
@@ -573,7 +553,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
 	}
 
-	renderer_reallocate_culled_masks(r, layout->number_of_commands);
+	dynarr_resize(r->culled_masks, layout->number_of_commands, pixman_region32_init,
+	              pixman_region32_fini);
 	commands_cull_with_damage(layout, &damage_region, blur_size, r->culled_masks);
 
 	auto now = get_time_timespec();
