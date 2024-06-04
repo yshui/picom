@@ -86,9 +86,7 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_resize(arr, newlen, init, dtor)                                           \
 	do {                                                                             \
 		BUG_ON((arr) == NULL);                                                   \
-		if ((newlen) > dynarr_cap(arr)) {                                        \
-			dynarr_reserve((arr), (newlen)-dynarr_cap(arr));                 \
-		}                                                                        \
+		dynarr_reserve((arr), (newlen)-dynarr_len(arr));                         \
 		if ((init) != NULL) {                                                    \
 			for (size_t i = dynarr_len(arr); i < (newlen); i++) {            \
 				(init)((arr) + i);                                       \
