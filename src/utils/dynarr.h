@@ -170,8 +170,8 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_foreach_rev(arr, i)                                                       \
 	for (typeof(arr)(i) = dynarr_end(arr) - 1; (i) >= (arr); (i)--)
 
-/// Find the index of an element in the array by using trivial comparison, returns -1 if
-/// not found.
+/// Find the index of the first appearance of an element in the array by using trivial
+/// comparison, returns -1 if not found.
 #define dynarr_find_pod(arr, needle)                                                     \
 	({                                                                               \
 		ptrdiff_t dynarr_find_ret = -1;                                          \

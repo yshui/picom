@@ -125,8 +125,7 @@ struct wm_tree_change wm_tree_dequeue_change(struct wm_tree *tree) {
 
 /// Return the next node in the subtree after `node` in a pre-order traversal. Returns
 /// NULL if `node` is the last node in the traversal.
-static struct wm_tree_node *
-wm_tree_next(struct wm_tree_node *node, struct wm_tree_node *subroot) {
+struct wm_tree_node *wm_tree_next(struct wm_tree_node *node, struct wm_tree_node *subroot) {
 	if (!list_is_empty(&node->children)) {
 		// Descend if there are children
 		return list_entry(node->children.next, struct wm_tree_node, siblings);

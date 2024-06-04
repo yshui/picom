@@ -203,6 +203,8 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
+	wm_import_incomplete(ps->wm, ev->window, ev->parent);
+
 	if (ev->parent == ps->c.screen_info->root) {
 		wm_stack_add_top(ps->wm, ev->window);
 		ps->pending_updates = true;
@@ -294,6 +296,8 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
+	wm_destroy(ps->wm, ev->window);
+
 	auto subwin = wm_subwin_find(ps->wm, ev->window);
 	if (subwin) {
 		wm_subwin_remove(ps->wm, subwin);
@@ -370,8 +374,11 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 }
 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
-	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
-	          ev->window, ev->parent, ev->override_redirect);
+	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d, "
+	          "send_event: %#010x",
+	          ev->window, ev->parent, ev->override_redirect, ev->event);
+
+	wm_reparent(ps->wm, ev->window, ev->parent);
 
 	auto old_toplevel = wm_find_by_client(ps->wm, ev->window);
 	auto old_w = wm_find(ps->wm, ev->window);

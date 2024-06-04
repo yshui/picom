@@ -21,22 +21,6 @@ struct wm_tree {
 	struct list_node free_changes;
 };
 
-typedef struct wm_treeid {
-	/// The generation of the window ID. This is used to detect if the window ID is
-	/// reused. Inherited from the wm_tree at cr
-	uint64_t gen;
-	/// The X window ID.
-	xcb_window_t x;
-
-	/// Explicit padding
-	char padding[4];
-} wm_treeid;
-
-static const wm_treeid WM_TREEID_NONE = {.gen = 0, .x = XCB_NONE};
-
-static_assert(sizeof(wm_treeid) == 16, "wm_treeid size is not 16 bytes");
-static_assert(alignof(wm_treeid) == 8, "wm_treeid alignment is not 8 bytes");
-
 struct wm_tree_node {
 	UT_hash_handle hh;
 
@@ -84,19 +68,30 @@ struct wm_tree_change {
 /// Free all tree nodes and changes, without generating any change events. Used when
 /// shutting down.
 void wm_tree_clear(struct wm_tree *tree);
-struct wm_tree_node *wm_tree_find(struct wm_tree *tree, xcb_window_t id);
+struct wm_tree_node *wm_tree_find(const struct wm_tree *tree, xcb_window_t id);
+struct wm_tree_node *wm_tree_next(struct wm_tree_node *node, struct wm_tree_node *subroot);
+/// Create a new window node in the tree, with X window ID `id`, and parent `parent`. If
+/// `parent` is NULL, the new node will be the root window. Only one root window is
+/// permitted, and the root window cannot be destroyed once created, until
+/// `wm_tree_clear` is called. If `parent` is not NULL, the new node will be put at the
+/// top of the stacking order among its siblings.
+struct wm_tree_node *
+wm_tree_new_window(struct wm_tree *tree, xcb_window_t id, struct wm_tree_node *parent);
+void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node);
 struct wm_tree_node *wm_tree_find_toplevel_for(struct wm_tree_node *node);
 /// Detach the subtree rooted at `subroot` from `tree`. The subtree root is removed from
 /// its parent, and the disconnected tree nodes won't be able to be found via
 /// `wm_tree_find`. Relevant events will be generated.
 void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot);
+void wm_tree_reparent(struct wm_tree *tree, struct wm_tree_node *node,
+                      struct wm_tree_node *new_parent);
+void wm_tree_move_to_end(struct wm_tree *tree, struct wm_tree_node *node, bool to_bottom);
+struct wm_tree_change wm_tree_dequeue_change(struct wm_tree *tree);
+void wm_tree_reap_zombie(struct wm_tree_node *zombie);
+void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool has_wm_state);
 
 static inline void wm_tree_init(struct wm_tree *tree) {
 	tree->nodes = NULL;
 	list_init_head(&tree->changes);
 	list_init_head(&tree->free_changes);
-}
-
-static inline bool wm_treeid_eq(wm_treeid a, wm_treeid b) {
-	return a.gen == b.gen && a.x == b.x;
 }

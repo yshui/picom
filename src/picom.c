@@ -1572,6 +1572,8 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 }
 
 static void handle_new_windows(session_t *ps) {
+	wm_complete_import(ps->wm, &ps->c, ps->atoms);
+
 	list_foreach_safe(struct win, w, wm_stack_end(ps->wm), stack_neighbour) {
 		if (w->is_new) {
 			auto new_w = maybe_allocate_managed_win(ps, w);
@@ -1633,10 +1635,35 @@ static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 
 	// Catching up with X server
 	handle_queued_x_events(EV_A, &ps->event_check, 0);
-	if (ps->pending_updates) {
+	if (ps->pending_updates || wm_has_incomplete_imports(ps->wm) ||
+	    wm_has_tree_changes(ps->wm)) {
 		log_debug("Delayed handling of events, entering critical section");
 		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
+
+		while (true) {
+			auto wm_change = wm_dequeue_change(ps->wm);
+			if (wm_change.type == WM_TREE_CHANGE_NONE) {
+				break;
+			}
+			switch (wm_change.type) {
+			case WM_TREE_CHANGE_TOPLEVEL_NEW:
+				log_debug("New window %#010x",
+				          wm_ref_win_id(wm_change.toplevel));
+				break;
+			case WM_TREE_CHANGE_TOPLEVEL_KILLED:
+				log_debug("Destroying window %#010x",
+				          wm_ref_win_id(wm_change.toplevel));
+				break;
+			case WM_TREE_CHANGE_CLIENT:
+				log_debug("Client message for window %#010x changed from "
+				          "%#010x to %#010x",
+				          wm_ref_win_id(wm_change.toplevel),
+				          wm_change.client.old.x, wm_change.client.new_.x);
+				break;
+			default: break;
+			}
+		}
 
 		// Handle screen changes
 		// This HAS TO be called before refresh_windows, as handle_root_flags
@@ -2473,6 +2500,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #endif
 	}
 
+	ps->wm = wm_new();
+	wm_import_incomplete(ps->wm, ps->c.screen_info->root, XCB_NONE);
+
 	e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
 	if (e) {
 		log_fatal_x_error(e, "Failed to grab X server");
@@ -2500,7 +2530,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ps->server_grabbed = false;
 
-	ps->wm = wm_new();
 	if (query_tree_reply) {
 		xcb_window_t *children;
 		int nchildren;
