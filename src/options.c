@@ -19,6 +19,7 @@
 #include "log.h"
 #include "options.h"
 #include "transition/script.h"
+#include "utils/dynarr.h"
 #include "utils/misc.h"
 #include "utils/str.h"
 #include "x.h"
@@ -742,6 +743,13 @@ err:
 	return true;
 }
 
+static void script_ptr_deinit(struct script **ptr) {
+	if (*ptr) {
+		script_free(*ptr);
+		*ptr = NULL;
+	}
+}
+
 static bool sanitize_options(struct options *opt) {
 	if (opt->use_legacy_backends) {
 		if (opt->legacy_backend == BKEND_EGL) {
@@ -779,18 +787,13 @@ static bool sanitize_options(struct options *opt) {
 			opt->blur_method = BLUR_METHOD_NONE;
 		}
 
-		if (opt->number_of_scripts > 0) {
+		if (dynarr_len(opt->all_scripts) > 0) {
 			log_warn("Custom animations are not supported by the legacy "
 			         "backends. Disabling animations.");
 			for (size_t i = 0; i < ARR_SIZE(opt->animations); i++) {
 				opt->animations[i].script = NULL;
 			}
-			for (int i = 0; i < opt->number_of_scripts; i++) {
-				script_free(opt->all_scripts[i]);
-			}
-			free(opt->all_scripts);
-			opt->all_scripts = NULL;
-			opt->number_of_scripts = 0;
+			dynarr_free(opt->all_scripts, script_ptr_deinit);
 		}
 
 		if (opt->window_shader_fg || opt->window_shader_fg_rules) {
@@ -995,11 +998,7 @@ void options_destroy(struct options *options) {
 	free(options->blur_kerns);
 	free(options->glx_fshader_win_str);
 
-	for (int i = 0; i < options->number_of_scripts; i++) {
-		script_free(options->all_scripts[i]);
-		options->all_scripts[i] = NULL;
-	}
-	free(options->all_scripts);
+	dynarr_free(options->all_scripts, script_ptr_deinit);
 	memset(options->animations, 0, sizeof(options->animations));
 
 	list_foreach_safe(struct included_config_file, i, &options->included_config_files,

@@ -339,9 +339,8 @@ typedef struct options {
 	bool dithered_present;
 	// === Animation ===
 	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
-	/// Array of all the scripts used in `animations`.
+	/// Array of all the scripts used in `animations`. This is a dynarr.
 	struct script **all_scripts;
-	int number_of_scripts;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
