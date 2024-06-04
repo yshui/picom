@@ -59,6 +59,8 @@
           # Workaround a NixOS limitation on sanitizers:
           # See: https://github.com/NixOS/nixpkgs/issues/287763
           export LD_LIBRARY_PATH+=":/run/opengl-driver/lib"
+          export UBSAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1"
+          export ASAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1"
         '';
       });
     in rec {
