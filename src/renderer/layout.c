@@ -9,6 +9,7 @@
 #include "command_builder.h"
 #include "common.h"
 #include "region.h"
+#include "utils/dynarr.h"
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "wm/win.h"
@@ -117,11 +118,16 @@ out:
 	return to_paint;
 }
 
+static void layer_deinit(struct layer *layer) {
+	pixman_region32_fini(&layer->damaged);
+}
+
+static void layer_init(struct layer *layer) {
+	pixman_region32_init(&layer->damaged);
+}
+
 static void layout_deinit(struct layout *layout) {
-	for (unsigned i = 0; i < layout->len; i++) {
-		pixman_region32_fini(&layout->layers[i].damaged);
-	}
-	free(layout->layers);
+	dynarr_free(layout->layers, layer_deinit);
 	command_builder_command_list_free(layout->commands);
 	*layout = (struct layout){};
 }
@@ -136,6 +142,7 @@ struct layout_manager *layout_manager_new(unsigned max_buffer_age) {
 	pixman_region32_init(&planner->scratch_region);
 	for (unsigned i = 0; i <= max_buffer_age; i++) {
 		planner->layouts[i] = (struct layout){};
+		planner->layouts[i].layers = dynarr_new(struct layer, 5);
 	}
 	return planner;
 }
@@ -176,17 +183,7 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 	layout->root_image_generation = root_pixmap_generation;
 
 	unsigned nlayers = wm_stack_num_managed_windows(wm);
-	if (nlayers > layout->capacity) {
-		struct layer *new_layers =
-		    realloc(layout->layers, nlayers * sizeof(struct layer));
-		BUG_ON(new_layers == NULL);
-		for (unsigned i = layout->capacity; i < nlayers; i++) {
-			pixman_region32_init(&new_layers[i].damaged);
-		}
-		layout->capacity = nlayers;
-		layout->layers = new_layers;
-	}
-
+	dynarr_resize(layout->layers, nlayers, layer_init, layer_deinit);
 	layout->size = size;
 
 	unsigned rank = 0;
@@ -210,7 +207,7 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 		rank++;
 		assert(rank <= nlayers);
 	}
-	layout->len = rank;
+	dynarr_resize(layout->layers, rank, layer_init, layer_deinit);
 
 	// Update indices. If a layer exist in both prev_layout and current layout,
 	// we could update the index using next_rank; if a layer no longer exist in
@@ -225,8 +222,8 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 	}
 	// And finally, if a layer in current layout didn't exist in prev_layout, add a
 	// new index for it.
-	for (unsigned i = 0; i < layout->len; i++) {
-		if (layout->layers[i].prev_rank != -1) {
+	dynarr_foreach(layout->layers, layer) {
+		if (layer->prev_rank != -1) {
 			continue;
 		}
 		if (!list_is_empty(&lm->free_indices)) {
@@ -236,8 +233,8 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 		} else {
 			index = cmalloc(struct layer_index);
 		}
-		index->key = layout->layers[i].key;
-		index->index = i;
+		index->key = layer->key;
+		index->index = to_u32_checked(layer - layout->layers);
 		HASH_ADD(hh, lm->layer_indices, key, sizeof(index->key), index);
 	}
 }

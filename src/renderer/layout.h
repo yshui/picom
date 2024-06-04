@@ -76,11 +76,7 @@ struct layout {
 	ivec2 size;
 	/// The root image generation, see `struct session::root_image_generation`
 	uint64_t root_image_generation;
-	/// Number of layers in `layers`
-	unsigned len;
-	/// Capacity of `layers`
-	unsigned capacity;
-	/// Layers as a flat array, from bottom to top in stack order.
+	/// Layers as a flat array, from bottom to top in stack order. This is a dynarr.
 	struct layer *layers;
 	/// Number of commands in `commands`
 	unsigned number_of_commands;

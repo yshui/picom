@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
-#include "command_builder.h"
-
 #include "common.h"
 #include "layout.h"
+#include "utils/dynarr.h"
 #include "wm/win.h"
+
+#include "command_builder.h"
 
 /// Generate commands for rendering the body of the window in `layer`.
 ///
@@ -201,14 +202,14 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 static inline void
 command_builder_apply_transparent_clipping(struct layout *layout, region_t *scratch_region) {
 	// Going from top down, apply transparent-clipping
-	if (layout->len == 0) {
+	if (dynarr_is_empty(layout->layers)) {
 		return;
 	}
 
 	pixman_region32_clear(scratch_region);
 	auto end = &layout->commands[layout->number_of_commands - 1];
 	auto begin = &layout->commands[layout->first_layer_start - 1];
-	auto layer = &layout->layers[layout->len - 1];
+	auto layer = &dynarr_last(layout->layers);
 	// `layer_start` is one before the first command for this layer
 	auto layer_start = end - layer->number_of_commands;
 	for (auto i = end; i != begin; i--) {
@@ -364,8 +365,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
                            const struct win_option *wintype_options) {
 
 	unsigned ncmds = 1;
-	for (unsigned i = 0; i < layout->len; i++) {
-		auto layer = &layout->layers[i];
+	dynarr_foreach(layout->layers, layer) {
 		auto mode = win_calc_mode_raw(layer->win);
 		if (layer->win->blur_background && layer->blur_opacity > 0 &&
 		    (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0 ||
@@ -387,8 +387,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 	layout->commands = list->commands;
 
 	auto cmd = &layout->commands[ncmds - 1];
-	for (int i = to_int_checked(layout->len) - 1; i >= 0; i--) {
-		auto layer = &layout->layers[i];
+	dynarr_foreach_rev(layout->layers, layer) {
 		auto last = cmd;
 		auto frame_region = win_get_region_frame_local_by_val(layer->win);
 		pixman_region32_translate(&frame_region, layer->window.origin.x,

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
-#include "damage.h"
-
 #include "layout.h"
 #include "region.h"
+#include "utils/dynarr.h"
 #include "wm/win.h"
+
+#include "damage.h"
+
 static inline bool attr_unused layer_key_eq(const struct layer_key *a,
                                             const struct layer_key *b) {
 	if (!a->generation || !b->generation) {
@@ -160,15 +162,12 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 		for (unsigned l = 0; l <= buffer_age; l++) {
 			log_trace("Layout[%d]: ", -l);
 			auto layout = layout_manager_layout(lm, l);
-			for (unsigned i = 0; i < layout->len; i++) {
+			dynarr_foreach(layout->layers, layer) {
 				log_trace("\t%#010x %dx%d+%dx%d (prev %d, next %d)",
-				          layout->layers[i].key.window,
-				          layout->layers[i].window.size.width,
-				          layout->layers[i].window.size.height,
-				          layout->layers[i].window.origin.x,
-				          layout->layers[i].window.origin.y,
-				          layout->layers[i].prev_rank,
-				          layout->layers[i].next_rank);
+				          layer->key.window, layer->window.size.width,
+				          layer->window.size.height,
+				          layer->window.origin.x, layer->window.origin.y,
+				          layer->prev_rank, layer->next_rank);
 			}
 		}
 	}
@@ -206,7 +205,7 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 
 		// Skip layers in the past layout doesn't contain a window that has a
 		// match in the remaining layers of the current layout; and vice versa.
-		while (past_layer_rank_target < past_layout->len) {
+		while (past_layer_rank_target < dynarr_len(past_layout->layers)) {
 			past_layer_curr_rank =
 			    layer_next_rank(lm, buffer_age, past_layer_rank_target);
 			if (past_layer_curr_rank >= (int)curr_layer_rank) {
@@ -214,7 +213,7 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 			}
 			past_layer_rank_target++;
 		};
-		while (curr_layer_rank_target < curr_layout->len) {
+		while (curr_layer_rank_target < dynarr_len(curr_layout->layers)) {
 			curr_layer_past_rank =
 			    layer_prev_rank(lm, buffer_age, curr_layer_rank_target);
 			if (curr_layer_past_rank >= (int)past_layer_rank) {
@@ -258,10 +257,11 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 			curr_layer += 1;
 		}
 
-		if (past_layer_rank >= past_layout->len || curr_layer_rank >= curr_layout->len) {
+		if (past_layer_rank >= dynarr_len(past_layout->layers) ||
+		    curr_layer_rank >= dynarr_len(curr_layout->layers)) {
 			// No more matching layers left.
-			assert(past_layer_rank >= past_layout->len &&
-			       curr_layer_rank >= curr_layout->len);
+			assert(past_layer_rank >= dynarr_len(past_layout->layers) &&
+			       curr_layer_rank >= dynarr_len(curr_layout->layers));
 			break;
 		}
 
