@@ -25,6 +25,7 @@
 
 #include "compiler.h"
 #include "log.h"
+#include "utils/dynarr.h"
 #include "vblank.h"
 #include "x.h"
 
@@ -37,7 +38,7 @@ struct vblank_closure {
 
 struct vblank_scheduler {
 	struct x_connection *c;
-	size_t callback_capacity, callback_count;
+	/// List of scheduled vblank callbacks, this is a dynarr
 	struct vblank_closure *callbacks;
 	struct ev_loop *loop;
 	/// Request extra vblank events even when no callbacks are scheduled.
@@ -485,26 +486,16 @@ static bool vblank_scheduler_schedule_internal(struct vblank_scheduler *self) {
 
 bool vblank_scheduler_schedule(struct vblank_scheduler *self,
                                vblank_callback_t vblank_callback, void *user_data) {
-	if (self->callback_count == 0 && self->wind_down == 0) {
-		if (!vblank_scheduler_schedule_internal(self)) {
-			return false;
-		}
+	// Schedule a new vblank event if there are no callbacks currently scheduled.
+	if (dynarr_len(self->callbacks) == 0 && self->wind_down == 0 &&
+	    !vblank_scheduler_schedule_internal(self)) {
+		return false;
 	}
-	if (self->callback_count == self->callback_capacity) {
-		size_t new_capacity =
-		    self->callback_capacity ? self->callback_capacity * 2 : 1;
-		void *new_buffer =
-		    realloc(self->callbacks, new_capacity * sizeof(*self->callbacks));
-		if (!new_buffer) {
-			return false;
-		}
-		self->callbacks = new_buffer;
-		self->callback_capacity = new_capacity;
-	}
-	self->callbacks[self->callback_count++] = (struct vblank_closure){
+	struct vblank_closure closure = {
 	    .fn = vblank_callback,
 	    .user_data = user_data,
 	};
+	dynarr_push(self->callbacks, closure);
 	return true;
 }
 
@@ -512,7 +503,7 @@ static void
 vblank_scheduler_invoke_callbacks(struct vblank_scheduler *self, struct vblank_event *event) {
 	// callbacks might be added during callback invocation, so we need to
 	// copy the callback_count.
-	size_t count = self->callback_count, write_head = 0;
+	size_t count = dynarr_len(self->callbacks), write_head = 0;
 	if (count == 0) {
 		self->wind_down--;
 	} else {
@@ -533,10 +524,11 @@ vblank_scheduler_invoke_callbacks(struct vblank_scheduler *self, struct vblank_e
 	}
 	memset(self->callbacks + write_head, 0,
 	       (count - write_head) * sizeof(*self->callbacks));
-	assert(count == self->callback_count && "callbacks should not be added when "
-	                                        "callbacks are being invoked.");
-	self->callback_count = write_head;
-	if (self->callback_count || self->wind_down) {
+	assert(count == dynarr_len(self->callbacks) && "callbacks should not be added "
+	                                               "when callbacks are being "
+	                                               "invoked.");
+	dynarr_len(self->callbacks) = write_head;
+	if (write_head || self->wind_down) {
 		vblank_scheduler_schedule_internal(self);
 	}
 }
@@ -547,7 +539,7 @@ void vblank_scheduler_free(struct vblank_scheduler *self) {
 	if (fn != NULL) {
 		fn(self);
 	}
-	free(self->callbacks);
+	dynarr_free_pod(self->callbacks);
 	free(self);
 }
 
@@ -567,6 +559,7 @@ vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c, xcb_window_t 
 	self->c = c;
 	self->loop = loop;
 	self->use_realtime_scheduling = use_realtime_scheduling;
+	self->callbacks = dynarr_new(struct vblank_closure, 1);
 	init_fn(self);
 	return self;
 }
