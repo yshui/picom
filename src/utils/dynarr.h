@@ -131,17 +131,22 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 /// Return whether the array is empty
 #define dynarr_is_empty(arr) (dynarr_len(arr) == 0)
 
-/// Clear the array, destructing each element with `dtor`.
-#define dynarr_clear(arr, dtor)                                                          \
+/// Reduce the length of the array to `n`, destructing each element with `dtor`. If `n`
+/// is greater than the current length, this does nothing.
+#define dynarr_truncate(arr, n, dtor)                                                    \
 	do {                                                                             \
 		if ((dtor) != NULL) {                                                    \
-			for (size_t i = 0; i < dynarr_len(arr); i++) {                   \
+			for (size_t i = n; i < dynarr_len(arr); i++) {                   \
 				(dtor)((arr) + i);                                       \
 			}                                                                \
 		}                                                                        \
-		dynarr_len(arr) = 0;                                                     \
+		dynarr_len(arr) = n;                                                     \
 	} while (0)
-#define dynarr_clear_pod(arr) dynarr_clear(arr, (void (*)(typeof(arr)))NULL)
+#define dynarr_truncate_pod(arr, n) dynarr_truncate(arr, n, (void (*)(typeof(arr)))NULL)
+
+/// Clear the array, destructing each element with `dtor`.
+#define dynarr_clear(arr, dtor) dynarr_truncate(arr, 0, dtor)
+#define dynarr_clear_pod(arr) dynarr_truncate_pod(arr, 0)
 
 /// Extend the array by copying `n` elements from `other`
 #define dynarr_extend_from(arr, other, n)                                                \
