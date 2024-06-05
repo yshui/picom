@@ -11,15 +11,16 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
-#include "backend/gl/egl.h"
-#include "backend/gl/gl_common.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
 #include "picom.h"
-#include "utils.h"
+#include "utils/misc.h"
 #include "x.h"
+
+#include "egl.h"
+#include "gl_common.h"
 
 struct egl_data {
 	struct gl_data gl;

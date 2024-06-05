@@ -23,7 +23,7 @@
 
 #include "log.h"
 #include "rtkit.h"
-#include "utils.h"
+#include "utils/misc.h"
 
 #define RTKIT_SERVICE_NAME "org.freedesktop.RealtimeKit1"
 #define RTKIT_OBJECT_PATH "/org/freedesktop/RealtimeKit1"

@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: MIT
-
-/*
- * Compton - a compositor for X11
- *
- * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
- *
- * Copyright (c) 2011-2013, Christopher Jeffrey
- * See LICENSE-mit for more information.
- *
- */
+// Copyright (c) 2011-2013, Christopher Jeffrey
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <assert.h>
 #include <ctype.h>
@@ -34,11 +26,10 @@
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
-#include "string_utils.h"
 #include "test.h"
-#include "uthash_extra.h"
-#include "utils.h"
-#include "win.h"
+#include "utils/str.h"
+#include "utils/uthash_extra.h"
+#include "wm/win.h"
 #include "x.h"
 
 #include "c2.h"
@@ -550,6 +541,7 @@ TEST_CASE(c2_parse) {
 
 	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_NOTEQUAL(cond, NULL);
+	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL);
 	TEST_EQUAL(cond, NULL);

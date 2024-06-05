@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
+#include <string.h>
 #include <xcb/xcb.h>
 
-#include "cache.h"
-#include "meta.h"
+#include "utils/meta.h"
 
 // clang-format off
 // Splitted into 2 lists because of the limitation of our macros

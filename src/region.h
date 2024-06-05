@@ -8,7 +8,7 @@
 #include <picom/types.h>
 
 #include "log.h"
-#include "utils.h"
+#include "utils/misc.h"
 
 typedef struct pixman_region32 pixman_region32_t;
 typedef struct pixman_box32 pixman_box32_t;

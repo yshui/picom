@@ -9,13 +9,13 @@
  * See LICENSE-mit for more information.
  *
  */
-
-#include <X11/Xlib-xcb.h>
 #include <limits.h>
-#include <pixman.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <X11/Xlib-xcb.h>
+#include <pixman.h>
 #include <uthash.h>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
@@ -23,16 +23,16 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
-#include "backend/gl/gl_common.h"
-#include "backend/gl/glx.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
 #include "picom.h"
-#include "utils.h"
-#include "win.h"
+#include "utils/misc.h"
 #include "x.h"
+
+#include "gl_common.h"
+#include "glx.h"
 
 struct _glx_data {
 	struct gl_data gl;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2012-2014 Richard Grenville <pyxlcy@gmail.com>
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <limits.h>
 #include <stdio.h>
@@ -15,10 +16,11 @@
 #include "common.h"
 #include "config.h"
 #include "log.h"
-#include "script.h"
-#include "string_utils.h"
-#include "utils.h"
-#include "win.h"
+#include "transition/script.h"
+#include "utils/dynarr.h"
+#include "utils/misc.h"
+#include "utils/str.h"
+#include "wm/win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -385,23 +387,17 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 	return script;
 }
 
-static struct script **parse_animations(struct win_script *animations,
-                                        config_setting_t *setting, int *number_of_scripts) {
-	auto number_of_animations = config_setting_length(setting);
-	auto all_scripts = ccalloc(number_of_animations + 1, struct script *);
-	auto len = 0;
-	for (int i = 0; i < number_of_animations; i++) {
+static struct script **
+parse_animations(struct win_script *animations, config_setting_t *setting) {
+	auto number_of_animations = (unsigned)config_setting_length(setting);
+	auto all_scripts = dynarr_new(struct script *, number_of_animations + 1);
+	for (unsigned i = 0; i < number_of_animations; i++) {
 		auto sub = config_setting_get_elem(setting, (unsigned)i);
 		auto script = parse_animation_one(animations, sub);
 		if (script != NULL) {
-			all_scripts[len++] = script;
+			dynarr_push(all_scripts, script);
 		}
 	}
-	if (len == 0) {
-		free(all_scripts);
-		all_scripts = NULL;
-	}
-	*number_of_scripts = len;
 	return all_scripts;
 }
 
@@ -442,7 +438,7 @@ void generate_fading_config(struct options *opt) {
 	size_t len = 0;
 	enum animation_trigger trigger[2];
 	struct script *scripts[4];
-	int number_of_scripts = 0;
+	unsigned number_of_scripts = 0;
 	int number_of_triggers = 0;
 
 	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
@@ -531,16 +527,7 @@ void generate_fading_config(struct options *opt) {
 	}
 
 	log_debug("Generated %d scripts for fading.", number_of_scripts);
-	if (number_of_scripts) {
-		auto ptr = realloc(
-		    opt->all_scripts,
-		    sizeof(struct scripts * [number_of_scripts + opt->number_of_scripts]));
-		allocchk(ptr);
-		opt->all_scripts = ptr;
-		memcpy(&opt->all_scripts[opt->number_of_scripts], scripts,
-		       sizeof(struct script *[number_of_scripts]));
-		opt->number_of_scripts += number_of_scripts;
-	}
+	dynarr_extend_from(opt->all_scripts, scripts, number_of_scripts);
 }
 
 static const char **
@@ -994,8 +981,10 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	config_setting_t *animations = config_lookup(&cfg, "animations");
 	if (animations) {
-		opt->all_scripts =
-		    parse_animations(opt->animations, animations, &opt->number_of_scripts);
+		opt->all_scripts = parse_animations(opt->animations, animations);
+	} else {
+		// Reserve some space for generated fading scripts.
+		opt->all_scripts = dynarr_new(struct script *, 4);
 	}
 
 	opt->config_file_path = path;

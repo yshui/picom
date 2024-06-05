@@ -8,7 +8,7 @@
 #include <xcb/xcb.h>
 
 #include "config.h"
-#include "utils.h"
+#include "utils/misc.h"
 
 struct session;
 struct backend_base;

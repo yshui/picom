@@ -11,15 +11,15 @@
 
 #include <picom/types.h>
 
+#include "backend/backend_common.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "utils.h"
+#include "utils/misc.h"
 
-#include "backend/backend_common.h"
-#include "backend/gl/gl_common.h"
+#include "gl_common.h"
 
 void gl_prepare(backend_t *base, const region_t *reg attr_unused) {
 	auto gd = (struct gl_data *)base;

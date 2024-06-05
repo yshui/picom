@@ -7,11 +7,6 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
-#include "compiler.h"
-#include "log.h"
-#include "utils.h"
-#include "x.h"
-
 struct eglext_info {
 	bool initialized;
 	bool has_EGL_MESA_query_driver;

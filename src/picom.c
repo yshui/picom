@@ -40,38 +40,39 @@
 #include <picom/types.h>
 #include <test.h>
 
-#include "api_internal.h"
-#include "common.h"
-#include "compiler.h"
-#include "config.h"
-#include "inspect.h"
-#include "kernel.h"
-#include "picom.h"
-#include "win_defs.h"
-#include "wm.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
+
+#include "api_internal.h"
 #include "atom.h"
 #include "backend/backend.h"
 #include "c2.h"
+#include "common.h"
+#include "compiler.h"
+#include "config.h"
 #include "dbus.h"
 #include "diagnostic.h"
 #include "event.h"
-#include "file_watch.h"
-#include "list.h"
+#include "inspect.h"
 #include "log.h"
 #include "options.h"
+#include "picom.h"
 #include "region.h"
 #include "render.h"
 #include "renderer/command_builder.h"
 #include "renderer/layout.h"
 #include "renderer/renderer.h"
-#include "statistics.h"
-#include "uthash_extra.h"
-#include "utils.h"
+#include "utils/dynarr.h"
+#include "utils/file_watch.h"
+#include "utils/kernel.h"
+#include "utils/list.h"
+#include "utils/misc.h"
+#include "utils/statistics.h"
+#include "utils/uthash_extra.h"
 #include "vblank.h"
-#include "win.h"
+#include "wm/defs.h"
+#include "wm/wm.h"
 #include "x.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
@@ -2026,8 +2027,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .quit = false,
 
 	    .expose_rects = NULL,
-	    .size_expose = 0,
-	    .n_expose = 0,
 
 	    .black_picture = XCB_NONE,
 	    .cshadow_picture = XCB_NONE,
@@ -2537,6 +2536,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->command_builder = command_builder_new();
+	ps->expose_rects = dynarr_new(rect_t, 0);
 
 	ps->pending_updates = true;
 
@@ -2607,7 +2607,7 @@ static void session_destroy(session_t *ps) {
 	free_paint(ps, &ps->tgt_buffer);
 
 	pixman_region32_fini(&ps->screen_reg);
-	free(ps->expose_rects);
+	dynarr_free_pod(ps->expose_rects);
 
 	x_free_monitor_info(&ps->monitors);
 

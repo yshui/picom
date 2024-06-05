@@ -6,11 +6,11 @@
 #include <xcb/randr.h>
 #include <xcb/xcb.h>
 
-#include "backend/backend.h"
-#include "backend/driver.h"
 #include "common.h"
 #include "compiler.h"
 #include "log.h"
+
+#include "driver.h"
 
 /// Apply driver specified global workarounds. It's safe to call this multiple times.
 void apply_driver_workarounds(struct session *ps, enum driver driver) {

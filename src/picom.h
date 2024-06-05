@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c)
+// Copyright (c) 2011-2013, Christopher Jeffrey
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 // Throw everything in here.
 // !!! DON'T !!!
@@ -20,7 +21,7 @@
 #include "log.h"        // XXX clean up
 #include "region.h"
 #include "render.h"
-#include "win.h"
+#include "wm/win.h"
 #include "x.h"
 
 enum root_flags {
@@ -87,14 +88,6 @@ static inline bool array_wid_exists(const xcb_window_t *arr, int count, xcb_wind
 
 	return false;
 }
-
-#ifndef CONFIG_OPENGL
-static inline void free_paint_glx(session_t *ps attr_unused, paint_t *p attr_unused) {
-}
-static inline void
-free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
-}
-#endif
 
 /**
  * Dump an drawable's info.

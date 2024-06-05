@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 #include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
-#include "utils.h"
+#include "misc.h"
 
 #define mstrncmp(s1, s2) strncmp((s1), (s2), strlen(s1))
 

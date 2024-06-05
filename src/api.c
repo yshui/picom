@@ -9,9 +9,9 @@
 #include <uthash.h>
 
 #include "compiler.h"
-#include "list.h"
 #include "log.h"
-#include "utils.h"
+#include "utils/list.h"
+#include "utils/misc.h"
 
 struct backend_plugins {
 	UT_hash_handle hh;

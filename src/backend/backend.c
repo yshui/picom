@@ -6,14 +6,15 @@
 
 #include <picom/types.h>
 
-#include "backend/backend.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "win.h"
+#include "wm/win.h"
 #include "x.h"
+
+#include "backend.h"
 
 static struct backend_info {
 	UT_hash_handle hh;

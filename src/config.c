@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
+// Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <ctype.h>
 #include <dlfcn.h>
@@ -20,9 +21,9 @@
 #include <test.h>
 
 #include "common.h"
-#include "kernel.h"
 #include "log.h"
-#include "string_utils.h"
+#include "utils/kernel.h"
+#include "utils/str.h"
 
 #include "config.h"
 

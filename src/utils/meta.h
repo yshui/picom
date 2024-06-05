@@ -34,6 +34,7 @@
 /// Return the number of arguments passed in binary, handles at most 31 elements
 #define VA_ARGS_LENGTH(...) _ARG33(0, ##__VA_ARGS__, RIOTA32(0))
 
+// clang-format off
 #define LIST_APPLY_000000(fn, sep, ...)
 #define LIST_APPLY_000001(fn, sep, x, ...) fn(x)
 #define LIST_APPLY_000010(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000001(fn, sep, __VA_ARGS__)
@@ -67,8 +68,8 @@
 #define LIST_APPLY_011110(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011101(fn, sep, __VA_ARGS__)
 #define LIST_APPLY_011111(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011110(fn, sep, __VA_ARGS__)
 #define LIST_APPLY_(N, fn, sep, ...) CONCAT(LIST_APPLY_, N)(fn, sep, __VA_ARGS__)
-#define LIST_APPLY(fn, sep, ...)                                                         \
-	LIST_APPLY_(VA_ARGS_LENGTH(__VA_ARGS__), fn, sep, __VA_ARGS__)
+#define LIST_APPLY(fn, sep, ...) LIST_APPLY_(VA_ARGS_LENGTH(__VA_ARGS__), fn, sep, __VA_ARGS__)
+// clang-format on
 
 #define SEP_COMMA() ,
 #define SEP_COLON() ;

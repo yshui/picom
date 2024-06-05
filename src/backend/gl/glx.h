@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
+#include <stdbool.h>
+
 #include <X11/Xlib.h>
 #include <epoxy/glx.h>
-#include <stdbool.h>
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
-#include "compiler.h"
-#include "log.h"
-#include "utils.h"
 #include "x.h"
 
 struct glx_fbconfig_info {

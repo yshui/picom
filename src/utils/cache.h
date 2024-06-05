@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 
 #include <uthash.h>
-#include "utils.h"
 
 #define cache_entry(ptr, type, member) container_of(ptr, type, member)
 

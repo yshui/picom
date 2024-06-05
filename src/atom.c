@@ -1,13 +1,16 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+
 #include <string.h>
 #include <uthash.h>
 #include <xcb/xcb.h>
 
 #include "atom.h"
-#include "cache.h"
 #include "common.h"
 #include "compiler.h"
 #include "log.h"
-#include "utils.h"
+#include "utils/cache.h"
+#include "utils/misc.h"
 
 struct atom_entry {
 	struct cache_handle entry;

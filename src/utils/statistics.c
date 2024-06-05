@@ -1,54 +1,16 @@
-#include <pthread.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/uio.h>
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
-#include "compiler.h"
-#include "rtkit.h"
-#include "string_utils.h"
-#include "test.h"
-#include "utils.h"
-
-/// Report allocation failure without allocating memory
-void report_allocation_failure(const char *func, const char *file, unsigned int line) {
-	// Since memory allocation failed, we try to print this error message without any
-	// memory allocation. Since logging framework allocates memory (and might even
-	// have not been initialized yet), so we can't use it.
-	char buf[11];
-	int llen = uitostr(line, buf);
-	const char msg1[] = " has failed to allocate memory, ";
-	const char msg2[] = ". Aborting...\n";
-	const struct iovec v[] = {
-	    {.iov_base = (void *)func, .iov_len = strlen(func)},
-	    {.iov_base = "()", .iov_len = 2},
-	    {.iov_base = (void *)msg1, .iov_len = sizeof(msg1) - 1},
-	    {.iov_base = "at ", .iov_len = 3},
-	    {.iov_base = (void *)file, .iov_len = strlen(file)},
-	    {.iov_base = ":", .iov_len = 1},
-	    {.iov_base = buf, .iov_len = (size_t)llen},
-	    {.iov_base = (void *)msg2, .iov_len = sizeof(msg2) - 1},
-	};
-
-	ssize_t _ attr_unused = writev(STDERR_FILENO, v, ARR_SIZE(v));
-	abort();
-
-	unreachable();
-}
-
+/// Rendering statistics
 ///
-/// Calculates next closest power of two of 32bit integer n
-/// ref: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-///
-int next_power_of_two(int n) {
-	n--;
-	n |= n >> 1;
-	n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n++;
-	return n;
-}
+/// Tracks how long it takes to render a frame, for measuring performance, and for pacing
+/// the frames.
+
+#include <stdlib.h>
+
+#include "log.h"
+#include "misc.h"
+#include "statistics.h"
 
 void rolling_window_destroy(struct rolling_window *rw) {
 	free(rw->elem);
@@ -194,35 +156,6 @@ TEST_CASE(rolling_max_test) {
 #undef NELEM
 }
 
-// Find the k-th smallest element in an array.
-int quickselect(int *elems, int nelem, int k) {
-	int l = 0, r = nelem;        // [l, r) is the range of candidates
-	while (l != r) {
-		int pivot = elems[l];
-		int i = l, j = r;
-		while (i < j) {
-			while (i < j && elems[--j] >= pivot) {
-			}
-			elems[i] = elems[j];
-			while (i < j && elems[++i] <= pivot) {
-			}
-			elems[j] = elems[i];
-		}
-		elems[i] = pivot;
-
-		if (i == k) {
-			break;
-		}
-
-		if (i < k) {
-			l = i + 1;
-		} else {
-			r = i;
-		}
-	}
-	return elems[k];
-}
-
 void rolling_quantile_init(struct rolling_quantile *rq, int capacity, int mink, int maxk) {
 	*rq = (struct rolling_quantile){0};
 	rq->tmp_buffer = malloc(sizeof(int) * (size_t)capacity);
@@ -274,45 +207,79 @@ void rolling_quantile_pop_front(struct rolling_quantile *rq, int x) {
 	}
 }
 
-/// Switch to real-time scheduling policy (SCHED_RR) if possible
-///
-/// Make picom realtime to reduce latency, and make rendering times more predictable to
-/// help pacing.
-///
-/// This requires the user to set up permissions for the real-time scheduling. e.g. by
-/// setting `ulimit -r`, or giving us the CAP_SYS_NICE capability.
-void set_rr_scheduling(void) {
-	static thread_local bool already_tried = false;
-	if (already_tried) {
-		return;
-	}
-	already_tried = true;
+void render_statistics_init(struct render_statistics *rs, int window_size) {
+	*rs = (struct render_statistics){0};
 
-	int priority = sched_get_priority_min(SCHED_RR);
-
-	if (rtkit_make_realtime(0, priority)) {
-		log_info("Set realtime priority to %d with rtkit.", priority);
-		return;
-	}
-
-	// Fallback to use pthread_setschedparam
-	struct sched_param param;
-	int old_policy;
-	int ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
-	if (ret != 0) {
-		log_info("Couldn't get old scheduling priority.");
-		return;
-	}
-
-	param.sched_priority = priority;
-
-	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
-	if (ret != 0) {
-		log_info("Couldn't set real-time scheduling priority to %d.", priority);
-		return;
-	}
-
-	log_info("Set real-time scheduling priority to %d.", priority);
+	rolling_window_init(&rs->render_times, window_size);
+	rolling_quantile_init_with_tolerance(&rs->render_time_quantile, window_size,
+	                                     /* q */ 0.98, /* tolerance */ 0.01);
 }
 
-// vim: set noet sw=8 ts=8 :
+void render_statistics_add_vblank_time_sample(struct render_statistics *rs, int time_us) {
+	auto sample_sd = sqrt(cumulative_mean_and_var_get_var(&rs->vblank_time_us));
+	auto current_estimate = render_statistics_get_vblank_time(rs);
+	if (current_estimate != 0 && fabs((double)time_us - current_estimate) > sample_sd * 3) {
+		// Deviated from the mean by more than 3 sigma (p < 0.003)
+		log_debug("vblank time outlier: %d %f %f", time_us, rs->vblank_time_us.mean,
+		          cumulative_mean_and_var_get_var(&rs->vblank_time_us));
+		// An outlier sample, this could mean things like refresh rate changes, so
+		// we reset the statistics. This could also be benign, but we like to be
+		// cautious.
+		cumulative_mean_and_var_init(&rs->vblank_time_us);
+	}
+
+	if (rs->vblank_time_us.mean != 0) {
+		auto nframes_in_10_seconds =
+		    (unsigned int)(10. * 1000000. / rs->vblank_time_us.mean);
+		if (rs->vblank_time_us.n > 20 && rs->vblank_time_us.n > nframes_in_10_seconds) {
+			// We collected 10 seconds worth of samples, we assume the
+			// estimated refresh rate is stable. We will still reset the
+			// statistics if we get an outlier sample though, see above.
+			return;
+		}
+	}
+	cumulative_mean_and_var_update(&rs->vblank_time_us, time_us);
+}
+
+void render_statistics_add_render_time_sample(struct render_statistics *rs, int time_us) {
+	int oldest;
+	if (rolling_window_push_back(&rs->render_times, time_us, &oldest)) {
+		rolling_quantile_pop_front(&rs->render_time_quantile, oldest);
+	}
+
+	rolling_quantile_push_back(&rs->render_time_quantile, time_us);
+}
+
+/// How much time budget we should give to the backend for rendering, in microseconds.
+unsigned int render_statistics_get_budget(struct render_statistics *rs) {
+	if (rs->render_times.nelem < rs->render_times.window_size) {
+		// No valid render time estimates yet. Assume maximum budget.
+		return UINT_MAX;
+	}
+
+	// N-th percentile of render times, see render_statistics_init for N.
+	auto render_time_percentile =
+	    rolling_quantile_estimate(&rs->render_time_quantile, &rs->render_times);
+	return (unsigned int)render_time_percentile;
+}
+
+unsigned int render_statistics_get_vblank_time(struct render_statistics *rs) {
+	if (rs->vblank_time_us.n <= 20 || rs->vblank_time_us.mean < 100) {
+		// Not enough samples yet, or the vblank time is too short to be
+		// meaningful. Assume maximum budget.
+		return 0;
+	}
+	return (unsigned int)rs->vblank_time_us.mean;
+}
+
+void render_statistics_reset(struct render_statistics *rs) {
+	rolling_window_reset(&rs->render_times);
+	rolling_quantile_reset(&rs->render_time_quantile);
+	rs->vblank_time_us = (struct cumulative_mean_and_var){0};
+}
+
+void render_statistics_destroy(struct render_statistics *rs) {
+	render_statistics_reset(rs);
+	rolling_window_destroy(&rs->render_times);
+	rolling_quantile_destroy(&rs->render_time_quantile);
+}

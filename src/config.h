@@ -2,6 +2,7 @@
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+
 #pragma once
 
 /// Common functions and definitions for configuration parsing
@@ -19,10 +20,10 @@
 #include <picom/types.h>
 
 #include "compiler.h"
-#include "kernel.h"
-#include "list.h"
 #include "log.h"
-#include "win_defs.h"
+#include "utils/kernel.h"
+#include "utils/list.h"
+#include "wm/defs.h"
 
 typedef struct session session_t;
 
@@ -352,9 +353,8 @@ typedef struct options {
 	bool dithered_present;
 	// === Animation ===
 	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
-	/// Array of all the scripts used in `animations`.
+	/// Array of all the scripts used in `animations`. This is a dynarr.
 	struct script **all_scripts;
-	int number_of_scripts;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

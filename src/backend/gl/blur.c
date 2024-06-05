@@ -1,8 +1,7 @@
 #include <locale.h>
 #include <stdbool.h>
 
-#include <backend/backend.h>
-#include <backend/backend_common.h>
+#include "backend/backend_common.h"
 
 #include "gl_common.h"
 

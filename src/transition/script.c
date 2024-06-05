@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
-#include "script.h"
-#include <libconfig.h>
+
 #include <stdbool.h>
 #include <stddef.h>
+
+#include <libconfig.h>
 #include <uthash.h>
-#include "list.h"
-#include "string_utils.h"
-#include "transition.h"
-#include "uthash_extra.h"
-#include "utils.h"
+
+#include "utils/list.h"
+#include "utils/str.h"
+#include "utils/uthash_extra.h"
+
+#include "curve.h"
+#include "script.h"
 
 enum op {
 	OP_ADD = 0,
