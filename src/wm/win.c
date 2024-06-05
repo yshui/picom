@@ -2323,12 +2323,11 @@ bool win_process_animation_and_state_change(struct session *ps, struct managed_w
 			                          : ANIMATION_TRIGGER_SHOW;
 
 			if (ps->root_desktop_switch_direction != 0) {
-				trigger = 
-					(ps->root_desktop_switch_direction < 0 &&
-					 ps->root_desktop_switch_direction >= -1) ||
-					 ps->root_desktop_switch_direction > 1 ?
-						ANIMATION_TRIGGER_WORKSPACE_IN_INVERSE  :
-						ANIMATION_TRIGGER_WORKSPACE_IN;
+				trigger = (ps->root_desktop_switch_direction < 0 &&
+				           ps->root_desktop_switch_direction >= -1) ||
+				                  ps->root_desktop_switch_direction > 1
+				              ? ANIMATION_TRIGGER_WORKSPACE_IN_INVERSE
+				              : ANIMATION_TRIGGER_WORKSPACE_IN;
 			}
 			break;
 		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_DESTROYED):
@@ -2349,12 +2348,11 @@ bool win_process_animation_and_state_change(struct session *ps, struct managed_w
 			trigger = ANIMATION_TRIGGER_HIDE;
 
 			if (ps->root_desktop_switch_direction != 0) {
-				trigger = 
-					(ps->root_desktop_switch_direction < 0 &&
-					 ps->root_desktop_switch_direction >= -1) ||
-					 ps->root_desktop_switch_direction > 1 ?
-						ANIMATION_TRIGGER_WORKSPACE_OUT_INVERSE :
-						ANIMATION_TRIGGER_WORKSPACE_OUT;
+				trigger = (ps->root_desktop_switch_direction < 0 &&
+				           ps->root_desktop_switch_direction >= -1) ||
+				                  ps->root_desktop_switch_direction > 1
+				              ? ANIMATION_TRIGGER_WORKSPACE_OUT_INVERSE
+				              : ANIMATION_TRIGGER_WORKSPACE_OUT;
 			}
 			break;
 		default:

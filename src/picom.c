@@ -867,8 +867,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 		if (win_has_frame(w)) {
 			w->frame_opacity = ps->o.frame_opacity;
 			w->frame_opacity_for_same_colors = ps->o.frame_opacity_for_same_colors;
-			w->frame_opacity_for_same_colors_tolerance = ps->o.frame_opacity_for_same_colors_tolerance;
-			w->frame_opacity_for_same_colors_multiplier = ps->o.frame_opacity_for_same_colors_multiplier;
+			w->frame_opacity_for_same_colors_tolerance =
+			    ps->o.frame_opacity_for_same_colors_tolerance;
+			w->frame_opacity_for_same_colors_multiplier =
+			    ps->o.frame_opacity_for_same_colors_multiplier;
 		} else {
 			w->frame_opacity = 1.0;
 		}
@@ -2321,10 +2323,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		goto err;
 	}
 
-	// Initiate current workspace num so we correctly animate if picom 
+	// Initiate current workspace num so we correctly animate if picom
 	// started/restarted on different desktop number than 0
-	auto prop = x_get_prop(&ps->c, ps->c.screen_info->root, ps->atoms->a_NET_CURRENT_DESKTOP,
-				1L, XCB_ATOM_CARDINAL, 32);
+	auto prop = x_get_prop(&ps->c, ps->c.screen_info->root,
+	                       ps->atoms->a_NET_CURRENT_DESKTOP, 1L, XCB_ATOM_CARDINAL, 32);
 
 	ps->root_desktop_switch_direction = 0;
 	if (prop.nitems) {

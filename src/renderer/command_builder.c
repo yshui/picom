@@ -66,7 +66,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .frame_opacity = w->frame_opacity,
 	    .frame_opacity_for_same_colors = w->frame_opacity_for_same_colors,
 	    .frame_opacity_for_same_colors_tolerance = w->frame_opacity_for_same_colors_tolerance,
-	    .frame_opacity_for_same_colors_multiplier = w->frame_opacity_for_same_colors_multiplier,
+	    .frame_opacity_for_same_colors_multiplier =
+	        w->frame_opacity_for_same_colors_multiplier,
 	    .dim = dim,
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
@@ -380,7 +381,8 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 		if (layer->win->shadow) {
 			ncmds += 1;
 		}
-		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0 && !layer->win->frame_opacity_for_same_colors) {
+		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0 &&
+		    !layer->win->frame_opacity_for_same_colors) {
 			// Needs to draw the frame separately
 			ncmds += 1;
 		}

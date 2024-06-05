@@ -688,11 +688,14 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// --frame-opacity-for-same-colors
-	lcfg_lookup_bool(&cfg, "frame-opacity-for-same-colors", &opt->frame_opacity_for_same_colors);
+	lcfg_lookup_bool(&cfg, "frame-opacity-for-same-colors",
+	                 &opt->frame_opacity_for_same_colors);
 	// --frame-opacity-for-same-colors-tolerance
-	config_lookup_float(&cfg, "frame-opacity-for-same-colors-tolerance", &opt->frame_opacity_for_same_colors_tolerance);
+	config_lookup_float(&cfg, "frame-opacity-for-same-colors-tolerance",
+	                    &opt->frame_opacity_for_same_colors_tolerance);
 	// --frame-opacity-for-same-colors-multiplier
-	config_lookup_int(&cfg, "frame-opacity-for-same-colors-multiplier", &opt->frame_opacity_for_same_colors_multiplier);
+	config_lookup_int(&cfg, "frame-opacity-for-same-colors-multiplier",
+	                  &opt->frame_opacity_for_same_colors_multiplier);
 	// -c (shadow_enable)
 	lcfg_lookup_bool(&cfg, "shadow", &opt->shadow_enable);
 	// -m (menu_opacity)
