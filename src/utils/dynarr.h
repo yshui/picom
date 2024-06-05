@@ -169,3 +169,17 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_foreach(arr, i) for (typeof(arr)(i) = (arr); (i) < dynarr_end(arr); (i)++)
 #define dynarr_foreach_rev(arr, i)                                                       \
 	for (typeof(arr)(i) = dynarr_end(arr) - 1; (i) >= (arr); (i)--)
+
+/// Find the index of an element in the array by using trivial comparison, returns -1 if
+/// not found.
+#define dynarr_find_pod(arr, needle)                                                     \
+	({                                                                               \
+		ptrdiff_t dynarr_find_ret = -1;                                          \
+		dynarr_foreach(arr, dynarr_find_i) {                                     \
+			if (*dynarr_find_i == (needle)) {                                \
+				dynarr_find_ret = dynarr_find_i - (arr);                 \
+				break;                                                   \
+			}                                                                \
+		}                                                                        \
+		dynarr_find_ret;                                                         \
+	})
