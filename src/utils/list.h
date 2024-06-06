@@ -74,6 +74,16 @@ static inline bool list_is_empty(const struct list_node *head) {
 	return head->prev == head;
 }
 
+/// Splice a list of nodes from `from` to into the beginning of list `to`.
+static inline void list_splice(struct list_node *from, struct list_node *to) {
+	if (list_is_empty(from)) {
+		return;
+	}
+	__list_link(from->prev, to->next);
+	__list_link(to, from->next);
+	list_init_head(from);
+}
+
 /// Return true if `to_check` is the first node in list headed by `head`
 static inline bool
 list_node_is_first(const struct list_node *head, const struct list_node *to_check) {
