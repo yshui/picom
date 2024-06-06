@@ -28,7 +28,6 @@
 #include "picom.h"
 #include "region.h"
 #include "render.h"
-#include "utils/list.h"
 #include "utils/misc.h"
 #include "x.h"
 
@@ -80,11 +79,6 @@ static void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atom
                                        struct managed_win *w);
 static bool
 win_update_prop_shadow(struct x_connection *c, struct atom *atoms, struct managed_win *w);
-/**
- * Update window EWMH fullscreen state.
- */
-bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
-                                struct managed_win *w);
 /**
  * Update leader of a window.
  */
@@ -894,14 +888,6 @@ void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	}
 	assert(w->running_animation == NULL);
 }
-
-struct window_transition_data {
-	struct managed_win *w;
-	session_t *ps;
-	// TODO(yshui) switch to only pass backend_data after the legacy backend removal
-	// struct backend_base *backend_data;
-	uint64_t refcount;
-};
 
 /**
  * Determine whether a window is to be dimmed.
