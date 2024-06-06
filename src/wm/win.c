@@ -2246,8 +2246,8 @@ bool win_process_animation_and_state_change(struct session *ps, struct managed_w
 		if (w->running_animation == NULL) {
 			return false;
 		}
-		log_debug("Advance animation for %#010x (%s) %f seconds", w->base.id,
-		          w->name, delta_t);
+		log_verbose("Advance animation for %#010x (%s) %f seconds", w->base.id,
+		            w->name, delta_t);
 		if (!script_instance_is_finished(w->running_animation)) {
 			w->running_animation->elapsed += delta_t;
 			auto result =

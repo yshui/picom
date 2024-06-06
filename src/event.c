@@ -23,7 +23,6 @@
 #include "picom.h"
 #include "region.h"
 #include "utils/dynarr.h"
-#include "utils/misc.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"
