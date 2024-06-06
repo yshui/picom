@@ -25,12 +25,8 @@
 
 static struct win *
 setup_window(struct x_connection *c, struct atom *atoms, struct options *options,
-             struct c2_state *state, xcb_window_t target) {
+             struct wm *wm, struct c2_state *state, xcb_window_t target) {
 	// Pretend we are the compositor, and build up the window state
-	struct wm *wm = wm_new();
-	wm_import_incomplete(wm, target, XCB_NONE);
-	wm_complete_import(wm, c, atoms);
-
 	auto cursor = wm_find(wm, target);
 	if (cursor == NULL) {
 		log_fatal("Could not find window %#010x", target);
@@ -38,8 +34,10 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 		return NULL;
 	}
 
+	auto toplevel = wm_ref_toplevel_of(cursor);
 	struct win *w = ccalloc(1, struct win);
 	w->state = WSTATE_MAPPED;
+	w->tree_ref = toplevel;
 	win_update_wintype(c, atoms, w);
 	win_update_frame_extents(c, atoms, w, win_client_id(w, /*fallback_to_self=*/true),
 	                         options->frame_opacity);
@@ -199,9 +197,14 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	auto state = c2_state_new(atoms);
 	options_postprocess_c2_lists(state, &c, &options);
 
+	struct wm *wm = wm_new();
+
+	wm_import_incomplete(wm, c.screen_info->root, XCB_NONE);
+	wm_complete_import(wm, &c, atoms);
+
 	auto target = select_window(&c);
 	log_info("Target window: %#x", target);
-	auto w = setup_window(&c, atoms, &options, state, target);
+	auto w = setup_window(&c, atoms, &options, wm, state, target);
 	struct c2_match_state match_state = {
 	    .state = state,
 	    .w = w,
@@ -262,6 +265,8 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	free(w->role);
 	c2_window_state_destroy(state, &w->c2_state);
 	free(w);
+
+	wm_free(wm);
 
 	log_deinit_tls();
 	c2_state_free(state);
