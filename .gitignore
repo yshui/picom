@@ -72,6 +72,7 @@ doxygen/
 *.orig
 /tests/log
 /tests/testcases/__pycache__/
+*.profraw
 
 # Subproject files
 subprojects/libconfig

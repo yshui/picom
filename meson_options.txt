@@ -12,6 +12,9 @@ option('compton', type: 'boolean', value: true, description: 'Install backwards 
 
 option('with_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')
 
-option('modularize', type: 'boolean', value: false, description: 'Build with clang\'s module system')
-
 option('unittest', type: 'boolean', value: false, description: 'Enable unittests in the code')
+
+# Experimental options
+
+option('modularize', type: 'boolean', value: false, description: 'Build with clang\'s module system (experimental)')
+option('llvm_coverage', type: 'boolean', value: false, description: 'Use LLVM source-based code coverage, instead of --coverage. Do not use with b_coverage.')
