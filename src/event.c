@@ -90,18 +90,18 @@ static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
 
 static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_t *ev) {
 	switch (ev->response_type) {
-	case FocusIn:
-	case FocusOut: return ((xcb_focus_in_event_t *)ev)->event;
-	case CreateNotify: return ((xcb_create_notify_event_t *)ev)->window;
-	case ConfigureNotify: return ((xcb_configure_notify_event_t *)ev)->window;
-	case DestroyNotify: return ((xcb_destroy_notify_event_t *)ev)->window;
-	case MapNotify: return ((xcb_map_notify_event_t *)ev)->window;
-	case UnmapNotify: return ((xcb_unmap_notify_event_t *)ev)->window;
-	case ReparentNotify: return ((xcb_reparent_notify_event_t *)ev)->window;
-	case CirculateNotify: return ((xcb_circulate_notify_event_t *)ev)->window;
-	case Expose: return ((xcb_expose_event_t *)ev)->window;
-	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
-	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
+	case XCB_FOCUS_IN:
+	case XCB_FOCUS_OUT: return ((xcb_focus_in_event_t *)ev)->event;
+	case XCB_CREATE_NOTIFY: return ((xcb_create_notify_event_t *)ev)->window;
+	case XCB_CONFIGURE_NOTIFY: return ((xcb_configure_notify_event_t *)ev)->window;
+	case XCB_DESTROY_NOTIFY: return ((xcb_destroy_notify_event_t *)ev)->window;
+	case XCB_MAP_NOTIFY: return ((xcb_map_notify_event_t *)ev)->window;
+	case XCB_UNMAP_NOTIFY: return ((xcb_unmap_notify_event_t *)ev)->window;
+	case XCB_REPARENT_NOTIFY: return ((xcb_reparent_notify_event_t *)ev)->window;
+	case XCB_CIRCULATE_NOTIFY: return ((xcb_circulate_notify_event_t *)ev)->window;
+	case XCB_EXPOSE: return ((xcb_expose_event_t *)ev)->window;
+	case XCB_PROPERTY_NOTIFY: return ((xcb_property_notify_event_t *)ev)->window;
+	case XCB_CLIENT_MESSAGE: return ((xcb_client_message_event_t *)ev)->window;
 	default:
 		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			return ((xcb_damage_notify_event_t *)ev)->drawable;
@@ -116,38 +116,38 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 }
 
 #define CASESTRRET(s)                                                                    \
-	case s: return #s;
+	case XCB_##s: return #s;
 
 static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
 	switch (XCB_EVENT_RESPONSE_TYPE(ev)) {
-		CASESTRRET(FocusIn);
-		CASESTRRET(FocusOut);
-		CASESTRRET(CreateNotify);
-		CASESTRRET(ConfigureNotify);
-		CASESTRRET(DestroyNotify);
-		CASESTRRET(MapNotify);
-		CASESTRRET(UnmapNotify);
-		CASESTRRET(ReparentNotify);
-		CASESTRRET(CirculateNotify);
-		CASESTRRET(Expose);
-		CASESTRRET(PropertyNotify);
-		CASESTRRET(ClientMessage);
+		CASESTRRET(FOCUS_IN);
+		CASESTRRET(FOCUS_OUT);
+		CASESTRRET(CREATE_NOTIFY);
+		CASESTRRET(CONFIGURE_NOTIFY);
+		CASESTRRET(DESTROY_NOTIFY);
+		CASESTRRET(MAP_NOTIFY);
+		CASESTRRET(UNMAP_NOTIFY);
+		CASESTRRET(REPARENT_NOTIFY);
+		CASESTRRET(CIRCULATE_NOTIFY);
+		CASESTRRET(EXPOSE);
+		CASESTRRET(PROPERTY_NOTIFY);
+		CASESTRRET(CLIENT_MESSAGE);
 	}
 
 	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
-		return "Damage";
+		return "DAMAGE_NOTIFY";
 	}
 
 	if (ps->shape_exists && ev->response_type == ps->shape_event) {
-		return "ShapeNotify";
+		return "SHAPE_NOTIFY";
 	}
 
 	if (ps->xsync_exists) {
 		int o = ev->response_type - ps->xsync_event;
 		switch (o) {
-			CASESTRRET(XSyncCounterNotify);
-			CASESTRRET(XSyncAlarmNotify);
+			CASESTRRET(SYNC_COUNTER_NOTIFY);
+			CASESTRRET(SYNC_ALARM_NOTIFY);
 		}
 	}
 
@@ -157,26 +157,33 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 }
 
 static inline const char *attr_pure ev_focus_mode_name(xcb_focus_in_event_t *ev) {
+#undef CASESTRRET
+#define CASESTRRET(s)                                                                    \
+	case XCB_NOTIFY_MODE_##s: return #s
+
 	switch (ev->mode) {
-		CASESTRRET(NotifyNormal);
-		CASESTRRET(NotifyWhileGrabbed);
-		CASESTRRET(NotifyGrab);
-		CASESTRRET(NotifyUngrab);
+		CASESTRRET(NORMAL);
+		CASESTRRET(WHILE_GRABBED);
+		CASESTRRET(GRAB);
+		CASESTRRET(UNGRAB);
 	}
 
 	return "Unknown";
 }
 
 static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *ev) {
+#undef CASESTRRET
+#define CASESTRRET(s)                                                                    \
+	case XCB_NOTIFY_DETAIL_##s: return #s
 	switch (ev->detail) {
-		CASESTRRET(NotifyAncestor);
-		CASESTRRET(NotifyVirtual);
-		CASESTRRET(NotifyInferior);
-		CASESTRRET(NotifyNonlinear);
-		CASESTRRET(NotifyNonlinearVirtual);
-		CASESTRRET(NotifyPointer);
-		CASESTRRET(NotifyPointerRoot);
-		CASESTRRET(NotifyDetailNone);
+		CASESTRRET(ANCESTOR);
+		CASESTRRET(VIRTUAL);
+		CASESTRRET(INFERIOR);
+		CASESTRRET(NONLINEAR);
+		CASESTRRET(NONLINEAR_VIRTUAL);
+		CASESTRRET(POINTER);
+		CASESTRRET(POINTER_ROOT);
+		CASESTRRET(NONE);
 	}
 
 	return "Unknown";
