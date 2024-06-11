@@ -23,7 +23,7 @@ required_xcb_packages = [
 # Some XCB packages are here because their versioning differs (see check below).
 required_packages = [
 	'pixman-1', 'x11', 'x11-xcb', 'xcb-image', 'xcb-renderutil', 'xcb-util',
-	'xext', 'threads',
+	'threads',
 ]
 
 foreach i : required_packages
