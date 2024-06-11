@@ -36,6 +36,15 @@ if get_option('sanitize')
 	endif
 endif
 
+if get_option('llvm_coverage')
+	if cc.get_id() != 'clang'
+		error('option \'llvm_coverage\' requires clang')
+	endif
+	coverage_flags = ['-fprofile-instr-generate', '-fcoverage-mapping']
+	add_global_arguments(coverage_flags, language: 'c')
+	add_global_link_arguments(coverage_flags, language: 'c')
+endif
+
 if get_option('modularize')
 	if not cc.has_argument('-fmodules')
 		error('option \'modularize\' requires clang')
