@@ -387,18 +387,17 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 	return script;
 }
 
-static struct script **
-parse_animations(struct win_script *animations, config_setting_t *setting) {
+/// `out_scripts`: all the script objects created, this is a dynarr.
+static void parse_animations(struct win_script *animations, config_setting_t *setting,
+                             struct script ***out_scripts) {
 	auto number_of_animations = (unsigned)config_setting_length(setting);
-	auto all_scripts = dynarr_new(struct script *, number_of_animations + 1);
 	for (unsigned i = 0; i < number_of_animations; i++) {
 		auto sub = config_setting_get_elem(setting, (unsigned)i);
 		auto script = parse_animation_one(animations, sub);
 		if (script != NULL) {
-			dynarr_push(all_scripts, script);
+			dynarr_push(*out_scripts, script);
 		}
 	}
-	return all_scripts;
 }
 
 #define FADING_TEMPLATE_1                                                                \
@@ -984,10 +983,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	config_setting_t *animations = config_lookup(&cfg, "animations");
 	if (animations) {
-		opt->all_scripts = parse_animations(opt->animations, animations);
-	} else {
-		// Reserve some space for generated fading scripts.
-		opt->all_scripts = dynarr_new(struct script *, 4);
+		parse_animations(opt->animations, animations, &opt->all_scripts);
 	}
 
 	opt->config_file_path = path;
