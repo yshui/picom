@@ -22,6 +22,7 @@
 
 #include "common.h"
 #include "log.h"
+#include "utils/dynarr.h"
 #include "utils/kernel.h"
 #include "utils/str.h"
 
@@ -719,5 +720,6 @@ bool parse_config(options_t *opt, const char *config_file) {
 	// clang-format on
 
 	list_init_head(&opt->included_config_files);
+	opt->all_scripts = dynarr_new(struct script *, 4);
 	return parse_config_libconfig(opt, config_file);
 }
