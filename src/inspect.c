@@ -12,6 +12,7 @@
 #include "inspect.h"
 
 #include "atom.h"
+#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "config.h"
@@ -176,6 +177,7 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	}
 
 	// Parse all of the rest command line options
+	options.backend = backend_find("dummy");
 	if (!get_cfg(&options, argc, argv)) {
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
