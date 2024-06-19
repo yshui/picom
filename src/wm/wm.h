@@ -23,7 +23,7 @@
 #include "compiler.h"
 
 struct wm;
-struct managed_win;
+struct win;
 struct list_node;
 struct x_connection;
 
@@ -99,12 +99,12 @@ static inline bool wm_treeid_eq(wm_treeid a, wm_treeid b) {
 }
 
 struct wm *wm_new(void);
-void wm_free(struct wm *wm, struct x_connection *c);
+void wm_free(struct wm *wm);
 
-struct managed_win *wm_active_win(struct wm *wm);
-void wm_set_active_win(struct wm *wm, struct managed_win *w);
-xcb_window_t wm_active_leader(struct wm *wm);
-void wm_set_active_leader(struct wm *wm, xcb_window_t leader);
+struct win *wm_active_win(struct wm *wm);
+void wm_set_active_win(struct wm *wm, struct win *w);
+struct wm_ref *wm_active_leader(struct wm *wm);
+void wm_set_active_leader(struct wm *wm, struct wm_ref *leader);
 
 // Note: `wm` keeps track of 2 lists of windows. One is the window stack, which includes
 // all windows that might need to be rendered, which means it would include destroyed
@@ -114,64 +114,45 @@ void wm_set_active_leader(struct wm *wm, xcb_window_t leader);
 // Adding a window to the window stack also automatically adds it to the hash table.
 
 /// Find a window in the hash table from window id.
-struct win *wm_find(struct wm *wm, xcb_window_t id);
+struct wm_ref *attr_pure wm_find(const struct wm *wm, xcb_window_t id);
 /// Remove a window from the hash table.
-void wm_remove(struct wm *wm, struct win *w);
-/// Find a managed window from window id in window linked list of the session.
-struct managed_win *wm_find_managed(struct wm *wm, xcb_window_t id);
+void wm_remove(struct wm *wm, struct wm_ref *w);
 // Find the WM frame of a client window. `id` is the client window id.
-struct managed_win *wm_find_by_client(struct wm *wm, xcb_window_t client);
-/// Call `func` on each toplevel window. `func` should return 0 if the iteration
-/// should continue. If it returns anything else, the iteration will stop and the
-/// return value will be returned from `wm_foreach`. If the iteration finishes
-/// naturally, 0 will be returned.
-int wm_foreach(struct wm *wm, int (*func)(struct win *, void *), void *data);
-/// Returns the number of windows in the hash table.
-unsigned attr_const wm_num_windows(const struct wm *wm);
+struct wm_ref *attr_pure wm_find_by_client(const struct wm *wm, xcb_window_t client);
+/// Find the toplevel of a window by going up the window tree.
+struct wm_ref *attr_pure wm_ref_toplevel_of(struct wm_ref *cursor);
+/// Return the client window of a window. Must be called with a cursor to a toplevel.
+/// Returns NULL if there is no client window.
+struct wm_ref *attr_pure wm_ref_client_of(struct wm_ref *cursor);
+/// Find the next window in the window stack. Returns NULL if `cursor` is the last window.
+struct wm_ref *attr_pure wm_ref_below(const struct wm_ref *cursor);
+struct wm_ref *attr_pure wm_ref_above(const struct wm_ref *cursor);
+struct wm_ref *attr_pure wm_root_ref(const struct wm *wm);
 
-/// Returns the cursor past the last window in the stack (the `end`). The window stack is
-/// a cyclic linked list, so the next element after `end` is the first element. The `end`
-/// itself does not point to a valid window. The address of `end` is stable as long as
-/// the `struct wm` itself is not freed.
-struct list_node *attr_const wm_stack_end(struct wm *wm);
-/// Insert a new win entry at the top of the stack
-struct win *wm_stack_add_top(struct wm *wm, xcb_window_t id);
-/// Insert a new window above window with id `below`, if there is no window, add
-/// to top New window will be in unmapped state
-struct win *wm_stack_add_above(struct wm *wm, xcb_window_t id, xcb_window_t below);
-// Find the managed window immediately below `i` in the window stack
-struct managed_win *attr_pure wm_stack_next_managed(const struct wm *wm,
-                                                    const struct list_node *cursor);
+struct wm_ref *attr_pure wm_ref_topmost_child(const struct wm_ref *cursor);
+struct wm_ref *attr_pure wm_ref_bottommost_child(const struct wm_ref *cursor);
+
 /// Move window `w` so it's right above `below`, if `below` is 0, `w` is moved
 /// to the bottom of the stack
-void wm_stack_move_above(struct wm *wm, struct win *w, xcb_window_t below);
-/// Move window `w` to the bottom of the stack.
-static inline void wm_stack_move_to_bottom(struct wm *wm, struct win *w) {
-	wm_stack_move_above(wm, w, 0);
-}
+void wm_stack_move_to_above(struct wm *wm, struct wm_ref *cursor, struct wm_ref *below);
 /// Move window `w` to the top of the stack.
-void wm_stack_move_to_top(struct wm *wm, struct win *w);
-/// Replace window `old` with `new_` in the stack, also replace the window in the hash
-/// table. `old` will be freed.
-void wm_stack_replace(struct wm *wm, struct win *old, struct win *new_);
-unsigned attr_const wm_stack_num_managed_windows(const struct wm *wm);
+void wm_stack_move_to_end(struct wm *wm, struct wm_ref *cursor, bool to_bottom);
 
-struct subwin *wm_subwin_add_and_subscribe(struct wm *wm, struct x_connection *c,
-                                           xcb_window_t id, xcb_window_t parent);
-struct subwin *wm_subwin_find(struct wm *wm, xcb_window_t id);
-void wm_subwin_remove(struct wm *wm, struct subwin *subwin);
-void wm_subwin_remove_and_unsubscribe(struct wm *wm, struct x_connection *c,
-                                      struct subwin *subwin);
-/// Remove all subwins associated with a toplevel window
-void wm_subwin_remove_and_unsubscribe_for_toplevel(struct wm *wm, struct x_connection *c,
-                                                   xcb_window_t toplevel);
+struct win *attr_pure wm_ref_deref(const struct wm_ref *cursor);
 xcb_window_t attr_pure wm_ref_win_id(const struct wm_ref *cursor);
+wm_treeid attr_pure wm_ref_treeid(const struct wm_ref *cursor);
+/// Assign a window to a cursor. The cursor must not already have a window assigned.
+void wm_ref_set(struct wm_ref *cursor, struct win *w);
+bool attr_pure wm_ref_is_zombie(const struct wm_ref *cursor);
 
 /// Destroy a window. Children of this window should already have been destroyed. This
 /// will cause a `WM_TREE_CHANGE_TOPLEVEL_KILLED` event to be generated, and a zombie
 /// window to be placed where the window was.
 void wm_destroy(struct wm *wm, xcb_window_t wid);
+/// Remove a zombie window from the window tree.
+void wm_reap_zombie(struct wm_ref *zombie);
 void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent);
+void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state);
 
 /// Create a tree node for `wid`, with `parent` as its parent. The parent must already
 /// be in the window tree. This function creates a placeholder tree node, without

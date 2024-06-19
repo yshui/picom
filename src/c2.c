@@ -314,7 +314,7 @@ static inline c2_ptr_t c2h_comb_tree(c2_b_op_t op, c2_ptr_t p1, c2_ptr_t p2) {
 static inline int c2h_b_opp(c2_b_op_t op) {
 	switch (op) {
 	case C2_B_OAND: return 2;
-	case C2_B_OOR: return 1;
+	case C2_B_OOR:
 	case C2_B_OXOR: return 1;
 	default: break;
 	}
@@ -441,8 +441,12 @@ TEST_CASE(c2_parse) {
 	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "name = \"xterm\"", len);
 
-	struct managed_win test_win = {
+	struct wm *wm = wm_new();
+	wm_import_incomplete(wm, 1, XCB_NONE);
+
+	struct win test_win = {
 	    .name = "xterm",
+	    .tree_ref = wm_find(wm, 1),
 	};
 	TEST_TRUE(c2_match(state, &test_win, cond, NULL));
 	c2_list_postprocess(state, NULL, cond);
@@ -563,6 +567,8 @@ TEST_CASE(c2_parse) {
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, rule, len);
 	c2_list_free(&cond, NULL);
+
+	wm_free(wm);
 }
 
 #define c2_error(format, ...)                                                                \
@@ -1562,8 +1568,9 @@ static inline bool c2_int_op(const c2_l_t *leaf, int64_t target) {
 	unreachable();
 }
 
-static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *leaf) {
-	const xcb_window_t wid = (leaf->target_on_client ? w->client_win : w->base.id);
+static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
+	auto const client_win = win_client_id(w, /*fallback_to_self=*/true);
+	const xcb_window_t wid = (leaf->target_on_client ? client_win : win_id(w));
 
 	// Get the value
 	if (leaf->predef != C2_L_PUNDEFINED) {
@@ -1586,7 +1593,7 @@ static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *le
 		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
 		case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
 		case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
-		case C2_L_PCLIENT: predef_target = w->client_win; break;
+		case C2_L_PCLIENT: predef_target = client_win; break;
 		case C2_L_PLEADER: predef_target = w->leader; break;
 		case C2_L_POVREDIR:
 			// When user wants to check override-redirect, they almost always
@@ -1594,9 +1601,8 @@ static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *le
 			// don't track the override-redirect state of the client window
 			// directly, however we can assume if a window has a window
 			// manager frame around it, it's not override-redirect.
-			predef_target =
-			    w->a.override_redirect && (w->client_win == w->base.id ||
-			                               w->client_win == XCB_WINDOW_NONE);
+			predef_target = w->a.override_redirect &&
+			                wm_ref_client_of(w->tree_ref) == NULL;
 			break;
 		default: unreachable();
 		}
@@ -1608,7 +1614,7 @@ static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *le
 	assert(!values->needs_update);
 	if (!values->valid) {
 		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
-		            w->client_win, w->name);
+		            client_win, w->name);
 		return false;
 	}
 
@@ -1670,8 +1676,8 @@ static bool c2_string_op(const c2_l_t *leaf, const char *target) {
 	unreachable();
 }
 
-static bool c2_match_once_leaf_string(struct atom *atoms, const struct managed_win *w,
-                                      const c2_l_t *leaf) {
+static bool
+c2_match_once_leaf_string(struct atom *atoms, const struct win *w, const c2_l_t *leaf) {
 
 	// A predefined target
 	const char *predef_target = NULL;
@@ -1696,8 +1702,8 @@ static bool c2_match_once_leaf_string(struct atom *atoms, const struct managed_w
 	auto values = &w->c2_state.values[leaf->target_id];
 	assert(!values->needs_update);
 	if (!values->valid) {
-		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
-		            w->client_win, w->name);
+		log_verbose("Property %s not found on window %#010x, client %#010x (%s)",
+		            leaf->tgt, win_id(w), win_client_id(w, false), w->name);
 		return false;
 	}
 
@@ -1752,10 +1758,11 @@ static bool c2_match_once_leaf_string(struct atom *atoms, const struct managed_w
  * For internal use.
  */
 static inline bool
-c2_match_once_leaf(struct c2_state *state, const struct managed_win *w, const c2_l_t *leaf) {
+c2_match_once_leaf(struct c2_state *state, const struct win *w, const c2_l_t *leaf) {
 	assert(leaf);
 
-	const xcb_window_t wid = (leaf->target_on_client ? w->client_win : w->base.id);
+	const xcb_window_t wid =
+	    (leaf->target_on_client ? win_client_id(w, /*fallback_to_self=*/true) : win_id(w));
 
 	// Return if wid is missing
 	if (leaf->predef == C2_L_PUNDEFINED && !wid) {
@@ -1790,8 +1797,7 @@ c2_match_once_leaf(struct c2_state *state, const struct managed_win *w, const c2
  *
  * @return true if matched, false otherwise.
  */
-static bool
-c2_match_once(struct c2_state *state, const struct managed_win *w, const c2_ptr_t cond) {
+static bool c2_match_once(struct c2_state *state, const struct win *w, const c2_ptr_t cond) {
 	bool result = false;
 
 	if (cond.isbranch) {
@@ -1802,8 +1808,8 @@ c2_match_once(struct c2_state *state, const struct managed_win *w, const c2_ptr_
 			return false;
 		}
 
-		log_verbose("Matching window %#010x (%s) against condition %s",
-		            w->base.id, w->name, c2_condition_to_str2(cond));
+		log_verbose("Matching window %#010x (%s) against condition %s", win_id(w),
+		            w->name, c2_condition_to_str2(cond));
 
 		switch (pb->op) {
 		case C2_B_OAND:
@@ -1821,7 +1827,7 @@ c2_match_once(struct c2_state *state, const struct managed_win *w, const c2_ptr_
 		default: unreachable();
 		}
 
-		log_debug("(%#010x): branch: result = %d, pattern = %s", w->base.id,
+		log_debug("(%#010x): branch: result = %d, pattern = %s", win_id(w),
 		          result, c2_condition_to_str2(cond));
 	} else {
 		// A leaf
@@ -1833,9 +1839,9 @@ c2_match_once(struct c2_state *state, const struct managed_win *w, const c2_ptr_
 
 		result = c2_match_once_leaf(state, w, pleaf);
 
-		log_debug("(%#010x): leaf: result = %d, client = %#010x,  "
-		          "pattern = %s",
-		          w->base.id, result, w->client_win, c2_condition_to_str2(cond));
+		log_debug("(%#010x): leaf: result = %d, client = %#010x,  pattern = %s",
+		          win_id(w), result, win_client_id(w, false),
+		          c2_condition_to_str2(cond));
 	}
 
 	// Postprocess the result
@@ -1853,8 +1859,8 @@ c2_match_once(struct c2_state *state, const struct managed_win *w, const c2_ptr_
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(struct c2_state *state, const struct managed_win *w,
-              const c2_lptr_t *condlst, void **pdata) {
+bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
+              void **pdata) {
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
 		if (c2_match_once(state, w, condlst->ptr)) {
@@ -1869,8 +1875,8 @@ bool c2_match(struct c2_state *state, const struct managed_win *w,
 }
 
 /// Match a window against the first condition in a condition linked list.
-bool c2_match_one(struct c2_state *state, const struct managed_win *w,
-                  const c2_lptr_t *condlst, void **pdata) {
+bool c2_match_one(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
+                  void **pdata) {
 	if (!condlst) {
 		return false;
 	}

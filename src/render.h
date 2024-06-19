@@ -14,7 +14,7 @@ typedef struct _glx_texture glx_texture_t;
 typedef struct glx_prog_main glx_prog_main_t;
 typedef struct session session_t;
 
-struct managed_win;
+struct win;
 
 typedef struct paint {
 	xcb_pixmap_t pixmap;
@@ -35,9 +35,9 @@ void render(session_t *ps, int x, int y, int dx, int dy, int w, int h, int fullw
             int fullh, double opacity, bool argb, bool neg, int cr,
             xcb_render_picture_t pict, glx_texture_t *ptex, const region_t *reg_paint,
             const glx_prog_main_t *pprogram, clip_t *clip);
-void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint);
+void paint_one(session_t *ps, struct win *w, const region_t *reg_paint);
 
-void paint_all(session_t *ps, struct managed_win *const t);
+void paint_all(session_t *ps, struct win *const t);
 
 void free_paint(session_t *ps, paint_t *ppaint);
 void free_root_tile(session_t *ps);

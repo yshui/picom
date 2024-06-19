@@ -324,6 +324,7 @@ void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node) {
 		          "malfunction.",
 		          node->id.x);
 		list_foreach_safe(struct wm_tree_node, i, &node->children, siblings) {
+			log_error("    Child window %#010x", i->id.x);
 			wm_tree_destroy_window(tree, i);
 		}
 	}
@@ -341,7 +342,6 @@ void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node) {
 	}
 }
 
-/// Move `node` to the top or the bottom of its parent's child window stack.
 void wm_tree_move_to_end(struct wm_tree *tree, struct wm_tree_node *node, bool to_bottom) {
 	BUG_ON(node == NULL);
 	BUG_ON(node->parent == NULL);        // Trying to move the root window

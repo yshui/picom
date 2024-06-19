@@ -23,22 +23,32 @@
 #include "wm/win.h"
 #include "x.h"
 
-static struct managed_win *
+static struct win *
 setup_window(struct x_connection *c, struct atom *atoms, struct options *options,
              struct c2_state *state, xcb_window_t target) {
 	// Pretend we are the compositor, and build up the window state
-	struct managed_win *w = ccalloc(1, struct managed_win);
+	struct wm *wm = wm_new();
+	wm_import_incomplete(wm, target, XCB_NONE);
+	wm_complete_import(wm, c, atoms);
+
+	auto cursor = wm_find(wm, target);
+	if (cursor == NULL) {
+		log_fatal("Could not find window %#010x", target);
+		wm_free(wm);
+		return NULL;
+	}
+
+	struct win *w = ccalloc(1, struct win);
 	w->state = WSTATE_MAPPED;
-	w->base.id = target;
-	w->client_win = win_get_client_window(c, NULL, atoms, w);
 	win_update_wintype(c, atoms, w);
-	win_update_frame_extents(c, atoms, w, w->client_win, options->frame_opacity);
+	win_update_frame_extents(c, atoms, w, win_client_id(w, /*fallback_to_self=*/true),
+	                         options->frame_opacity);
 	// TODO(yshui) get leader
 	win_update_name(c, atoms, w);
 	win_update_class(c, atoms, w);
 	win_update_role(c, atoms, w);
 
-	auto geometry_reply = XCB_AWAIT(xcb_get_geometry, c->c, w->base.id);
+	auto geometry_reply = XCB_AWAIT(xcb_get_geometry, c->c, win_id(w));
 	w->g = (struct win_geometry){
 	    .x = geometry_reply->x,
 	    .y = geometry_reply->y,
@@ -68,17 +78,18 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 			free(reply);
 		}
 	}
-	if (wid == w->base.id || wid == w->client_win) {
+	if (wid == win_id(w) || wid == win_client_id(w, /*fallback_to_self=*/false)) {
 		w->focused = true;
 	}
 
-	auto attributes_reply = XCB_AWAIT(xcb_get_window_attributes, c->c, w->base.id);
+	auto attributes_reply = XCB_AWAIT(xcb_get_window_attributes, c->c, win_id(w));
 	w->a = *attributes_reply;
 	w->pictfmt = x_get_pictform_for_visual(c, w->a.visual);
 	free(attributes_reply);
 
 	c2_window_state_init(state, &w->c2_state);
-	c2_window_state_update(state, &w->c2_state, c->c, w->client_win, w->base.id);
+	c2_window_state_update(state, &w->c2_state, c->c,
+	                       win_client_id(w, /*fallback_to_self=*/true), win_id(w));
 	return w;
 }
 
@@ -140,7 +151,7 @@ xcb_window_t select_window(struct x_connection *c) {
 
 struct c2_match_state {
 	struct c2_state *state;
-	struct managed_win *w;
+	struct win *w;
 	bool print_value;
 };
 

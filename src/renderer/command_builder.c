@@ -110,7 +110,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	                           layer->shadow.origin.x, layer->shadow.origin.y,
 	                           (unsigned)shadow_size_scaled.width,
 	                           (unsigned)shadow_size_scaled.height);
-	log_trace("Calculate shadow for %#010x (%s)", w->base.id, w->name);
+	log_trace("Calculate shadow for %#010x (%s)", win_id(w), w->name);
 	log_region(TRACE, &cmd->target_mask);
 	if (!wintype_options[w->window_type].full_shadow) {
 		// We need to not draw under the window

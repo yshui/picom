@@ -345,7 +345,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 }
 
 static inline void
-paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, int hei,
+paint_region(session_t *ps, const struct win *w, int x, int y, int wid, int hei,
              double opacity, const region_t *reg_paint, xcb_render_picture_t pict) {
 	const int dx = (w ? w->g.x : 0) + x;
 	const int dy = (w ? w->g.y : 0) + y;
@@ -392,19 +392,19 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 /**
  * Paint a window itself and dim it if asked.
  */
-void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) {
+void paint_one(session_t *ps, struct win *w, const region_t *reg_paint) {
 	// Fetch Pixmap
 	if (!w->paint.pixmap) {
 		w->paint.pixmap = x_new_id(&ps->c);
 		set_ignore_cookie(&ps->c, xcb_composite_name_window_pixmap(
-		                              ps->c.c, w->base.id, w->paint.pixmap));
+		                              ps->c.c, win_id(w), w->paint.pixmap));
 	}
 
 	xcb_drawable_t draw = w->paint.pixmap;
 	if (!draw) {
 		log_error("Failed to get pixmap from window %#010x (%s), window won't be "
 		          "visible",
-		          w->base.id, w->name);
+		          win_id(w), w->name);
 		return;
 	}
 
@@ -424,12 +424,12 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	// causing the jittering issue M4he reported in #7.
 	if (!paint_bind_tex(ps, &w->paint, 0, 0, false, 0, w->a.visual,
 	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
-		log_error("Failed to bind texture for window %#010x.", w->base.id);
+		log_error("Failed to bind texture for window %#010x.", win_id(w));
 	}
 	w->pixmap_damaged = false;
 
 	if (!paint_isvalid(ps, &w->paint)) {
-		log_error("Window %#010x is missing painting data.", w->base.id);
+		log_error("Window %#010x is missing painting data.", win_id(w));
 		return;
 	}
 
@@ -681,7 +681,7 @@ static void paint_root(session_t *ps, const region_t *reg_paint) {
 /**
  * Generate shadow <code>Picture</code> for a window.
  */
-static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacity) {
+static bool win_build_shadow(session_t *ps, struct win *w, double opacity) {
 	const int width = w->widthb;
 	const int height = w->heightb;
 	// log_trace("(): building shadow for %s %d %d", w->name, width, height);
@@ -761,13 +761,12 @@ shadow_picture_err:
 /**
  * Paint the shadow of a window.
  */
-static inline void
-win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
+static inline void win_paint_shadow(session_t *ps, struct win *w, region_t *reg_paint) {
 	// Bind shadow pixmap to GLX texture if needed
 	paint_bind_tex(ps, &w->shadow_paint, 0, 0, false, 32, 0, false);
 
 	if (!paint_isvalid(ps, &w->shadow_paint)) {
-		log_error("Window %#010x is missing shadow data.", w->base.id);
+		log_error("Window %#010x is missing shadow data.", win_id(w));
 		return;
 	}
 
@@ -897,7 +896,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
  * Blur the background of a window.
  */
 static inline void
-win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t tgt_buffer,
+win_blur_background(session_t *ps, struct win *w, xcb_render_picture_t tgt_buffer,
                     const region_t *reg_paint) {
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
@@ -1001,7 +1000,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 /// paint all windows
 /// region = ??
 /// region_real = the damage region
-void paint_all(session_t *ps, struct managed_win *t) {
+void paint_all(session_t *ps, struct win *t) {
 	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
 		if (ps->xsync_exists && !x_fence_sync(&ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
