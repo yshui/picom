@@ -539,7 +539,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 	auto buffer_age =
 	    (use_damage || monitor_repaint) ? backend->ops.buffer_age(backend) : 0;
-	if (buffer_age > 0 && global_debug_options.consistent_buffer_age) {
+	if (buffer_age > 0 && global_debug_options.consistent_buffer_age &&
+	    buffer_age < r->max_buffer_age) {
 		int past_frame =
 		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;
 		region_t region;
