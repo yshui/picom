@@ -162,39 +162,29 @@ static inline void region_intersect(region_t *region, ivec2 origin, const region
 	pixman_region32_translate(region, origin.x, origin.y);
 }
 
-#define define_region_scale(suffix, lower_bound, upper_bound)                                 \
-	static inline void region_scale##suffix(region_t *region, ivec2 origin, vec2 scale) { \
-		if (vec2_eq(scale, SCALE_IDENTITY)) {                                         \
-			return;                                                               \
-		}                                                                             \
-                                                                                              \
-		int n;                                                                        \
-		region_t tmp = *region;                                                       \
-		auto r = pixman_region32_rectangles(&tmp, &n);                                \
-		for (int i = 0; i < n; i++) {                                                 \
-			r[i].x1 = to_i32_saturated(                                           \
-			    lower_bound((r[i].x1 - origin.x) * scale.x + origin.x));          \
-			r[i].y1 = to_i32_saturated(                                           \
-			    lower_bound((r[i].y1 - origin.y) * scale.y + origin.y));          \
-			r[i].x2 = to_i32_saturated(                                           \
-			    upper_bound((r[i].x2 - origin.x) * scale.x + origin.x));          \
-			r[i].y2 = to_i32_saturated(                                           \
-			    upper_bound((r[i].y2 - origin.y) * scale.y + origin.y));          \
-		}                                                                             \
-                                                                                              \
-		/* Manipulating the rectangles could break assumptions made internally        \
-		 * by pixman, so we recreate the region with the rectangles to let            \
-		 * pixman fix them. */                                                        \
-		pixman_region32_init_rects(region, r, n);                                     \
-		pixman_region32_fini(&tmp);                                                   \
+/// Scale the `region` by `scale`. The origin of scaling is `origin`. Returns the smallest
+/// integer region that contains the result.
+static inline void region_scale(region_t *region, ivec2 origin, vec2 scale) {
+	if (vec2_eq(scale, SCALE_IDENTITY)) {
+		return;
 	}
 
-/// Scale the `region` by `scale`. The origin of scaling is `origin`. Returns the largest integer
-/// region that is contained in the result.
-define_region_scale(_floor, ceil, floor);
-/// Scale the `region` by `scale`. The origin of scaling is `origin`. Returns the smallest integer
-/// region that contains the result.
-define_region_scale(_ceil, floor, ceil);
+	int n;
+	region_t tmp = *region;
+	auto r = pixman_region32_rectangles(&tmp, &n);
+	for (int i = 0; i < n; i++) {
+		r[i].x1 = to_i32_saturated(floor((r[i].x1 - origin.x) * scale.x + origin.x));
+		r[i].y1 = to_i32_saturated(floor((r[i].y1 - origin.y) * scale.y + origin.y));
+		r[i].x2 = to_i32_saturated(ceil((r[i].x2 - origin.x) * scale.x + origin.x));
+		r[i].y2 = to_i32_saturated(ceil((r[i].y2 - origin.y) * scale.y + origin.y));
+	}
+
+	/* Manipulating the rectangles could break assumptions made internally
+	 * by pixman, so we recreate the region with the rectangles to let
+	 * pixman fix them. */
+	pixman_region32_init_rects(region, r, n);
+	pixman_region32_fini(&tmp);
+}
 
 /// Calculate the symmetric difference of `region1`, and `region2`, and union the result
 /// into `result`. The two input regions has to be in the same coordinate space.

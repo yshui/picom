@@ -97,7 +97,7 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	if (cmd1->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 		layout_manager_collect_window_damage(lm, layer_index, buffer_age,
 		                                     scratch_region);
-		region_scale_floor(scratch_region, cmd2->origin, cmd2->blit.scale);
+		region_scale(scratch_region, cmd2->origin, cmd2->blit.scale);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd1->target_mask);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd2->target_mask);
 		pixman_region32_union(damage, damage, scratch_region);

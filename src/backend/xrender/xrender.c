@@ -360,7 +360,7 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 			scoped_region_t source_mask_region;
 			pixman_region32_init(&source_mask_region);
 			pixman_region32_copy(&source_mask_region, args->target_mask);
-			region_scale_ceil(&source_mask_region, origin, inverse_scale);
+			region_scale(&source_mask_region, origin, inverse_scale);
 			x_set_picture_clip_region(
 			    xd->base.c, tmp_pict, to_i16_checked(-origin.x),
 			    to_i16_checked(-origin.y), &source_mask_region);
