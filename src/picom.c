@@ -1569,6 +1569,41 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 	}
 }
 
+/// Handle all events X server has sent us so far, so that our internal state will catch
+/// up with the X server's state. It only makes sense to call this function in the X
+/// critical section, otherwise we will be chasing a moving goal post.
+///
+/// (Disappointingly, grabbing the X server doesn't actually prevent the X server state
+/// from changing. It should, but in practice we have observed window still being
+/// destroyed while we have the server grabbed. This is very disappointing and forces us
+/// to use some hacky code to recover when we discover we are out-of-sync.)
+///
+/// This function is different from `handle_queued_x_events` in that this will keep
+/// reading from the X server until there is nothing left. Whereas
+/// `handle_queued_x_events` is only concerned with emptying the internal buffer of
+/// libxcb, so we don't go to sleep with unprocessed data.
+static void handle_all_x_events(struct session *ps) {
+	assert(ps->server_grabbed);
+
+	XFlush(ps->c.dpy);
+	xcb_flush(ps->c.c);
+
+	if (ps->vblank_scheduler) {
+		vblank_handle_x_events(ps->vblank_scheduler);
+	}
+
+	xcb_generic_event_t *ev;
+	while ((ev = xcb_poll_for_event(ps->c.c))) {
+		ev_handle(ps, ev);
+		free(ev);
+	};
+	int err = xcb_connection_has_error(ps->c.c);
+	if (err) {
+		log_fatal("X11 server connection broke (error %d)", err);
+		exit(1);
+	}
+}
+
 static void handle_new_windows(session_t *ps) {
 	wm_complete_import(ps->wm, &ps->c, ps->atoms);
 
@@ -1647,7 +1682,7 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 	queue_redraw(ps);
 }
 
-static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
+static void handle_pending_updates(struct session *ps, double delta_t) {
 	log_trace("Delayed handling of events, entering critical section");
 	auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
 	if (e) {
@@ -1659,7 +1694,7 @@ static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 	ps->server_grabbed = true;
 
 	// Catching up with X server
-	handle_queued_x_events(EV_A, &ps->event_check, 0);
+	handle_all_x_events(ps);
 	if (ps->pending_updates || wm_has_incomplete_imports(ps->wm) ||
 	    wm_has_tree_changes(ps->wm)) {
 		log_debug("Delayed handling of events, entering critical section");
@@ -1748,7 +1783,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		          draw_callback_enter_us - (int64_t)ps->next_render);
 	}
 
-	handle_pending_updates(EV_A_ ps, (double)delta_ms / 1000.0);
+	handle_pending_updates(ps, (double)delta_ms / 1000.0);
 
 	int64_t after_handle_pending_updates_us;
 	clock_gettime(CLOCK_MONOTONIC, &now);
