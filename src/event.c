@@ -279,6 +279,11 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
 	log_debug("{ event: %#010x, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
+
+	if (ps->overlay && ev->window == ps->overlay) {
+		return;
+	}
+
 	if (ev->window == ps->c.screen_info->root) {
 		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
 	} else if (!wm_is_wid_masked(ps->wm, ev->event)) {
