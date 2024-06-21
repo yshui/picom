@@ -18,7 +18,7 @@
 #include "layout.h"
 struct layer_index {
 	UT_hash_handle hh;
-	struct layer_key key;
+	wm_treeid key;
 	unsigned index;
 	struct list_node free_list;
 };
@@ -39,7 +39,7 @@ struct layout_manager {
 
 /// Compute layout of a layer from a window. Returns false if the window is not
 /// visible / should not be rendered. `out_layer` is modified either way.
-static bool layer_from_window(struct layer *out_layer, struct managed_win *w, ivec2 size) {
+static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size) {
 	bool to_paint = false;
 	if (!w->ever_damaged || w->paint_excluded) {
 		goto out;
@@ -108,8 +108,7 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 	out_layer->is_clipping = w->transparent_clipping;
 	out_layer->next_rank = -1;
 	out_layer->prev_rank = -1;
-	out_layer->key =
-	    (struct layer_key){.window = w->base.id, .generation = w->base.generation};
+	out_layer->key = wm_ref_treeid(w->tree_ref);
 	out_layer->win = w;
 	to_paint = true;
 
@@ -181,20 +180,17 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 	auto layout = &lm->layouts[lm->current];
 	command_builder_command_list_free(layout->commands);
 	layout->root_image_generation = root_pixmap_generation;
-
-	unsigned nlayers = wm_stack_num_managed_windows(wm);
-	dynarr_resize(layout->layers, nlayers, layer_init, layer_deinit);
 	layout->size = size;
 
 	unsigned rank = 0;
 	struct layer_index *index, *next_index;
-	for (struct list_node *cursor = wm_stack_end(wm)->prev;
-	     cursor != wm_stack_end(wm); cursor = cursor->prev) {
-		auto w = list_entry(cursor, struct win, stack_neighbour);
-		if (!w->managed) {
+	wm_stack_foreach_rev(wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w == NULL) {
 			continue;
 		}
-		if (!layer_from_window(&layout->layers[rank], (struct managed_win *)w, size)) {
+		dynarr_resize(layout->layers, rank + 1, layer_init, layer_deinit);
+		if (!layer_from_window(&layout->layers[rank], (struct win *)w, size)) {
 			continue;
 		}
 
@@ -205,9 +201,8 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 			layout->layers[rank].prev_rank = (int)index->index;
 		}
 		rank++;
-		assert(rank <= nlayers);
 	}
-	dynarr_resize(layout->layers, rank, layer_init, layer_deinit);
+	dynarr_truncate(layout->layers, rank, layer_deinit);
 
 	// Update indices. If a layer exist in both prev_layout and current layout,
 	// we could update the index using next_rank; if a layer no longer exist in

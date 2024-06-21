@@ -31,7 +31,7 @@ struct xvisual_info {
 };
 
 typedef struct session session_t;
-struct managed_win;
+struct win;
 
 struct ev_loop;
 struct backend_operations;

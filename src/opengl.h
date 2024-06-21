@@ -122,9 +122,9 @@ void glx_set_clip(session_t *ps, const region_t *reg);
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
-bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
-                           const glx_texture_t *ptex, int dx, int dy, int width,
-                           int height, float z, float cr, const region_t *reg_tgt);
+bool glx_round_corners_dst(session_t *ps, struct win *w, const glx_texture_t *ptex,
+                           int dx, int dy, int width, int height, float z, float cr,
+                           const region_t *reg_tgt);
 
 GLuint glx_create_shader(GLenum shader_type, const char *shader_str);
 
@@ -224,4 +224,4 @@ static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 /**
  * Free GLX part of win.
  */
-void free_win_res_glx(session_t *ps, struct managed_win *w);
+void free_win_res_glx(session_t *ps, struct win *w);

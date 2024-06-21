@@ -460,7 +460,8 @@ void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
 	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
 	                                       ps->atoms->a_NET_ACTIVE_WINDOW);
-	auto w = wm_find_by_client(ps->wm, wid);
+	auto cursor = wm_find_by_client(ps->wm, wid);
+	auto w = cursor ? wm_ref_deref(cursor) : NULL;
 
 	// Mark the window focused. No need to unfocus the previous one.
 	if (w) {
@@ -501,36 +502,20 @@ static void recheck_focus(session_t *ps) {
 		return;
 	}
 
-	// Trace upwards until we reach the toplevel containing the focus window.
-	while (true) {
-		auto tree = xcb_query_tree_reply(ps->c.c, xcb_query_tree(ps->c.c, wid), &e);
-		if (tree == NULL) {
-			// xcb_query_tree probably fails if you run picom when X is
-			// somehow initializing (like add it in .xinitrc). In this case
-			// just leave it alone.
-			log_error_x_error(e, "Failed to query window tree.");
-			free(e);
-			return;
-		}
-
-		auto parent = tree->parent;
-		free(tree);
-
-		if (parent == ps->c.screen_info->root) {
-			break;
-		}
-		wid = parent;
+	auto cursor = wm_find(ps->wm, wid);
+	if (cursor == NULL) {
+		log_error("Window %#010x not found in window tree.", wid);
+		return;
 	}
 
-	auto w = wm_find_managed(ps->wm, wid);
+	cursor = wm_ref_toplevel_of(cursor);
 
 	// And we set the focus state here
+	auto w = wm_ref_deref(cursor);
 	if (w) {
 		log_debug("%#010" PRIx32 " (%#010" PRIx32 " \"%s\") focused.", wid,
-		          w->base.id, w->name);
+		          win_id(w), w->name);
 		win_set_focused(ps, w);
-	} else {
-		log_warn("Focus window %#010" PRIx32 " not found.", wid);
 	}
 }
 
@@ -543,7 +528,11 @@ static void rebuild_screen_reg(session_t *ps) {
 
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
-	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
+	wm_stack_foreach_safe(ps->wm, cursor, next_cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w == NULL) {
+			continue;
+		}
 		// An unmapped window shouldn't have a pixmap, unless it has animation
 		// running. (`w->previous.state != w->state` means there might be
 		// animation but we haven't had a chance to start it because
@@ -569,7 +558,7 @@ static void destroy_backend(session_t *ps) {
 		free_paint(ps, &w->paint);
 
 		if (w->state == WSTATE_DESTROYED) {
-			destroy_win_finish(ps, &w->base);
+			win_destroy_finish(ps, w);
 		}
 	}
 
@@ -640,20 +629,6 @@ static bool initialize_blur(session_t *ps) {
 	return ps->backend_blur_context != NULL;
 }
 
-static int mark_pixmap_stale(struct win *w, void *data) {
-	struct session *ps = data;
-	if (!w->managed) {
-		return 0;
-	}
-	auto mw = win_as_managed(w);
-	assert(mw->state != WSTATE_DESTROYED);
-	// We need to reacquire image
-	log_debug("Marking window %#010x (%s) for update after redirection", w->id, mw->name);
-	win_set_flags(mw, WIN_FLAGS_PIXMAP_STALE);
-	ps->pending_updates = true;
-	return 0;
-}
-
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
 	if (!ps->o.use_legacy_backends) {
@@ -701,9 +676,18 @@ static bool initialize_backend(session_t *ps) {
 			}
 		}
 
-		// wm_stack shouldn't include window that's not iterated by wm_foreach at
-		// this moment. Since there cannot be any fading windows.
-		wm_foreach(ps->wm, mark_pixmap_stale, ps);
+		wm_stack_foreach(ps->wm, cursor) {
+			auto w = wm_ref_deref(cursor);
+			if (w != NULL) {
+				assert(w->state != WSTATE_DESTROYED);
+				// We need to reacquire image
+				log_debug("Marking window %#010x (%s) for update after "
+				          "redirection",
+				          win_id(w), w->name);
+				win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
+				ps->pending_updates = true;
+			}
+		}
 		ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
 		                            (struct color){.alpha = ps->o.shadow_opacity,
 		                                           .red = ps->o.shadow_red,
@@ -723,6 +707,18 @@ err:
 	ps->backend_data = NULL;
 	quit(ps);
 	return false;
+}
+
+static inline void invalidate_reg_ignore(session_t *ps) {
+	// Invalidate reg_ignore from the top
+	wm_stack_foreach(ps->wm, cursor) {
+		auto top_w = wm_ref_deref(cursor);
+		if (top_w != NULL) {
+			rc_region_unref(&top_w->reg_ignore);
+			top_w->reg_ignore_valid = false;
+			break;
+		}
+	}
 }
 
 /// Handle configure event of the root window
@@ -760,19 +756,16 @@ static void configure_root(session_t *ps) {
 	free(r);
 
 	rebuild_screen_reg(ps);
-
-	// Invalidate reg_ignore from the top
-	auto top_w = wm_stack_next_managed(ps->wm, wm_stack_end(ps->wm));
-	if (top_w) {
-		rc_region_unref(&top_w->reg_ignore);
-		top_w->reg_ignore_valid = false;
-	}
+	invalidate_reg_ignore(ps);
 
 	// Whether a window is fullscreen depends on the new screen
 	// size. So we need to refresh the fullscreen state of all
 	// windows.
-	win_stack_foreach_managed(w, wm_stack_end(ps->wm)) {
-		win_update_is_fullscreen(ps, w);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL) {
+			win_update_is_fullscreen(ps, w);
+		}
 	}
 
 	if (ps->redirected) {
@@ -829,17 +822,22 @@ static void handle_root_flags(session_t *ps) {
  *
  * @return whether the operation succeeded
  */
-static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win **out_bottom) {
+static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bottom) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
-	struct managed_win *bottom = NULL;
+	struct win *bottom = NULL;
 	*animation = false;
 	*out_bottom = NULL;
 
 	// First, let's process fading, and animated shaders
 	// TODO(yshui) check if a window is fully obscured, and if we don't need to
 	//             process fading or animation for it.
-	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
+	wm_stack_foreach_safe(ps->wm, cursor, tmp) {
+		auto w = wm_ref_deref(cursor);
+		if (w == NULL) {
+			continue;
+		}
+
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 
@@ -887,8 +885,13 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
 	bool reg_ignore_valid = true;
-	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
+	wm_stack_foreach_safe(ps->wm, cursor, next_cursor) {
 		__label__ skip_window;
+		auto w = wm_ref_deref(cursor);
+		if (w == NULL) {
+			continue;
+		}
+
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
 		const bool was_painted = w->to_paint;
@@ -902,7 +905,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 
 		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
 		log_trace("Checking whether window %#010x (%s) should be painted",
-		          w->base.id, w->name);
+		          win_id(w), w->name);
 
 		// Give up if it's not damaged or invisible, or it's unmapped and its
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
@@ -912,8 +915,8 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 			log_trace("|- is unmapped");
 			to_paint = false;
 		} else if (unlikely(ps->debug_window != XCB_NONE) &&
-		           (w->base.id == ps->debug_window ||
-		            w->client_win == ps->debug_window)) {
+		           (win_id(w) == ps->debug_window ||
+		            win_client_id(w, /*fallback_to_self=*/false) == ps->debug_window)) {
 			log_trace("|- is the debug window");
 			to_paint = false;
 		} else if (!w->ever_damaged) {
@@ -954,7 +957,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 		}
 
 		log_trace("|- will be painted");
-		log_verbose("Window %#010x (%s) will be painted", w->base.id, w->name);
+		log_verbose("Window %#010x (%s) will be painted", win_id(w), w->name);
 
 		// Generate ignore region for painting to reduce GPU load
 		if (!w->reg_ignore) {
@@ -1007,11 +1010,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 		}
 
 		w->prev_trans = bottom;
-		if (bottom) {
-			w->stacking_rank = bottom->stacking_rank + 1;
-		} else {
-			w->stacking_rank = 0;
-		}
 		bottom = w;
 
 		// If the screen is not redirected and the window has redir_ignore set,
@@ -1027,7 +1025,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct managed_win 
 		if (w->state == WSTATE_DESTROYED && w->running_animation == NULL) {
 			// the window should be destroyed because it was destroyed
 			// by X server and now its animations are finished
-			destroy_win_finish(ps, &w->base);
+			win_destroy_finish(ps, w);
 			w = NULL;
 		}
 
@@ -1572,42 +1570,71 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 }
 
 static void handle_new_windows(session_t *ps) {
-	list_foreach_safe(struct win, w, wm_stack_end(ps->wm), stack_neighbour) {
-		if (w->is_new) {
-			auto new_w = maybe_allocate_managed_win(ps, w);
-			if (new_w == w) {
-				continue;
-			}
+	wm_complete_import(ps->wm, &ps->c, ps->atoms);
 
-			assert(new_w->managed);
-			wm_stack_replace(ps->wm, w, new_w);
-
-			auto mw = (struct managed_win *)new_w;
-			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				win_set_flags(mw, WIN_FLAGS_MAPPED);
-
-				// This window might be damaged before we called fill_win
-				// and created the damage handle. And there is no way for
-				// us to find out. So just blindly mark it damaged
-				mw->ever_damaged = true;
+	// Check tree changes first, because later property updates need accurate
+	// client window information
+	struct win *w = NULL;
+	while (true) {
+		auto wm_change = wm_dequeue_change(ps->wm);
+		if (wm_change.type == WM_TREE_CHANGE_NONE) {
+			break;
+		}
+		switch (wm_change.type) {
+		case WM_TREE_CHANGE_TOPLEVEL_NEW:
+			w = win_maybe_allocate(ps, wm_change.toplevel);
+			if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				win_map_start(w);
 			}
-			// Send D-Bus signal
-			if (ps->o.dbus) {
-				cdbus_ev_win_added(session_get_cdbus(ps), new_w);
+			break;
+		case WM_TREE_CHANGE_TOPLEVEL_KILLED:
+			w = wm_ref_deref(wm_change.toplevel);
+			if (w != NULL) {
+				// Pointing the window tree_ref to the zombie.
+				w->tree_ref = wm_change.toplevel;
+				win_destroy_start(ps, w);
+			} else {
+				// This window is not managed, no point keeping the zombie
+				// around.
+				wm_reap_zombie(wm_change.toplevel);
 			}
+			break;
+		case WM_TREE_CHANGE_CLIENT:
+			log_debug("Client window for window %#010x changed from "
+			          "%#010x to %#010x",
+			          wm_ref_win_id(wm_change.toplevel),
+			          wm_change.client.old.x, wm_change.client.new_.x);
+			w = wm_ref_deref(wm_change.toplevel);
+			if (w != NULL) {
+				win_set_flags(w, WIN_FLAGS_CLIENT_STALE);
+			} else {
+				log_debug("An unmanaged window %#010x has a new client "
+				          "%#010x",
+				          wm_ref_win_id(wm_change.toplevel),
+				          wm_change.client.new_.x);
+			}
+			break;
+		case WM_TREE_CHANGE_TOPLEVEL_RESTACKED: invalidate_reg_ignore(ps); break;
+		default: unreachable();
 		}
 	}
 }
 
 static void refresh_windows(session_t *ps) {
-	win_stack_foreach_managed(w, wm_stack_end(ps->wm)) {
-		win_process_update_flags(ps, w);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL) {
+			win_process_update_flags(ps, w);
+		}
 	}
 }
 
 static void refresh_images(session_t *ps) {
-	win_stack_foreach_managed(w, wm_stack_end(ps->wm)) {
-		win_process_image_flags(ps, w);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL) {
+			win_process_image_flags(ps, w);
+		}
 	}
 }
 
@@ -1633,7 +1660,8 @@ static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 
 	// Catching up with X server
 	handle_queued_x_events(EV_A, &ps->event_check, 0);
-	if (ps->pending_updates) {
+	if (ps->pending_updates || wm_has_incomplete_imports(ps->wm) ||
+	    wm_has_tree_changes(ps->wm)) {
 		log_debug("Delayed handling of events, entering critical section");
 		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
@@ -1663,17 +1691,19 @@ static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 	ps->pending_updates = false;
 	log_trace("Exited critical section");
 
-	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
+	wm_stack_foreach_safe(ps->wm, cursor, tmp) {
+		auto w = wm_ref_deref(cursor);
+		BUG_ON(w != NULL && w->tree_ref != cursor);
 		// Window might be freed by this function, if it's destroyed and its
 		// animation finished
-		if (win_process_animation_and_state_change(ps, w, delta_t)) {
+		if (w != NULL && win_process_animation_and_state_change(ps, w, delta_t)) {
 			free(w->running_animation);
 			w->running_animation = NULL;
 			w->in_openclose = false;
 			if (w->state == WSTATE_UNMAPPED) {
 				unmap_win_finish(ps, w);
 			} else if (w->state == WSTATE_DESTROYED) {
-				destroy_win_finish(ps, &w->base);
+				win_destroy_finish(ps, w);
 			}
 		}
 	}
@@ -1738,23 +1768,34 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		//
 		// TODO(yshui) I think maybe we don't need this anymore, since now we
 		//             immediate acquire pixmap right after `map_win_start`.
-		win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
+		wm_stack_foreach_safe(ps->wm, cursor, tmp) {
+			auto w = wm_ref_deref(cursor);
+			if (w == NULL) {
+				continue;
+			}
 			free(w->running_animation);
 			w->running_animation = NULL;
 			if (w->state == WSTATE_DESTROYED) {
-				destroy_win_finish(ps, &w->base);
+				win_destroy_finish(ps, w);
 			}
 		}
 	}
 
 	if (ps->o.benchmark) {
 		if (ps->o.benchmark_wid) {
-			auto w = wm_find_managed(ps->wm, ps->o.benchmark_wid);
-			if (!w) {
+			auto w = wm_find(ps->wm, ps->o.benchmark_wid);
+			if (w == NULL) {
 				log_fatal("Couldn't find specified benchmark window.");
 				exit(1);
 			}
-			add_damage_from_win(ps, w);
+			w = wm_ref_toplevel_of(w);
+
+			auto win = wm_ref_deref(w);
+			if (win != NULL) {
+				add_damage_from_win(ps, win);
+			} else {
+				force_repaint(ps);
+			}
 		} else {
 			force_repaint(ps);
 		}
@@ -1765,7 +1806,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	 * screen should be redirected. */
 	bool animation = false;
 	bool was_redirected = ps->redirected;
-	struct managed_win *bottom = NULL;
+	struct win *bottom = NULL;
 	if (!paint_preprocess(ps, &animation, &bottom)) {
 		log_fatal("Pre-render preparation has failed, exiting...");
 		exit(1);
@@ -2473,6 +2514,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #endif
 	}
 
+	ps->wm = wm_new();
+	wm_import_incomplete(ps->wm, ps->c.screen_info->root, XCB_NONE);
+
 	e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
 	if (e) {
 		log_fatal_x_error(e, "Failed to grab X server");
@@ -2488,8 +2532,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// think there still could be race condition that mandates discarding the events.
 	x_discard_events(&ps->c);
 
-	xcb_query_tree_reply_t *query_tree_reply = xcb_query_tree_reply(
-	    ps->c.c, xcb_query_tree(ps->c.c, ps->c.screen_info->root), NULL);
+	wm_complete_import(ps->wm, &ps->c, ps->atoms);
 
 	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
 	if (e) {
@@ -2500,23 +2543,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ps->server_grabbed = false;
 
-	ps->wm = wm_new();
-	if (query_tree_reply) {
-		xcb_window_t *children;
-		int nchildren;
-
-		children = xcb_query_tree_children(query_tree_reply);
-		nchildren = xcb_query_tree_children_length(query_tree_reply);
-
-		for (int i = 0; i < nchildren; i++) {
-			wm_stack_add_above(ps->wm, children[i], i ? children[i - 1] : XCB_NONE);
-		}
-		free(query_tree_reply);
-	}
-
 	log_debug("Initial stack:");
-	list_foreach(struct win, w, wm_stack_end(ps->wm), stack_neighbour) {
-		log_debug("%#010x", w->id);
+	wm_stack_foreach(ps->wm, i) {
+		log_debug("    %#010x", wm_ref_win_id(i));
 	}
 
 	ps->command_builder = command_builder_new();
@@ -2569,8 +2598,11 @@ static void session_destroy(session_t *ps) {
 	}
 #endif
 
-	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
-		free_win_res(ps, w);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL) {
+			free_win_res(ps, w);
+		}
 	}
 
 	// Free blacklists
@@ -2677,7 +2709,7 @@ static void session_destroy(session_t *ps) {
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);
 
-	wm_free(ps->wm, &ps->c);
+	wm_free(ps->wm);
 	free_x_connection(&ps->c);
 }
 

@@ -182,7 +182,7 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 }
 
 static bool
-renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct managed_win *w) {
+renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct win *w) {
 	ivec2 size = {.width = w->widthb, .height = w->heightb};
 	bool succeeded = false;
 	auto image = backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_MASK, size);
@@ -346,8 +346,8 @@ out:
 	return shadow_image;
 }
 
-static bool renderer_bind_shadow(struct renderer *r, struct backend_base *backend,
-                                 struct managed_win *w) {
+static bool
+renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct win *w) {
 	if (backend->ops.quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
 		xcb_pixmap_t shadow = XCB_NONE;
 		xcb_render_picture_t pict = XCB_NONE;
@@ -398,7 +398,7 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 			assert(layer->number_of_commands > 0);
 			layer_end = cmd + layer->number_of_commands;
 			log_trace("Prepare commands for layer %#010x @ %#010x (%s)",
-			          layer->win->base.id, layer->win->client_win,
+			          win_id(layer->win), win_client_id(layer->win, false),
 			          layer->win->name);
 		}
 
@@ -522,8 +522,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 				layer += 1;
 				layer_end += layer->number_of_commands;
 				log_trace("Layer for window %#010x @ %#010x (%s)",
-				          layer->win->base.id, layer->win->client_win,
-				          layer->win->name);
+				          win_id(layer->win),
+				          win_client_id(layer->win, false), layer->win->name);
 			}
 			log_backend_command(TRACE, *i);
 		}

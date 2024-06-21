@@ -233,8 +233,11 @@ void glx_destroy(session_t *ps) {
 	}
 
 	// Free all GLX resources of windows
-	win_stack_foreach_managed(w, wm_stack_end(ps->wm)) {
-		free_win_res_glx(ps, w);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL) {
+			free_win_res_glx(ps, w);
+		}
 	}
 
 	// Free GLSL shaders/programs
@@ -1160,9 +1163,9 @@ void glx_read_border_pixel(int root_height, int root_width, int x, int y, int wi
 	gl_check_err();
 }
 
-bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
-                           const glx_texture_t *ptex, int dx, int dy, int width,
-                           int height, float z, float cr, const region_t *reg_tgt) {
+bool glx_round_corners_dst(session_t *ps, struct win *w, const glx_texture_t *ptex,
+                           int dx, int dy, int width, int height, float z, float cr,
+                           const region_t *reg_tgt) {
 	assert(ps->psglx->round_passes->prog);
 	bool ret = false;
 
@@ -1533,7 +1536,7 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 /**
  * Free GLX part of win.
  */
-void free_win_res_glx(session_t *ps, struct managed_win *w) {
+void free_win_res_glx(session_t *ps, struct win *w) {
 	free_paint_glx(ps, &w->paint);
 	free_paint_glx(ps, &w->shadow_paint);
 	free_glx_bc(ps, &w->glx_blur_cache);

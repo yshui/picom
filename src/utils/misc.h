@@ -64,6 +64,8 @@ safe_isinf(double a) {
 			abort();                                                         \
 		}                                                                        \
 	} while (0)
+/// Abort the program if `expr` is NULL. This is NOT disabled in release builds.
+#define BUG_ON_NULL(expr) BUG_ON((expr) == NULL);
 #define CHECK_EXPR(...) ((void)0)
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
