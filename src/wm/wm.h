@@ -202,7 +202,10 @@ bool wm_has_tree_changes(const struct wm *wm);
 /// the window tree. This function must be called from the X critical section. This
 /// function also subscribes to SubstructureNotify events for all newly imported windows,
 /// as well as for the (now completed) placeholder windows.
-void wm_complete_import(struct wm *wm, struct x_connection *c, struct atom *atoms);
+///
+/// Returns false if our internal state is behind the X server's. In other words, if a
+/// window we think should be there, does not in fact exist. Returns true otherwise.
+bool wm_complete_import(struct wm *wm, struct x_connection *c, struct atom *atoms);
 
 bool wm_is_wid_masked(struct wm *wm, xcb_window_t wid);
 

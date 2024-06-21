@@ -326,16 +326,23 @@ static void wm_complete_import_single(struct wm *wm, struct x_connection *c,
                                       struct atom *atoms, struct wm_tree_node *node) {
 	log_debug("Finishing importing window %#010x with parent %#010lx.", node->id.x,
 	          node->parent != NULL ? node->parent->id.x : XCB_NONE);
-	set_cant_fail_cookie(
+	set_ignore_cookie(
 	    c, xcb_change_window_attributes(c->c, node->id.x, XCB_CW_EVENT_MASK,
 	                                    (const uint32_t[]){WM_IMPORT_EV_MASK}));
 	if (wid_has_prop(c->c, node->id.x, atoms->aWM_STATE)) {
 		wm_tree_set_wm_state(&wm->tree, node, true);
 	}
+
+	auto masked = wm_find_masked(wm, node->id.x);
+	if (masked != -1) {
+		free(wm->masked[masked]);
+		dynarr_remove_swap(wm->masked, (size_t)masked);
+	}
 }
 
-static void wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
+static bool wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
                                        struct atom *atoms, struct wm_tree_node *subroot) {
+	bool out_of_sync = false;
 	wm_complete_import_single(wm, c, atoms, subroot);
 
 	for (auto curr = subroot; curr != NULL; curr = wm_tree_next(curr, subroot)) {
@@ -345,9 +352,10 @@ static void wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
 
 		xcb_query_tree_reply_t *tree = XCB_AWAIT(xcb_query_tree, c->c, curr->id.x);
 		if (!tree) {
-			log_error("Disappearing window subtree rooted at %#010x. Expect "
-			          "malfunction.",
+			log_debug("Disappearing window subtree rooted at %#010x. We are "
+			          "out-of-sync.",
 			          curr->id.x);
+			out_of_sync = true;
 			continue;
 		}
 
@@ -380,21 +388,25 @@ static void wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
 		}
 		free(tree);
 	}
+	return !out_of_sync;
 }
 
-void wm_complete_import(struct wm *wm, struct x_connection *c, struct atom *atoms) {
-	// Unveil the fog of war
-	dynarr_foreach(wm->masked, m) {
-		free(*m);
-	}
-	dynarr_clear_pod(wm->masked);
-
+bool wm_complete_import(struct wm *wm, struct x_connection *c, struct atom *atoms) {
 	while (!dynarr_is_empty(wm->incompletes)) {
 		auto i = dynarr_pop(wm->incompletes);
 		// This function modifies `wm->incompletes`, so we can't use
 		// `dynarr_foreach`.
-		wm_complete_import_subtree(wm, c, atoms, i);
+		if (!wm_complete_import_subtree(wm, c, atoms, i)) {
+			log_debug("Out-of-sync with the X server, try to resync.");
+			return false;
+		}
 	}
+
+	dynarr_foreach(wm->masked, m) {
+		free(*m);
+	}
+	dynarr_clear_pod(wm->masked);
+	return true;
 }
 
 bool wm_has_incomplete_imports(const struct wm *wm) {

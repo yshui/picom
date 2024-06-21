@@ -1605,7 +1605,9 @@ static void handle_all_x_events(struct session *ps) {
 }
 
 static void handle_new_windows(session_t *ps) {
-	wm_complete_import(ps->wm, &ps->c, ps->atoms);
+	while (!wm_complete_import(ps->wm, &ps->c, ps->atoms)) {
+		handle_all_x_events(ps);
+	}
 
 	// Check tree changes first, because later property updates need accurate
 	// client window information
