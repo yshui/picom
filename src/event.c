@@ -204,6 +204,9 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
+	if (wm_is_wid_masked(ps->wm, ev->parent)) {
+		return;
+	}
 	wm_import_incomplete(ps->wm, ev->window, ev->parent);
 }
 
