@@ -99,6 +99,8 @@ struct gl_data {
 	struct gl_shader copy_area_prog;
 	struct gl_shader copy_area_with_dither_prog;
 	GLuint samplers[GL_MAX_SAMPLERS];
+	GLuint buffer_objects[4];
+	GLuint vertex_array_objects[2];
 
 	bool dithered_present;
 

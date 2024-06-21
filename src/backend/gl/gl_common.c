@@ -288,13 +288,9 @@ static GLuint gl_average_texture_color(struct gl_data *gd, struct gl_texture *im
 	glUniform2f(UNIFORM_TEXSIZE_LOC, (GLfloat)img->width, (GLfloat)img->height);
 
 	// Prepare vertex attributes
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBindVertexArray(gd->vertex_array_objects[0]);
+	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[1]);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
@@ -316,11 +312,15 @@ static GLuint gl_average_texture_color(struct gl_data *gd, struct gl_texture *im
 	// Cleanup vertex attributes
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
+
+	// Invalidate buffer data
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, NULL, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, NULL, GL_STREAM_DRAW);
+
+	// Cleanup buffers
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(2, bo);
 	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
 
 	// Cleanup shaders
 	glUseProgram(0);
@@ -384,10 +384,11 @@ static const struct gl_vertex_attribs_definition gl_blit_vertex_attribs = {
  * @param nuniforms    number of uniforms for `shader`
  * @param uniforms     uniforms for `shader`
  */
-static void gl_blit_inner(GLuint target_fbo, int nrects, GLfloat *coord, GLuint *indices,
-                          const struct gl_vertex_attribs_definition *vert_attribs,
-                          const struct gl_shader *shader, int nuniforms,
-                          struct gl_uniform_value *uniforms) {
+static void
+gl_blit_inner(struct gl_data *gd, GLuint target_fbo, int nrects, GLfloat *coord,
+              GLuint *indices, const struct gl_vertex_attribs_definition *vert_attribs,
+              const struct gl_shader *shader, int nuniforms,
+              struct gl_uniform_value *uniforms) {
 	// FIXME(yshui) breaks when `mask` and `img` doesn't have the same y_inverted
 	//              value. but we don't ever hit this problem because all of our
 	//              images and masks are y_inverted.
@@ -431,14 +432,10 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLfloat *coord, GLuint 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
+	glBindVertexArray(gd->vertex_array_objects[0]);
 
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[1]);
 	glBufferData(GL_ARRAY_BUFFER, vert_attribs->stride * nrects * 4, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
 	             indices, GL_STREAM_DRAW);
@@ -454,8 +451,15 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLfloat *coord, GLuint 
 
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
+
+	// Invalidate buffer data
+	glBufferData(GL_ARRAY_BUFFER, vert_attribs->stride * nrects * 4, NULL, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6, NULL,
+	             GL_STREAM_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
 
 	// Cleanup
 	for (GLuint i = GL_TEXTURE1; i < texture_unit; i++) {
@@ -465,10 +469,6 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLfloat *coord, GLuint 
 	glActiveTexture(GL_TEXTURE0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDrawBuffer(GL_BACK);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(2, bo);
 
 	glUseProgram(0);
 
@@ -636,7 +636,7 @@ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
 	// X pixmap is in premultiplied alpha, so we might just as well use it too.
 	// Thanks to derhass for help.
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	gl_blit_inner(fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
+	gl_blit_inner(gd, fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
 	              NUMBER_OF_UNIFORMS, uniforms);
 
 	free(indices);
@@ -696,7 +696,7 @@ static bool gl_copy_area_draw(struct gl_data *gd, ivec2 origin,
 	};
 	auto fbo = gl_bind_image_to_fbo(gd, target_handle);
 	glBlendFunc(GL_ONE, GL_ZERO);
-	gl_blit_inner(fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
+	gl_blit_inner(gd, fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
 	              ARR_SIZE(uniforms), uniforms);
 	free(indices);
 	free(coord);
@@ -881,6 +881,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glGenQueries(2, gd->frame_timing);
 	gd->current_frame_timing = 0;
 
+	glGenBuffers(4, gd->buffer_objects);
+	glGenVertexArrays(2, gd->vertex_array_objects);
+
 	// Initialize GL data structure
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
@@ -1039,6 +1042,9 @@ void gl_deinit(struct gl_data *gd) {
 
 	glDeleteFramebuffers(1, &gd->temp_fbo);
 
+	glDeleteBuffers(4, gd->buffer_objects);
+	glDeleteVertexArrays(2, gd->vertex_array_objects);
+
 	glDeleteQueries(2, gd->frame_timing);
 
 	gl_check_err();
@@ -1134,7 +1140,7 @@ bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const re
 	    [UNIFORM_COLOR_LOC] = {.type = GL_FLOAT_VEC4, .f4 = {0, 0, 0, 0}},
 	};
 	gl_mask_rects_to_coords_simple(nrects, rect, coord, indices);
-	gl_blit_inner(gd->temp_fbo, nrects, coord, indices, &vertex_attribs,
+	gl_blit_inner(gd, gd->temp_fbo, nrects, coord, indices, &vertex_attribs,
 	              &gd->fill_shader, ARR_SIZE(uniforms), uniforms);
 	free(indices);
 	free(coord);
