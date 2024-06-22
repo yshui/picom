@@ -2145,6 +2145,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Allocate a session and copy default values into it
 	session_t *ps = cmalloc(session_t);
+	xcb_generic_error_t *e = NULL;
 	*ps = s_def;
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
@@ -2156,25 +2157,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Use the same Display across reset, primarily for resource leak checking
 	x_connection_init(&ps->c, dpy);
-	// We store width/height from screen_info instead using them directly because they
-	// can change, see configure_root().
-	ps->root_width = ps->c.screen_info->width_in_pixels;
-	ps->root_height = ps->c.screen_info->height_in_pixels;
 
 	const xcb_query_extension_reply_t *ext_info;
-
-	// Start listening to events on root earlier to catch all possible
-	// root geometry changes
-	auto e = xcb_request_check(
-	    ps->c.c, xcb_change_window_attributes_checked(
-	                 ps->c.c, ps->c.screen_info->root, XCB_CW_EVENT_MASK,
-	                 (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-	                                    XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-	                                    XCB_EVENT_MASK_PROPERTY_CHANGE}));
-	if (e) {
-		log_error_x_error(e, "Failed to setup root window event mask");
-		free(e);
-	}
 
 	xcb_prefetch_extension_data(ps->c.c, &xcb_render_id);
 	xcb_prefetch_extension_data(ps->c.c, &xcb_composite_id);
@@ -2553,6 +2537,32 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ps->wm = wm_new();
 	wm_import_incomplete(ps->wm, ps->c.screen_info->root, XCB_NONE);
+
+	// wm_import_incomplete will set event masks on the root window, but its event
+	// mask is missing things we need, so we need to set it again.
+	e = xcb_request_check(
+	    ps->c.c, xcb_change_window_attributes_checked(
+	                 ps->c.c, ps->c.screen_info->root, XCB_CW_EVENT_MASK,
+	                 (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+	                                    XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+	                                    XCB_EVENT_MASK_PROPERTY_CHANGE}));
+	if (e) {
+		log_error_x_error(e, "Failed to setup root window event mask");
+		free(e);
+		goto err;
+	}
+
+	// Query the size of the root window. We need the size information before any
+	// window can be managed.
+	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
+	if (!r) {
+		log_fatal("Failed to get geometry of the root window");
+		goto err;
+	}
+	ps->root_width = r->width;
+	ps->root_height = r->height;
+	free(r);
+	rebuild_screen_reg(ps);
 
 	e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
 	if (e) {
