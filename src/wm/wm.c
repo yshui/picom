@@ -352,7 +352,7 @@ static bool wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
 
 		xcb_query_tree_reply_t *tree = XCB_AWAIT(xcb_query_tree, c->c, curr->id.x);
 		if (!tree) {
-			log_debug("Disappearing window subtree rooted at %#010x. We are "
+			log_error("Disappearing window subtree rooted at %#010x. We are "
 			          "out-of-sync.",
 			          curr->id.x);
 			out_of_sync = true;
