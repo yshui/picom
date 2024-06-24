@@ -55,6 +55,12 @@ enum x_error_action {
 struct pending_x_error {
 	unsigned long sequence;
 	enum x_error_action action;
+
+	// Debug information, where in the code was this request sent.
+	const char *func;
+	const char *file;
+	int line;
+
 	struct list_node siblings;
 };
 
@@ -137,38 +143,40 @@ static inline uint32_t x_new_id(struct x_connection *c) {
 /// @param c X connection
 /// @param sequence sequence number of the X request to set error handler for
 /// @param action action to take when error occurs
-static void
-x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action) {
+static inline void
+x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
+                   const char *func, const char *file, int line) {
 	auto i = cmalloc(struct pending_x_error);
 
 	i->sequence = sequence;
 	i->action = action;
+	i->func = func;
+	i->file = file;
+	i->line = line;
 	list_insert_before(&c->pending_x_errors, &i->siblings);
 }
 
 /// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_IGNORE`
-static inline void attr_unused x_set_error_action_ignore(struct x_connection *c,
-                                                         xcb_void_cookie_t cookie) {
-	x_set_error_action(c, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
-}
+#define x_set_error_action_ignore(c, cookie)                                             \
+	x_set_error_action(c, (cookie).sequence, PENDING_REPLY_ACTION_IGNORE, __func__,  \
+	                   __FILE__, __LINE__)
 
 /// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_ABORT`
-static inline void attr_unused x_set_error_action_abort(struct x_connection *c,
-                                                        xcb_void_cookie_t cookie) {
-	x_set_error_action(c, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
-}
+#define x_set_error_action_abort(c, cookie)                                              \
+	x_set_error_action(c, (cookie).sequence, PENDING_REPLY_ACTION_ABORT, __func__,   \
+	                   __FILE__, __LINE__)
 
 /// Convenience wrapper for x_set_error_action with action
 /// `PENDING_REPLY_ACTION_DEBUG_ABORT`
-static inline void attr_unused x_set_error_action_debug_abort(struct x_connection *c,
-                                                              xcb_void_cookie_t cookie) {
 #ifndef NDEBUG
-	x_set_error_action(c, cookie.sequence, PENDING_REPLY_ACTION_DEBUG_ABORT);
+#define x_set_error_action_debug_abort(c, cookie)                                        \
+	x_set_error_action(c, (cookie).sequence, PENDING_REPLY_ACTION_DEBUG_ABORT,       \
+	                   __func__, __FILE__, __LINE__)
 #else
-	(void)c;
-	(void)cookie;
+#define x_set_error_action_debug_abort(c, cookie)                                        \
+	((void)(c));                                                                     \
+	((void)(cookie))
 #endif
-}
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
 	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
@@ -327,9 +335,10 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p);
 /**
  * Log a X11 error
  */
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code);
-void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
-                 uint16_t minor, uint8_t error_code);
+void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
+                        uint8_t error_code, const char *func);
+#define x_print_error(serial, major, minor, error_code)                                  \
+	x_print_error_impl(serial, major, minor, error_code, __func__)
 
 /*
  * Convert a xcb_generic_error_t to a string that describes the error

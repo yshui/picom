@@ -60,6 +60,114 @@ void x_discard_pending_errors(struct x_connection *c, uint32_t sequence) {
 	}
 }
 
+enum {
+	XSyncBadCounter = 0,
+	XSyncBadAlarm = 1,
+	XSyncBadFence = 2,
+};
+
+/// Convert a X11 error to string
+///
+/// @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+///         for multiple calls to this function,
+static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
+                                          uint16_t minor, uint8_t error_code) {
+	session_t *const ps = ps_g;
+
+	int o = 0;
+	const char *name = "Unknown";
+
+#define CASESTRRET(s)                                                                    \
+	case s: name = #s; break
+
+#define CASESTRRET2(s)                                                                   \
+	case XCB_##s: name = #s; break
+
+	// TODO(yshui) separate error code out from session_t
+	o = error_code - ps->xfixes_error;
+	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
+
+	o = error_code - ps->damage_error;
+	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
+
+	o = error_code - ps->render_error;
+	switch (o) {
+		CASESTRRET2(RENDER_PICT_FORMAT);
+		CASESTRRET2(RENDER_PICTURE);
+		CASESTRRET2(RENDER_PICT_OP);
+		CASESTRRET2(RENDER_GLYPH_SET);
+		CASESTRRET2(RENDER_GLYPH);
+	}
+
+	if (ps->glx_exists) {
+		o = error_code - ps->glx_error;
+		switch (o) {
+			CASESTRRET2(GLX_BAD_CONTEXT);
+			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
+			CASESTRRET2(GLX_BAD_DRAWABLE);
+			CASESTRRET2(GLX_BAD_PIXMAP);
+			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
+			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
+			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
+			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
+			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
+			CASESTRRET2(GLX_BAD_FB_CONFIG);
+			CASESTRRET2(GLX_BAD_PBUFFER);
+			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
+			CASESTRRET2(GLX_BAD_WINDOW);
+			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
+		}
+	}
+
+	if (ps->xsync_exists) {
+		o = error_code - ps->xsync_error;
+		switch (o) {
+			CASESTRRET(XSyncBadCounter);
+			CASESTRRET(XSyncBadAlarm);
+			CASESTRRET(XSyncBadFence);
+		}
+	}
+
+	switch (error_code) {
+		CASESTRRET2(ACCESS);
+		CASESTRRET2(ALLOC);
+		CASESTRRET2(ATOM);
+		CASESTRRET2(COLORMAP);
+		CASESTRRET2(CURSOR);
+		CASESTRRET2(DRAWABLE);
+		CASESTRRET2(FONT);
+		CASESTRRET2(G_CONTEXT);
+		CASESTRRET2(ID_CHOICE);
+		CASESTRRET2(IMPLEMENTATION);
+		CASESTRRET2(LENGTH);
+		CASESTRRET2(MATCH);
+		CASESTRRET2(NAME);
+		CASESTRRET2(PIXMAP);
+		CASESTRRET2(REQUEST);
+		CASESTRRET2(VALUE);
+		CASESTRRET2(WINDOW);
+	}
+
+#undef CASESTRRET
+#undef CASESTRRET2
+
+	thread_local static char buffer[256];
+	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
+	         error_code, name, major, minor, serial);
+	return buffer;
+}
+
+void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
+                        uint8_t error_code, const char *func) {
+	if (unlikely(LOG_LEVEL_DEBUG >= log_get_level_tls())) {
+		log_printf(tls_logger, LOG_LEVEL_DEBUG, func, "%s",
+		           x_error_code_to_string(serial, major, minor, error_code));
+	}
+}
+
+/// Handle X errors.
+///
+/// This function logs X errors, or aborts the program based on severity of the error.
 void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 	x_discard_pending_errors(c, ev->full_sequence);
 	struct pending_x_error *first_error_action = NULL;
@@ -69,8 +177,17 @@ void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 	}
 	if (first_error_action != NULL && first_error_action->sequence == ev->full_sequence) {
 		if (first_error_action->action != PENDING_REPLY_ACTION_IGNORE) {
-			x_log_error(LOG_LEVEL_ERROR, ev->full_sequence, ev->major_code,
-			            ev->minor_code, ev->error_code);
+			log_error("X error for request in %s at %s:%d: %s",
+			          first_error_action->func, first_error_action->file,
+			          first_error_action->line,
+			          x_error_code_to_string(ev->full_sequence, ev->major_code,
+			                                 ev->minor_code, ev->error_code));
+		} else {
+			log_debug("Expected X error for request in %s at %s:%d: %s",
+			          first_error_action->func, first_error_action->file,
+			          first_error_action->line,
+			          x_error_code_to_string(ev->full_sequence, ev->major_code,
+			                                 ev->minor_code, ev->error_code));
 		}
 		switch (first_error_action->action) {
 		case PENDING_REPLY_ACTION_ABORT:
@@ -82,8 +199,9 @@ void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 		}
 		return;
 	}
-	x_log_error(LOG_LEVEL_WARN, ev->full_sequence, ev->major_code, ev->minor_code,
-	            ev->error_code);
+	log_warn("Stray X error: %s",
+	         x_error_code_to_string(ev->full_sequence, ev->major_code, ev->minor_code,
+	                                ev->error_code));
 }
 
 /// Initialize x_connection struct from an Xlib Display.
@@ -565,120 +683,6 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
 	x_set_error_action_debug_abort(c, cookie);
 }
 
-enum {
-	XSyncBadCounter = 0,
-	XSyncBadAlarm = 1,
-	XSyncBadFence = 2,
-};
-
-/**
- * Convert a X11 error to string
- *
- * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
- *         for multiple calls to this function,
- */
-static const char *
-_x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
-	session_t *const ps = ps_g;
-
-	int o = 0;
-	const char *name = "Unknown";
-
-#define CASESTRRET(s)                                                                    \
-	case s: name = #s; break
-
-#define CASESTRRET2(s)                                                                   \
-	case XCB_##s: name = #s; break
-
-	// TODO(yshui) separate error code out from session_t
-	o = error_code - ps->xfixes_error;
-	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
-
-	o = error_code - ps->damage_error;
-	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
-
-	o = error_code - ps->render_error;
-	switch (o) {
-		CASESTRRET2(RENDER_PICT_FORMAT);
-		CASESTRRET2(RENDER_PICTURE);
-		CASESTRRET2(RENDER_PICT_OP);
-		CASESTRRET2(RENDER_GLYPH_SET);
-		CASESTRRET2(RENDER_GLYPH);
-	}
-
-	if (ps->glx_exists) {
-		o = error_code - ps->glx_error;
-		switch (o) {
-			CASESTRRET2(GLX_BAD_CONTEXT);
-			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
-			CASESTRRET2(GLX_BAD_DRAWABLE);
-			CASESTRRET2(GLX_BAD_PIXMAP);
-			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
-			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
-			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
-			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
-			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
-			CASESTRRET2(GLX_BAD_FB_CONFIG);
-			CASESTRRET2(GLX_BAD_PBUFFER);
-			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
-			CASESTRRET2(GLX_BAD_WINDOW);
-			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
-		}
-	}
-
-	if (ps->xsync_exists) {
-		o = error_code - ps->xsync_error;
-		switch (o) {
-			CASESTRRET(XSyncBadCounter);
-			CASESTRRET(XSyncBadAlarm);
-			CASESTRRET(XSyncBadFence);
-		}
-	}
-
-	switch (error_code) {
-		CASESTRRET2(ACCESS);
-		CASESTRRET2(ALLOC);
-		CASESTRRET2(ATOM);
-		CASESTRRET2(COLORMAP);
-		CASESTRRET2(CURSOR);
-		CASESTRRET2(DRAWABLE);
-		CASESTRRET2(FONT);
-		CASESTRRET2(G_CONTEXT);
-		CASESTRRET2(ID_CHOICE);
-		CASESTRRET2(IMPLEMENTATION);
-		CASESTRRET2(LENGTH);
-		CASESTRRET2(MATCH);
-		CASESTRRET2(NAME);
-		CASESTRRET2(PIXMAP);
-		CASESTRRET2(REQUEST);
-		CASESTRRET2(VALUE);
-		CASESTRRET2(WINDOW);
-	}
-
-#undef CASESTRRET
-#undef CASESTRRET2
-
-	thread_local static char buffer[256];
-	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
-	         error_code, name, major, minor, serial);
-	return buffer;
-}
-
-/**
- * Log a X11 error
- */
-void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
-                 uint16_t minor, uint8_t error_code) {
-	if (unlikely(level >= log_get_level_tls())) {
-		log_printf(tls_logger, level, __func__, "%s",
-		           _x_strerror(serial, major, minor, error_code));
-	}
-}
-
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
-	x_log_error(LOG_LEVEL_DEBUG, serial, major, minor, error_code);
-}
-
 /*
  * Convert a xcb_generic_error_t to a string that describes the error
  *
@@ -689,7 +693,8 @@ const char *x_strerror(xcb_generic_error_t *e) {
 	if (!e) {
 		return "No error";
 	}
-	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+	return x_error_code_to_string(e->full_sequence, e->major_code, e->minor_code,
+	                              e->error_code);
 }
 
 /**
