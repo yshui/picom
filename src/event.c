@@ -629,10 +629,6 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
-	if (XCB_EVENT_RESPONSE_TYPE(ev) != KeymapNotify) {
-		x_discard_pending_errors(&ps->c, ev->full_sequence);
-	}
-
 	xcb_window_t wid = ev_window(ps, ev);
 	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
@@ -702,7 +698,6 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	case XCB_SELECTION_CLEAR:
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
-	case 0: x_handle_error(&ps->c, (xcb_generic_error_t *)ev); break;
 	default:
 		if (ps->shape_exists && ev->response_type == ps->shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);

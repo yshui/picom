@@ -18,6 +18,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xcb_renderutil.h>
+#include <xcb/xcb_util.h>
+#include <xcb/xcbext.h>
 #include <xcb/xfixes.h>
 
 #include "atom.h"
@@ -31,26 +33,24 @@
 
 // === Error handling ===
 
-/**
- * Xlib error handler function.
- */
-static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
-	if (!ps_g) {
-		// Do not ignore errors until the session has been initialized
-		return 0;
+/// Discard pending error handlers.
+///
+/// We have received reply with sequence number `sequence`, which means all pending
+/// replies with sequence number strictly less than `sequence` will never be received. So
+/// discard them.
+static void x_discard_pending_errors(struct x_connection *c, uint32_t sequence) {
+	if (sequence < c->last_sequence) {
+		// Overflown, drop from `pending_x_errors` until its sequence number
+		// decreases.
+		log_debug("X sequence number overflown, %u -> %u", c->last_sequence, sequence);
+		list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
+			if (sequence >= i->sequence) {
+				break;
+			}
+			list_remove(&i->siblings);
+			free(i);
+		}
 	}
-
-	// Fake a xcb error, fill in just enough information
-	xcb_generic_error_t xcb_err;
-	xcb_err.full_sequence = (uint32_t)ev->serial;
-	xcb_err.major_code = ev->request_code;
-	xcb_err.minor_code = ev->minor_code;
-	xcb_err.error_code = ev->error_code;
-	x_handle_error(&ps_g->c, &xcb_err);
-	return 0;
-}
-
-void x_discard_pending_errors(struct x_connection *c, uint32_t sequence) {
 	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
 		if (sequence <= i->sequence) {
 			break;
@@ -168,7 +168,7 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
 /// Handle X errors.
 ///
 /// This function logs X errors, or aborts the program based on severity of the error.
-void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
+static void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 	x_discard_pending_errors(c, ev->full_sequence);
 	struct pending_x_error *first_error_action = NULL;
 	if (!list_is_empty(&c->pending_x_errors)) {
@@ -204,6 +204,25 @@ void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 	                                ev->error_code));
 }
 
+/**
+ * Xlib error handler function.
+ */
+static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
+	if (!ps_g) {
+		// Do not ignore errors until the session has been initialized
+		return 0;
+	}
+
+	// Fake a xcb error, fill in just enough information
+	xcb_generic_error_t xcb_err;
+	xcb_err.full_sequence = (uint32_t)ev->serial;
+	xcb_err.major_code = ev->request_code;
+	xcb_err.minor_code = ev->minor_code;
+	xcb_err.error_code = ev->error_code;
+	x_handle_error(&ps_g->c, &xcb_err);
+	return 0;
+}
+
 /// Initialize x_connection struct from an Xlib Display.
 ///
 /// Note this function doesn't take ownership of the Display, the caller is still
@@ -212,10 +231,17 @@ void x_connection_init(struct x_connection *c, Display *dpy) {
 	c->dpy = dpy;
 	c->c = XGetXCBConnection(dpy);
 	list_init_head(&c->pending_x_errors);
+	list_init_head(&c->pending_x_requests);
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	c->screen = DefaultScreen(dpy);
 	c->screen_info = xcb_aux_get_screen(c->c, c->screen);
+	c->message_on_hold = NULL;
+
+	// Do a round trip to fetch the current sequence number
+	auto cookie = xcb_get_input_focus(c->c);
+	free(xcb_get_input_focus_reply(c->c, cookie, NULL));
+	c->last_sequence = cookie.sequence;
 }
 
 /**
@@ -908,4 +934,168 @@ void x_free_monitor_info(struct x_monitors *m) {
 		m->regions = NULL;
 	}
 	m->count = 0;
+}
+
+static uint32_t x_get_full_sequence(struct x_connection *c, uint16_t sequence) {
+	auto last_sequence_low = c->last_sequence & 0xffff;
+	// sequence < last_sequence16 means the lower 16 bits overflowed, which should
+	// carry to the higher 16 bits
+	auto sequence_high = c->last_sequence & 0xffff0000;
+	if (sequence < last_sequence_low) {
+		sequence_high += 0x10000;
+	}
+	return sequence_high | sequence;
+}
+
+static int64_t x_compare_sequence(struct x_connection *c, uint32_t a, uint32_t b) {
+	bool a_overflown = a < c->last_sequence, b_overflown = b < c->last_sequence;
+	if (a_overflown == b_overflown) {
+		return (int64_t)a - (int64_t)b;
+	}
+	return a_overflown ? 1 : -1;
+}
+
+static xcb_raw_generic_event_t *
+x_poll_for_event_impl(struct x_connection *c, struct x_async_request_base **out_req) {
+	struct x_async_request_base *first_pending_request = NULL;
+	if (!list_is_empty(&c->pending_x_requests)) {
+		first_pending_request = list_entry(c->pending_x_requests.next,
+		                                   struct x_async_request_base, siblings);
+	}
+
+	bool on_hold_is_reply;
+	if (c->message_on_hold == NULL) {
+		// Nothing on hold, we need to read new information from the X connection.
+		// We must only read from the X connection once in this function to keep
+		// things consistent. The only way to do  that is reading the connection
+		// with `xcb_poll_for_reply`, and then check for events with
+		// `xcb_poll_for_queued_event`, because there is no
+		// `xcb_poll_for_queued_reply`. Unless we are not waiting for any replies,
+		// in which case a simple `xcb_poll_for_event` is enough.
+		if (first_pending_request != NULL) {
+			xcb_generic_error_t *err = NULL;
+			on_hold_is_reply =
+			    xcb_poll_for_reply(c->c, first_pending_request->sequence,
+			                       (void **)&c->message_on_hold, &err) == 1;
+			if (err != NULL) {
+				c->message_on_hold = (xcb_raw_generic_event_t *)err;
+			}
+			if (!on_hold_is_reply) {
+				// We didn't get a reply, but did we get an event?
+				c->message_on_hold =
+				    (xcb_raw_generic_event_t *)xcb_poll_for_queued_event(c->c);
+			}
+		} else {
+			c->message_on_hold =
+			    (xcb_raw_generic_event_t *)xcb_poll_for_event(c->c);
+			on_hold_is_reply = false;
+		}
+	} else if (first_pending_request != NULL) {
+		// response_type 0 is error, 1 is reply.
+		on_hold_is_reply = c->message_on_hold->response_type < 2 &&
+		                   x_get_full_sequence(c, c->message_on_hold->sequence) ==
+		                       first_pending_request->sequence;
+	} else {
+		on_hold_is_reply = false;
+	}
+	if (c->message_on_hold == NULL) {
+		// Didn't get any new information from the X connection, nothing to
+		// return.
+		return NULL;
+	}
+
+	// From this point, no more reading from the X connection is allowed.
+	xcb_generic_event_t *next_event = NULL;
+	if (on_hold_is_reply) {
+		next_event = xcb_poll_for_queued_event(c->c);
+		assert(next_event == NULL || next_event->response_type != 1);
+	} else {
+		next_event = (xcb_generic_event_t *)c->message_on_hold;
+	}
+
+	// `next_event == c->message_on_hold` iff `on_hold_is_reply` is false.
+
+	bool should_return_event = false;
+	if (first_pending_request == NULL) {
+		// Here `on_hold_is_reply` must be false, therefore `next_event ==
+		// c->message_on_hold` must be true, therefore `next_event` cannot be
+		// NULL.
+		should_return_event = true;
+	} else if (next_event != NULL) {
+		auto ordering = x_compare_sequence(c, next_event->full_sequence,
+		                                   first_pending_request->sequence);
+		// If next_event is a true event, it might share a sequence number with a
+		// reply. But if it's an error (i.e. response_type == 0), its sequence
+		// number must be different from any reply.
+		assert(next_event->response_type != 0 || ordering != 0);
+		should_return_event = ordering < 0;
+	}
+
+	if (should_return_event) {
+		x_discard_pending_errors(c, next_event->full_sequence);
+		c->last_sequence = next_event->full_sequence;
+		if (!on_hold_is_reply) {
+			c->message_on_hold = NULL;
+		}
+		return (xcb_raw_generic_event_t *)next_event;
+	}
+
+	// We should return the reply to the first pending request.
+	xcb_raw_generic_event_t *ret = NULL;
+	if (!on_hold_is_reply) {
+		xcb_generic_error_t *err = NULL;
+		// This is a very special case. Because we have already received an event
+		// with a greater or equal sequence number than the reply, we _know_ the
+		// reply must also have already arrived. We can safely call
+		// `xcb_poll_for_reply` here because we know it will not read from the X
+		// connection again.
+		BUG_ON(xcb_poll_for_reply(c->c, first_pending_request->sequence,
+		                          (void **)&ret, &err) == 0);
+		if (err != NULL) {
+			ret = (xcb_raw_generic_event_t *)err;
+		}
+	} else {
+		ret = c->message_on_hold;
+		c->message_on_hold = (xcb_raw_generic_event_t *)next_event;
+	}
+
+	x_discard_pending_errors(c, first_pending_request->sequence + 1);
+	c->last_sequence = first_pending_request->sequence;
+	*out_req = first_pending_request;
+	list_remove(&first_pending_request->siblings);
+	return ret;
+}
+
+xcb_generic_event_t *x_poll_for_event(struct x_connection *c) {
+	xcb_raw_generic_event_t *ret = NULL;
+	while (true) {
+		struct x_async_request_base *req = NULL;
+		ret = x_poll_for_event_impl(c, &req);
+		if (ret == NULL) {
+			break;
+		}
+
+		if (req != NULL) {
+			req->callback(c, req, ret);
+		} else if (ret->response_type == 0) {
+			x_handle_error(c, (xcb_generic_error_t *)ret);
+		} else {
+			break;
+		}
+		free(ret);
+	}
+	return (xcb_generic_event_t *)ret;
+}
+
+void x_cancel_request(struct x_connection *c, struct x_async_request_base *req) {
+	list_remove(&req->siblings);
+	if (c->message_on_hold == NULL) {
+		return;
+	}
+	if (c->message_on_hold->response_type >= 2 ||
+	    x_get_full_sequence(c, c->message_on_hold->sequence) != req->sequence) {
+		return;
+	}
+	free(c->message_on_hold);
+	c->message_on_hold = NULL;
 }

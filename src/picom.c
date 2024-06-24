@@ -1558,8 +1558,8 @@ static void handle_x_events(struct session *ps) {
 	}
 
 	xcb_generic_event_t *ev;
-	while ((ev = xcb_poll_for_event(ps->c.c))) {
-		ev_handle(ps, ev);
+	while ((ev = x_poll_for_event(&ps->c))) {
+		ev_handle(ps, (xcb_generic_event_t *)ev);
 		free(ev);
 	};
 	int err = xcb_connection_has_error(ps->c.c);
@@ -1978,7 +1978,7 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 
 static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
 	session_t *ps = (session_t *)w;
-	xcb_generic_event_t *ev = xcb_poll_for_event(ps->c.c);
+	xcb_generic_event_t *ev = x_poll_for_event(&ps->c);
 	if (ev) {
 		ev_handle(ps, ev);
 		free(ev);
