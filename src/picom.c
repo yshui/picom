@@ -1535,8 +1535,7 @@ static void unredirect(session_t *ps) {
 /// And if we don't get new ones, we won't render, i.e. we would freeze. libxcb
 /// keeps an internal queue of events, so we have to be 100% sure no events are
 /// left in that queue before we go to sleep.
-static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
-	session_t *ps = session_ptr(w, event_check);
+static void handle_x_events(struct session *ps) {
 	// Flush because if we go into sleep when there is still requests in the
 	// outgoing buffer, they will not be sent for an indefinite amount of
 	// time. Use XFlush here too, we might still use some Xlib functions
@@ -1558,41 +1557,6 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 	}
 
 	xcb_generic_event_t *ev;
-	while ((ev = xcb_poll_for_queued_event(ps->c.c))) {
-		ev_handle(ps, ev);
-		free(ev);
-	};
-	int err = xcb_connection_has_error(ps->c.c);
-	if (err) {
-		log_fatal("X11 server connection broke (error %d)", err);
-		exit(1);
-	}
-}
-
-/// Handle all events X server has sent us so far, so that our internal state will catch
-/// up with the X server's state. It only makes sense to call this function in the X
-/// critical section, otherwise we will be chasing a moving goal post.
-///
-/// (Disappointingly, grabbing the X server doesn't actually prevent the X server state
-/// from changing. It should, but in practice we have observed window still being
-/// destroyed while we have the server grabbed. This is very disappointing and forces us
-/// to use some hacky code to recover when we discover we are out-of-sync.)
-///
-/// This function is different from `handle_queued_x_events` in that this will keep
-/// reading from the X server until there is nothing left. Whereas
-/// `handle_queued_x_events` is only concerned with emptying the internal buffer of
-/// libxcb, so we don't go to sleep with unprocessed data.
-static void handle_all_x_events(struct session *ps) {
-	assert(ps->server_grabbed);
-
-	XFlush(ps->c.dpy);
-	xcb_flush(ps->c.c);
-
-	if (ps->vblank_scheduler) {
-		vblank_handle_x_events(ps->vblank_scheduler);
-	}
-
-	xcb_generic_event_t *ev;
 	while ((ev = xcb_poll_for_event(ps->c.c))) {
 		ev_handle(ps, ev);
 		free(ev);
@@ -1604,9 +1568,14 @@ static void handle_all_x_events(struct session *ps) {
 	}
 }
 
+static void handle_x_events_ev(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
+	session_t *ps = session_ptr(w, event_check);
+	handle_x_events(ps);
+}
+
 static void handle_new_windows(session_t *ps) {
 	while (!wm_complete_import(ps->wm, &ps->c, ps->atoms)) {
-		handle_all_x_events(ps);
+		handle_x_events(ps);
 	}
 
 	// Check tree changes first, because later property updates need accurate
@@ -1696,7 +1665,16 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 	ps->server_grabbed = true;
 
 	// Catching up with X server
-	handle_all_x_events(ps);
+	/// Handle all events X server has sent us so far, so that our internal state will
+	/// catch up with the X server's state. It only makes sense to call this function
+	/// in the X critical section, otherwise we will be chasing a moving goal post.
+	///
+	/// (Disappointingly, grabbing the X server doesn't actually prevent the X server
+	/// state from changing. It should, but in practice we have observed window still
+	/// being destroyed while we have the server grabbed. This is very disappointing
+	/// and forces us to use some hacky code to recover when we discover we are
+	/// out-of-sync.)
+	handle_x_events(ps);
 	if (ps->pending_updates || wm_has_incomplete_imports(ps->wm) ||
 	    wm_has_tree_changes(ps->wm)) {
 		log_debug("Delayed handling of events, entering critical section");
@@ -2515,7 +2493,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	//
 	// So we make use of a ev_prepare handle, which is called right before libev
 	// goes into sleep, to handle all the queued X events.
-	ev_prepare_init(&ps->event_check, handle_queued_x_events);
+	ev_prepare_init(&ps->event_check, handle_x_events_ev);
 	// Make sure nothing can cause xcb to read from the X socket after events are
 	// handled and before we going to sleep.
 	ev_set_priority(&ps->event_check, EV_MINPRI);
