@@ -1,0 +1,21 @@
+name: freebsd
+on: push
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: cross-platform-actions/action@6acac3ca1b632aa762721d537dea32398ba0f2b1
+      with:
+        operating_system: freebsd
+        version: '14.1'
+        shell: bash
+        run: |
+          sudo pkg install -y libev libxcb meson pkgconf cmake xcb-util-renderutil xcb-util-image pixman uthash libconfig libglvnd libepoxy dbus pcre2
+          CPPFLAGS="-I/usr/local/include" meson setup -Dunittest=true --werror build
+          ninja -C build
+          ninja -C build test
+
