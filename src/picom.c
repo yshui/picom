@@ -2440,6 +2440,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	if (ps->o.print_diagnostics) {
+		ps->root_width = ps->c.screen_info->width_in_pixels;
+		ps->root_height = ps->c.screen_info->height_in_pixels;
 		print_diagnostics(ps, config_file, compositor_running);
 		exit(0);
 	}
