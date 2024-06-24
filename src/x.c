@@ -50,27 +50,32 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
-void x_discard_pending(struct x_connection *c, uint32_t sequence) {
-	while (c->pending_reply_head && sequence > c->pending_reply_head->sequence) {
-		auto next = c->pending_reply_head->next;
-		free(c->pending_reply_head);
-		c->pending_reply_head = next;
-	}
-	if (!c->pending_reply_head) {
-		c->pending_reply_tail = &c->pending_reply_head;
+void x_discard_pending_errors(struct x_connection *c, uint32_t sequence) {
+	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
+		if (sequence <= i->sequence) {
+			break;
+		}
+		list_remove(&i->siblings);
+		free(i);
 	}
 }
 
 void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
-	x_discard_pending(c, ev->full_sequence);
-	if (c->pending_reply_head && c->pending_reply_head->sequence == ev->full_sequence) {
-		if (c->pending_reply_head->action != PENDING_REPLY_ACTION_IGNORE) {
+	x_discard_pending_errors(c, ev->full_sequence);
+	struct pending_x_error *first_error_action = NULL;
+	if (!list_is_empty(&c->pending_x_errors)) {
+		first_error_action =
+		    list_entry(c->pending_x_errors.next, struct pending_x_error, siblings);
+	}
+	if (first_error_action != NULL && first_error_action->sequence == ev->full_sequence) {
+		if (first_error_action->action != PENDING_REPLY_ACTION_IGNORE) {
 			x_log_error(LOG_LEVEL_ERROR, ev->full_sequence, ev->major_code,
 			            ev->minor_code, ev->error_code);
 		}
-		switch (c->pending_reply_head->action) {
+		switch (first_error_action->action) {
 		case PENDING_REPLY_ACTION_ABORT:
-			log_fatal("An unrecoverable X error occurred, aborting...");
+			log_fatal("An unrecoverable X error occurred, "
+			          "aborting...");
 			abort();
 		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
 		case PENDING_REPLY_ACTION_IGNORE: break;
@@ -88,7 +93,7 @@ void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 void x_connection_init(struct x_connection *c, Display *dpy) {
 	c->dpy = dpy;
 	c->c = XGetXCBConnection(dpy);
-	c->pending_reply_tail = &c->pending_reply_head;
+	list_init_head(&c->pending_x_errors);
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	c->screen = DefaultScreen(dpy);
@@ -411,7 +416,7 @@ x_create_picture_with_pictfmt(struct x_connection *c, int w, int h,
 	xcb_render_picture_t picture = x_create_picture_with_pictfmt_and_pixmap(
 	    c, pictfmt, tmp_pixmap, valuemask, attr);
 
-	set_cant_fail_cookie(c, xcb_free_pixmap(c->c, tmp_pixmap));
+	x_set_error_action_abort(c, xcb_free_pixmap(c->c, tmp_pixmap));
 
 	return picture;
 }
@@ -508,7 +513,7 @@ uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 
 void x_destroy_region(struct x_connection *c, xcb_xfixes_region_t r) {
 	if (r != XCB_NONE) {
-		set_debug_cant_fail_cookie(c, xcb_xfixes_destroy_region(c->c, r));
+		x_set_error_action_debug_abort(c, xcb_xfixes_destroy_region(c->c, r));
 	}
 }
 
@@ -557,7 +562,7 @@ void x_clear_picture_clip_region(struct x_connection *c, xcb_render_picture_t pi
 void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
 	assert(p != XCB_NONE);
 	auto cookie = xcb_render_free_picture(c->c, p);
-	set_debug_cant_fail_cookie(c, cookie);
+	x_set_error_action_debug_abort(c, cookie);
 }
 
 enum {
@@ -776,7 +781,7 @@ err:
 
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {
 	auto cookie = xcb_present_notify_msc(c->c, window, 0, msc, 1, 0);
-	set_cant_fail_cookie(c, cookie);
+	x_set_error_action_abort(c, cookie);
 }
 
 /**

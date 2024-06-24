@@ -542,7 +542,7 @@ static inline void repair_win(session_t *ps, struct win *w) {
 		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
 		                                  ps->damage_ring.x_region);
 		if (!ps->o.show_all_xerrors) {
-			set_ignore_cookie(&ps->c, cookie);
+			x_set_error_action_ignore(&ps->c, cookie);
 		}
 		x_fetch_region(&ps->c, ps->damage_ring.x_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
@@ -631,7 +631,7 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	if (XCB_EVENT_RESPONSE_TYPE(ev) != KeymapNotify) {
-		x_discard_pending(&ps->c, ev->full_sequence);
+		x_discard_pending_errors(&ps->c, ev->full_sequence);
 	}
 
 	xcb_window_t wid = ev_window(ps, ev);

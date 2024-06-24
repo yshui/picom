@@ -396,8 +396,8 @@ void paint_one(session_t *ps, struct win *w, const region_t *reg_paint) {
 	// Fetch Pixmap
 	if (!w->paint.pixmap) {
 		w->paint.pixmap = x_new_id(&ps->c);
-		set_ignore_cookie(&ps->c, xcb_composite_name_window_pixmap(
-		                              ps->c.c, win_id(w), w->paint.pixmap));
+		x_set_error_action_ignore(&ps->c, xcb_composite_name_window_pixmap(
+		                                      ps->c.c, win_id(w), w->paint.pixmap));
 	}
 
 	xcb_drawable_t draw = w->paint.pixmap;

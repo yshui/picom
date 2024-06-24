@@ -1370,7 +1370,7 @@ void free_win_res(session_t *ps, struct win *w) {
 	pixman_region32_fini(&w->damaged);
 	pixman_region32_fini(&w->bounding_shape);
 	// BadDamage may be thrown if the window is destroyed
-	set_ignore_cookie(&ps->c, xcb_damage_destroy(ps->c.c, w->damage));
+	x_set_error_action_ignore(&ps->c, xcb_damage_destroy(ps->c.c, w->damage));
 	rc_region_unref(&w->reg_ignore);
 	free(w->name);
 	free(w->class_instance);

@@ -373,7 +373,7 @@ static bool present_vblank_scheduler_init(struct vblank_scheduler *base) {
 	auto select_input =
 	    xcb_present_select_input(base->c->c, self->event_id, base->target_window,
 	                             XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY);
-	set_cant_fail_cookie(base->c, select_input);
+	x_set_error_action_abort(base->c, select_input);
 	self->event =
 	    xcb_register_for_special_xge(base->c->c, &xcb_present_id, self->event_id, NULL);
 	return true;
@@ -384,7 +384,7 @@ static void present_vblank_scheduler_deinit(struct vblank_scheduler *base) {
 	ev_timer_stop(base->loop, &self->callback_timer);
 	auto select_input =
 	    xcb_present_select_input(base->c->c, self->event_id, base->target_window, 0);
-	set_cant_fail_cookie(base->c, select_input);
+	x_set_error_action_abort(base->c, select_input);
 	xcb_unregister_for_special_event(base->c->c, self->event);
 }
 

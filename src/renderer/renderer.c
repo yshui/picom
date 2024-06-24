@@ -494,8 +494,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
 		// concurrent with our CPU tasks to save time.
-		set_cant_fail_cookie(backend->c,
-		                     xcb_sync_trigger_fence(backend->c->c, xsync_fence));
+		x_set_error_action_abort(
+		    backend->c, xcb_sync_trigger_fence(backend->c->c, xsync_fence));
 	}
 	// TODO(yshui) In some cases we can render directly into the back buffer, and
 	// don't need the intermediate back_image. Several conditions need to be met: no
@@ -568,13 +568,13 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 
 	if (xsync_fence != XCB_NONE) {
-		set_cant_fail_cookie(
+		x_set_error_action_abort(
 		    backend->c, xcb_sync_await_fence(backend->c->c, 1, &xsync_fence));
 		// Making sure the wait is completed by receiving a response from the X
 		// server
 		xcb_aux_sync(backend->c->c);
-		set_cant_fail_cookie(backend->c,
-		                     xcb_sync_reset_fence(backend->c->c, xsync_fence));
+		x_set_error_action_abort(
+		    backend->c, xcb_sync_reset_fence(backend->c->c, xsync_fence));
 	}
 
 	if (backend->ops.prepare) {

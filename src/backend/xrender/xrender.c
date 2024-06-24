@@ -110,7 +110,7 @@ set_picture_scale(struct x_connection *c, xcb_render_picture_t picture, vec2 sca
 	    .matrix22 = DOUBLE_TO_XFIXED(1.0 / scale.y),
 	    .matrix33 = DOUBLE_TO_XFIXED(1.0),
 	};
-	set_cant_fail_cookie(c, xcb_render_set_picture_transform(c->c, picture, transform));
+	x_set_error_action_abort(c, xcb_render_set_picture_transform(c->c, picture, transform));
 }
 
 /// Make a picture of size width x height, which has a rounded rectangle of corner_radius
@@ -198,9 +198,9 @@ static inline void xrender_set_picture_repeat(struct xrender_data *xd,
 	xcb_render_change_picture_value_list_t values = {
 	    .repeat = repeat,
 	};
-	set_cant_fail_cookie(xd->base.c, xcb_render_change_picture(xd->base.c->c, pict,
-	                                                           XCB_RENDER_CP_REPEAT,
-	                                                           (uint32_t *)&values));
+	x_set_error_action_abort(
+	    xd->base.c, xcb_render_change_picture(xd->base.c->c, pict, XCB_RENDER_CP_REPEAT,
+	                                          (uint32_t *)&values));
 }
 
 static inline void xrender_record_back_damage(struct xrender_data *xd,

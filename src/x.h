@@ -17,6 +17,7 @@
 #include "log.h"
 #include "region.h"
 #include "utils/kernel.h"
+#include "utils/list.h"
 
 typedef struct session session_t;
 struct atom;
@@ -44,17 +45,18 @@ typedef struct winprop_info {
 	uint32_t length;
 } winprop_info_t;
 
-enum pending_reply_action {
+enum x_error_action {
 	PENDING_REPLY_ACTION_IGNORE,
 	PENDING_REPLY_ACTION_ABORT,
 	PENDING_REPLY_ACTION_DEBUG_ABORT,
 };
 
-typedef struct pending_reply {
-	struct pending_reply *next;
+/// Represents a X request we sent that might error.
+struct pending_x_error {
 	unsigned long sequence;
-	enum pending_reply_action action;
-} pending_reply_t;
+	enum x_error_action action;
+	struct list_node siblings;
+};
 
 struct x_connection {
 	// Public fields
@@ -68,11 +70,8 @@ struct x_connection {
 	int screen;
 
 	// Private fields
-	/// Head pointer of the error ignore linked list.
-	pending_reply_t *pending_reply_head;
-	/// Pointer to the <code>next</code> member of tail element of the error
-	/// ignore linked list.
-	pending_reply_t **pending_reply_tail;
+	/// The error handling list.
+	struct list_node pending_x_errors;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
@@ -133,34 +132,38 @@ static inline uint32_t x_new_id(struct x_connection *c) {
 	return ret;
 }
 
-static void set_reply_action(struct x_connection *c, uint32_t sequence,
-                             enum pending_reply_action action) {
-	auto i = cmalloc(pending_reply_t);
+/// Set error handler for a specific X request.
+///
+/// @param c X connection
+/// @param sequence sequence number of the X request to set error handler for
+/// @param action action to take when error occurs
+static void
+x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action) {
+	auto i = cmalloc(struct pending_x_error);
 
 	i->sequence = sequence;
-	i->next = 0;
 	i->action = action;
-	*c->pending_reply_tail = i;
-	c->pending_reply_tail = &i->next;
+	list_insert_before(&c->pending_x_errors, &i->siblings);
 }
 
-/**
- * Ignore X errors caused by given X request.
- */
-static inline void attr_unused set_ignore_cookie(struct x_connection *c,
-                                                 xcb_void_cookie_t cookie) {
-	set_reply_action(c, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
+/// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_IGNORE`
+static inline void attr_unused x_set_error_action_ignore(struct x_connection *c,
+                                                         xcb_void_cookie_t cookie) {
+	x_set_error_action(c, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
 }
 
-static inline void attr_unused set_cant_fail_cookie(struct x_connection *c,
-                                                    xcb_void_cookie_t cookie) {
-	set_reply_action(c, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
+/// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_ABORT`
+static inline void attr_unused x_set_error_action_abort(struct x_connection *c,
+                                                        xcb_void_cookie_t cookie) {
+	x_set_error_action(c, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
 }
 
-static inline void attr_unused set_debug_cant_fail_cookie(struct x_connection *c,
-                                                          xcb_void_cookie_t cookie) {
+/// Convenience wrapper for x_set_error_action with action
+/// `PENDING_REPLY_ACTION_DEBUG_ABORT`
+static inline void attr_unused x_set_error_action_debug_abort(struct x_connection *c,
+                                                              xcb_void_cookie_t cookie) {
 #ifndef NDEBUG
-	set_reply_action(c, cookie.sequence, PENDING_REPLY_ACTION_DEBUG_ABORT);
+	x_set_error_action(c, cookie.sequence, PENDING_REPLY_ACTION_DEBUG_ABORT);
 #else
 	(void)c;
 	(void)cookie;
@@ -168,16 +171,10 @@ static inline void attr_unused set_debug_cant_fail_cookie(struct x_connection *c
 }
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
-	pending_reply_t *next = NULL;
-	for (auto ign = c->pending_reply_head; ign; ign = next) {
-		next = ign->next;
-
-		free(ign);
+	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
+		list_remove(&i->siblings);
+		free(i);
 	}
-
-	// Reset head and tail
-	c->pending_reply_head = NULL;
-	c->pending_reply_tail = &c->pending_reply_head;
 
 	XSetErrorHandler(c->previous_xerror_handler);
 }
@@ -193,7 +190,7 @@ void x_connection_init(struct x_connection *c, Display *dpy);
 /// We have received reply with sequence number `sequence`, which means all pending
 /// replies with sequence number less than `sequence` will never be received. So discard
 /// them.
-void x_discard_pending(struct x_connection *c, uint32_t sequence);
+void x_discard_pending_errors(struct x_connection *c, uint32_t sequence);
 
 /// Handle X errors.
 ///

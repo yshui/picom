@@ -326,7 +326,7 @@ static void wm_complete_import_single(struct wm *wm, struct x_connection *c,
                                       struct atom *atoms, struct wm_tree_node *node) {
 	log_debug("Finishing importing window %#010x with parent %#010lx.", node->id.x,
 	          node->parent != NULL ? node->parent->id.x : XCB_NONE);
-	set_ignore_cookie(
+	x_set_error_action_ignore(
 	    c, xcb_change_window_attributes(c->c, node->id.x, XCB_CW_EVENT_MASK,
 	                                    (const uint32_t[]){WM_IMPORT_EV_MASK}));
 	if (wid_has_prop(c->c, node->id.x, atoms->aWM_STATE)) {
