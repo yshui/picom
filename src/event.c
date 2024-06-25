@@ -5,7 +5,6 @@
 #include <stdio.h>
 
 #include <X11/Xlibint.h>
-#include <X11/extensions/sync.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
 #include <xcb/xcb_event.h>
