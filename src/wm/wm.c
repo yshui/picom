@@ -286,7 +286,16 @@ void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent) {
 		return;
 	}
 
-	wm_tree_reparent(&wm->tree, window, new_parent);
+	if (new_parent == window->parent) {
+		log_debug("Reparenting window %#010x to its current parent %#010x, "
+		          "moving it to the top.",
+		          wid, parent);
+		wm_tree_move_to_end(&wm->tree, window, false);
+		return;
+	}
+
+	wm_tree_detach(&wm->tree, window);
+	wm_tree_attach(&wm->tree, window, new_parent);
 }
 
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state) {
@@ -313,7 +322,9 @@ void wm_import_incomplete(struct wm *wm, xcb_window_t wid, xcb_window_t parent) 
 		}
 	}
 	log_debug("Importing window %#010x with parent %#010x", wid, parent);
-	auto new = wm_tree_new_window(&wm->tree, wid, parent_cursor);
+	auto new = wm_tree_new_window(&wm->tree, wid);
+	wm_tree_add_window(&wm->tree, new);
+	wm_tree_attach(&wm->tree, new, parent_cursor);
 	dynarr_push(wm->incompletes, new);
 	if (parent == XCB_NONE) {
 		BUG_ON(wm->root != NULL);        // Can't have more than one root
@@ -383,7 +394,9 @@ static bool wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
 				          children[i], curr->id.x);
 				wm_tree_destroy_window(&wm->tree, existing);
 			}
-			existing = wm_tree_new_window(&wm->tree, children[i], curr);
+			existing = wm_tree_new_window(&wm->tree, children[i]);
+			wm_tree_add_window(&wm->tree, existing);
+			wm_tree_attach(&wm->tree, existing, curr);
 			wm_complete_import_single(wm, c, atoms, existing);
 		}
 		free(tree);
