@@ -234,31 +234,17 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 	}
 }
 
-struct wm_tree_node *
-wm_tree_new_window(struct wm_tree *tree, xcb_window_t id, struct wm_tree_node *parent) {
+struct wm_tree_node *wm_tree_new_window(struct wm_tree *tree, xcb_window_t id) {
 	auto node = ccalloc(1, struct wm_tree_node);
 	node->id.x = id;
 	node->id.gen = tree->gen++;
 	node->has_wm_state = false;
 	list_init_head(&node->children);
-
-	BUG_ON(parent == NULL && tree->nodes != NULL);        // Trying to create a second
-	                                                      // root window
-	HASH_ADD_INT(tree->nodes, id.x, node);
-
-	node->parent = parent;
-	if (parent != NULL) {
-		list_insert_after(&parent->children, &node->siblings);
-		if (parent->parent == NULL) {
-			// Parent is root, this is a new toplevel window
-			wm_tree_enqueue_change(tree, (struct wm_tree_change){
-			                                 .toplevel = node->id,
-			                                 .type = WM_TREE_CHANGE_TOPLEVEL_NEW,
-			                                 .new_ = node,
-			                             });
-		}
-	}
 	return node;
+}
+
+void wm_tree_add_window(struct wm_tree *tree, struct wm_tree_node *node) {
+	HASH_ADD_INT(tree->nodes, id.x, node);
 }
 
 static void
@@ -306,6 +292,30 @@ void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot) {
 		                                 .type = WM_TREE_CHANGE_TOPLEVEL_KILLED,
 		                                 .killed = zombie,
 		                             });
+	}
+	subroot->parent = NULL;
+}
+
+void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
+                    struct wm_tree_node *parent) {
+	BUG_ON_NULL(parent);
+	BUG_ON(child->parent != NULL);        // Trying to attach a window that's already
+	                                      // attached
+	child->parent = parent;
+	list_insert_after(&parent->children, &child->siblings);
+
+	auto toplevel = wm_tree_find_toplevel_for(child);
+	if (child == toplevel) {
+		// This node could have a stale `->win` if it was a toplevel at
+		// some point in the past.
+		child->win = NULL;
+		wm_tree_enqueue_change(tree, (struct wm_tree_change){
+		                                 .toplevel = child->id,
+		                                 .type = WM_TREE_CHANGE_TOPLEVEL_NEW,
+		                                 .new_ = child,
+		                             });
+	} else {
+		wm_tree_refresh_client_and_queue_change(tree, toplevel);
 	}
 }
 
@@ -386,38 +396,6 @@ void wm_tree_move_to_above(struct wm_tree *tree, struct wm_tree_node *node,
 	}
 }
 
-void wm_tree_reparent(struct wm_tree *tree, struct wm_tree_node *node,
-                      struct wm_tree_node *new_parent) {
-	BUG_ON(node == NULL);
-	BUG_ON(new_parent == NULL);        // Trying make `node` a root window
-
-	if (node->parent == new_parent) {
-		// Reparent to the same parent moves the window to the top of the stack
-		wm_tree_move_to_end(tree, node, false);
-		return;
-	}
-
-	wm_tree_detach(tree, node);
-
-	// Reparented window always becomes the topmost child of the new parent
-	list_insert_after(&new_parent->children, &node->siblings);
-	node->parent = new_parent;
-
-	auto toplevel = wm_tree_find_toplevel_for(node);
-	if (node == toplevel) {
-		// This node could have a stale `->win` if it was a toplevel at
-		// some point in the past.
-		node->win = NULL;
-		wm_tree_enqueue_change(tree, (struct wm_tree_change){
-		                                 .toplevel = node->id,
-		                                 .type = WM_TREE_CHANGE_TOPLEVEL_NEW,
-		                                 .new_ = node,
-		                             });
-	} else {
-		wm_tree_refresh_client_and_queue_change(tree, toplevel);
-	}
-}
-
 void wm_tree_clear(struct wm_tree *tree) {
 	struct wm_tree_node *cur, *tmp;
 	HASH_ITER(hh, tree->nodes, cur, tmp) {
@@ -438,7 +416,7 @@ TEST_CASE(tree_manipulation) {
 	struct wm_tree tree;
 	wm_tree_init(&tree);
 
-	wm_tree_new_window(&tree, 1, NULL);
+	wm_tree_add_window(&tree, wm_tree_new_window(&tree, 1));
 	auto root = wm_tree_find(&tree, 1);
 	assert(root != NULL);
 	assert(root->parent == NULL);
@@ -446,9 +424,11 @@ TEST_CASE(tree_manipulation) {
 	auto change = wm_tree_dequeue_change(&tree);
 	assert(change.type == WM_TREE_CHANGE_NONE);
 
-	wm_tree_new_window(&tree, 2, root);
-	auto node2 = wm_tree_find(&tree, 2);
+	auto node2 = wm_tree_new_window(&tree, 2);
+	wm_tree_add_window(&tree, node2);
+	wm_tree_attach(&tree, node2, root);
 	assert(node2 != NULL);
+	assert(node2 == wm_tree_find(&tree, 2));
 	assert(node2->parent == root);
 
 	change = wm_tree_dequeue_change(&tree);
@@ -456,15 +436,16 @@ TEST_CASE(tree_manipulation) {
 	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_NEW);
 	assert(wm_treeid_eq(node2->id, change.toplevel));
 
-	wm_tree_new_window(&tree, 3, root);
-	auto node3 = wm_tree_find(&tree, 3);
-	assert(node3 != NULL);
+	auto node3 = wm_tree_new_window(&tree, 3);
+	wm_tree_add_window(&tree, node3);
+	wm_tree_attach(&tree, node3, root);
 
 	change = wm_tree_dequeue_change(&tree);
 	assert(change.toplevel.x == 3);
 	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_NEW);
 
-	wm_tree_reparent(&tree, node2, node3);
+	wm_tree_detach(&tree, node2);
+	wm_tree_attach(&tree, node2, node3);
 	assert(node2->parent == node3);
 	assert(node3->children.next == &node2->siblings);
 
@@ -481,8 +462,9 @@ TEST_CASE(tree_manipulation) {
 	assert(wm_treeid_eq(change.client.old, WM_TREEID_NONE));
 	assert(change.client.new_.x == 2);
 
-	wm_tree_new_window(&tree, 4, node3);
-	auto node4 = wm_tree_find(&tree, 4);
+	auto node4 = wm_tree_new_window(&tree, 4);
+	wm_tree_add_window(&tree, node4);
+	wm_tree_attach(&tree, node4, node3);
 	change = wm_tree_dequeue_change(&tree);
 	assert(change.type == WM_TREE_CHANGE_NONE);
 
@@ -500,7 +482,9 @@ TEST_CASE(tree_manipulation) {
 
 	// Test window ID reuse
 	wm_tree_destroy_window(&tree, node4);
-	node4 = wm_tree_new_window(&tree, 4, node3);
+	node4 = wm_tree_new_window(&tree, 4);
+	wm_tree_add_window(&tree, node4);
+	wm_tree_attach(&tree, node4, node3);
 	wm_tree_set_wm_state(&tree, node4, true);
 
 	change = wm_tree_dequeue_change(&tree);
@@ -509,7 +493,9 @@ TEST_CASE(tree_manipulation) {
 	assert(change.client.old.x == 4);
 	assert(change.client.new_.x == 4);
 
-	auto node5 = wm_tree_new_window(&tree, 5, root);
+	auto node5 = wm_tree_new_window(&tree, 5);
+	wm_tree_add_window(&tree, node5);
+	wm_tree_attach(&tree, node5, root);
 	wm_tree_destroy_window(&tree, node5);
 	change = wm_tree_dequeue_change(&tree);
 	assert(change.type == WM_TREE_CHANGE_NONE);        // Changes cancelled out

@@ -24,6 +24,7 @@ struct wm_tree {
 	uint64_t gen;
 	/// wm tree nodes indexed by their X window ID.
 	struct wm_tree_node *nodes;
+	struct wm_tree_node *root;
 
 	struct list_node changes;
 	struct list_node free_changes;
@@ -85,15 +86,16 @@ struct wm_tree_node *attr_pure wm_tree_next(struct wm_tree_node *node,
 /// permitted, and the root window cannot be destroyed once created, until
 /// `wm_tree_clear` is called. If `parent` is not NULL, the new node will be put at the
 /// top of the stacking order among its siblings.
-struct wm_tree_node *
-wm_tree_new_window(struct wm_tree *tree, xcb_window_t id, struct wm_tree_node *parent);
+struct wm_tree_node *wm_tree_new_window(struct wm_tree *tree, xcb_window_t id);
+void wm_tree_add_window(struct wm_tree *tree, struct wm_tree_node *node);
 void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node);
 /// Detach the subtree rooted at `subroot` from `tree`. The subtree root is removed from
 /// its parent, and the disconnected tree nodes won't be able to be found via
 /// `wm_tree_find`. Relevant events will be generated.
 void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot);
-void wm_tree_reparent(struct wm_tree *tree, struct wm_tree_node *node,
-                      struct wm_tree_node *new_parent);
+/// Attach `node` to `parent`. `node` becomes the topmost child of `parent`.
+void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
+                    struct wm_tree_node *parent);
 void wm_tree_move_to_above(struct wm_tree *tree, struct wm_tree_node *node,
                            struct wm_tree_node *other);
 /// Move `node` to the top or the bottom of its parent's child window stack.
