@@ -1666,15 +1666,15 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 	ps->server_grabbed = true;
 
 	// Catching up with X server
-	/// Handle all events X server has sent us so far, so that our internal state will
-	/// catch up with the X server's state. It only makes sense to call this function
-	/// in the X critical section, otherwise we will be chasing a moving goal post.
-	///
-	/// (Disappointingly, grabbing the X server doesn't actually prevent the X server
-	/// state from changing. It should, but in practice we have observed window still
-	/// being destroyed while we have the server grabbed. This is very disappointing
-	/// and forces us to use some hacky code to recover when we discover we are
-	/// out-of-sync.)
+	// Handle all events X server has sent us so far, so that our internal state will
+	// catch up with the X server's state. It only makes sense to call this function
+	// in the X critical section, otherwise we will be chasing a moving goal post.
+	//
+	// (Disappointingly, grabbing the X server doesn't actually prevent the X server
+	// state from changing. It should, but in practice we have observed window still
+	// being destroyed while we have the server grabbed. This is very disappointing
+	// and forces us to use some hacky code to recover when we discover we are
+	// out-of-sync.)
 	handle_x_events(ps);
 	if (ps->pending_updates || wm_has_tree_changes(ps->wm)) {
 		log_debug("Delayed handling of events, entering critical section");
