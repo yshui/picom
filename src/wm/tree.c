@@ -294,6 +294,7 @@ void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot) {
 		zombie->id = subroot->id;
 		zombie->is_zombie = true;
 		zombie->win = subroot->win;
+		subroot->win = NULL;
 		list_init_head(&zombie->children);
 		list_replace(&subroot->siblings, &zombie->siblings);
 		wm_tree_enqueue_change(tree, (struct wm_tree_change){
@@ -315,9 +316,6 @@ void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
 
 	auto toplevel = wm_tree_find_toplevel_for(child);
 	if (child == toplevel) {
-		// This node could have a stale `->win` if it was a toplevel at
-		// some point in the past.
-		child->win = NULL;
 		wm_tree_enqueue_change(tree, (struct wm_tree_change){
 		                                 .toplevel = child->id,
 		                                 .type = WM_TREE_CHANGE_TOPLEVEL_NEW,
