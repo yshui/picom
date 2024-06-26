@@ -1,6 +1,5 @@
 #pragma once
 
-#include <assert.h>
 #include <stdalign.h>
 
 #include <uthash.h>
@@ -78,7 +77,10 @@ struct wm_tree_change {
 /// shutting down.
 void wm_tree_clear(struct wm_tree *tree);
 struct wm_tree_node *attr_pure wm_tree_find(const struct wm_tree *tree, xcb_window_t id);
-struct wm_tree_node *attr_pure wm_tree_find_toplevel_for(struct wm_tree_node *node);
+/// Find the toplevel that is an ancestor of `node` or `node` itself. Returns NULL if
+/// `node` is part of an orphaned subtree.
+struct wm_tree_node *attr_pure wm_tree_find_toplevel_for(const struct wm_tree *tree,
+                                                         struct wm_tree_node *node);
 struct wm_tree_node *attr_pure wm_tree_next(struct wm_tree_node *node,
                                             struct wm_tree_node *subroot);
 /// Create a new window node in the tree, with X window ID `id`, and parent `parent`. If
@@ -93,7 +95,8 @@ void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node);
 /// its parent, and the disconnected tree nodes won't be able to be found via
 /// `wm_tree_find`. Relevant events will be generated.
 void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot);
-/// Attach `node` to `parent`. `node` becomes the topmost child of `parent`.
+/// Attach `node` to `parent`. `node` becomes the topmost child of `parent`. If `parent`
+/// is NULL, `node` becomes the root window.
 void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
                     struct wm_tree_node *parent);
 void wm_tree_move_to_above(struct wm_tree *tree, struct wm_tree_node *node,

@@ -34,10 +34,13 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 		return NULL;
 	}
 
-	auto toplevel = wm_ref_toplevel_of(cursor);
+	auto toplevel = wm_ref_toplevel_of(wm, cursor);
+	BUG_ON_NULL(toplevel);
 	struct win *w = ccalloc(1, struct win);
 	w->state = WSTATE_MAPPED;
 	w->tree_ref = toplevel;
+	log_debug("Toplevel is %#010x", wm_ref_win_id(toplevel));
+	log_debug("Client is %#010x", win_client_id(w, true));
 	win_update_wintype(c, atoms, w);
 	win_update_frame_extents(c, atoms, w, win_client_id(w, /*fallback_to_self=*/true),
 	                         options->frame_opacity);
@@ -193,14 +196,40 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 		return 1;
 	}
 
-	auto atoms attr_unused = init_atoms(c.c);
+	auto atoms = init_atoms(c.c);
 	auto state = c2_state_new(atoms);
 	options_postprocess_c2_lists(state, &c, &options);
 
 	struct wm *wm = wm_new();
 
-	wm_import_incomplete(wm, c.screen_info->root, XCB_NONE);
-	wm_complete_import(wm, &c, atoms);
+	wm_import_start(wm, &c, atoms, c.screen_info->root, NULL);
+	// Process events until the window tree is consistent
+	while (x_has_pending_requests(&c)) {
+		auto ev = x_poll_for_event(&c);
+		if (ev == NULL) {
+			continue;
+		}
+		switch (ev->response_type) {
+		case XCB_CREATE_NOTIFY:;
+			auto create = (xcb_create_notify_event_t *)ev;
+			auto parent = wm_find(wm, create->parent);
+			wm_import_start(wm, &c, atoms,
+			                ((xcb_create_notify_event_t *)ev)->window, parent);
+			break;
+		case XCB_DESTROY_NOTIFY:
+			wm_destroy(wm, ((xcb_destroy_notify_event_t *)ev)->window);
+			break;
+		case XCB_REPARENT_NOTIFY:;
+			auto reparent = (xcb_reparent_notify_event_t *)ev;
+			wm_reparent(wm, reparent->window, reparent->parent);
+			break;
+		default:
+			// Ignore ConfigureNotify and CirculateNotify, because we don't
+			// use stacking order for window rules.
+			break;
+		}
+		free(ev);
+	}
 
 	auto target = select_window(&c);
 	log_info("Target window: %#x", target);

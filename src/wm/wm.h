@@ -98,6 +98,9 @@ static inline bool wm_treeid_eq(wm_treeid a, wm_treeid b) {
 	return a.gen == b.gen && a.x == b.x;
 }
 
+/// Create a new window management object.
+/// Caller is expected to first call `wm_import_start` with the root window after
+/// creating the object. Otherwise many operations will fail or crash.
 struct wm *wm_new(void);
 void wm_free(struct wm *wm);
 
@@ -115,12 +118,10 @@ void wm_set_active_leader(struct wm *wm, struct wm_ref *leader);
 
 /// Find a window in the hash table from window id.
 struct wm_ref *attr_pure wm_find(const struct wm *wm, xcb_window_t id);
-/// Remove a window from the hash table.
-void wm_remove(struct wm *wm, struct wm_ref *w);
 // Find the WM frame of a client window. `id` is the client window id.
 struct wm_ref *attr_pure wm_find_by_client(const struct wm *wm, xcb_window_t client);
 /// Find the toplevel of a window by going up the window tree.
-struct wm_ref *attr_pure wm_ref_toplevel_of(struct wm_ref *cursor);
+struct wm_ref *attr_pure wm_ref_toplevel_of(const struct wm *wm, struct wm_ref *cursor);
 /// Return the client window of a window. Must be called with a cursor to a toplevel.
 /// Returns NULL if there is no client window.
 struct wm_ref *attr_pure wm_ref_client_of(struct wm_ref *cursor);
@@ -154,59 +155,57 @@ void wm_reap_zombie(struct wm_ref *zombie);
 void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent);
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state);
 
-/// Create a tree node for `wid`, with `parent` as its parent. The parent must already
-/// be in the window tree. This function creates a placeholder tree node, without
-/// contacting the X server, thus can be called outside of the X critical section. The
-/// expectation is that the caller will later call `wm_complete_import` inside the
-/// X critical section to complete the import.
+/// Start the import process for `wid`.
 ///
-/// ## NOTE
+/// This function sets up event masks for `wid`, and start an async query tree request on
+/// it. When the query tree request is completed, `wm_handle_query_tree_reply` will be
+/// called to actually insert the window into the window tree.
+/// `wm_handle_query_tree_reply` will also in turn start the import process for all
+/// children of `wid`.
 ///
-/// The reason for this complicated dance is because we want to catch all windows ever
-/// created on X server's side. For a newly created windows, we will setup a
-/// SubstructureNotify event mask to catch any new windows created under it. But between
-/// the time we received the creation event and the time we setup the event mask, if any
-/// windows were created under the new window, we will miss them. Therefore we have to
-/// scan the new windows in X critical section so they won't change as we scan.
+/// The reason for this two step process is because we want to catch all windows ever
+/// created on X server's side. It's not enough to just set up event masks and wait for
+/// events. Because at the point in time we set up the event mask, some child windows
+/// could have already been created. It would have been nice if there is a way to listen
+/// for events on the whole window tree, for all present and future windows. But alas, the
+/// X11 protocol is lacking in this area.
 ///
-/// On the other hand, we can't push everything to the X critical section, because
-/// updating the window stack requires knowledge of all windows in the stack. Think
-/// ConfigureNotify, if we don't know about the `above_sibling` window, we don't know
-/// where to put the window. So we need to create an incomplete import first.
+/// The best thing we can do is set up the event mask to catch all future events, and then
+/// query the current state. But there are complications with this approach, too. Because
+/// there is no way to atomically do these two things in one go, things could happen
+/// between these two steps, for which we will receive events. Some of these are easy to
+/// deal with, e.g. if a window is created, we will get an event for that, and later we
+/// will see that window again in the query tree reply. These are easy to ignore. Some are
+/// more complex. Because there could be some child windows we are not aware of. We could
+/// get events for windows that we don't know about. We try our best to ignore those
+/// events.
 ///
-/// But wait, this is actually way more involved. Because we choose to not set up event
-/// masks for incomplete imports (we can also choose otherwise, but that also has its own
-/// set of problems), there is a whole subtree of windows we don't know about. And those
-/// windows might involve in reparent events. To handle that, we essentially put "fog of
-/// war" under any incomplete imports, anything reparented into the fog is lost, and will
-/// be rediscovered later during subtree scans. If a window is reparented out of the fog,
-/// then it's treated as if a brand new window was created.
-///
-/// But wait again, there's more. We can delete "lost" windows on our side and unset event
-/// masks, but again because this is racy, we might still receive some events for those
-/// windows. So we have to keep a list of "lost" windows, and correctly ignore events sent
-/// for them. (And since we are actively ignoring events from these windows, we might as
-/// well not unset their event masks, saves us a trip to the X server).
+/// Another problem with this is, the usual way we send a request then process the reply
+/// is synchronous. i.e. with `xcb_<request>_reply(xcb_<request>(...))`. As previously
+/// mentioned, we might receive events before the reply. And in this case we would process
+/// the reply _before_ any of those events! This might be benign, but it is difficult to
+/// audit all the possible cases and events to make sure this always work. One example is,
+/// imagine a window A is being imported, and another window B, which is already in the
+/// tree got reparented to A. We would think B appeared in two places if we processed
+/// query tree reply before the reparent event. For that, we introduce the concept of
+/// "async requests". Replies to these requests are received and processed like other X
+/// events. With that, we don't need to worry about the order of events and replies.
 ///
 /// (Now you have a glimpse of how much X11 sucks.)
-void wm_import_incomplete(struct wm *wm, xcb_window_t wid, xcb_window_t parent);
-
-/// Check if there are any incomplete imports in the window tree.
-bool wm_has_incomplete_imports(const struct wm *wm);
+void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                     xcb_window_t wid, struct wm_ref *parent);
 
 /// Check if there are tree change events
 bool wm_has_tree_changes(const struct wm *wm);
 
-/// Complete the previous incomplete imports by querying the X server. This function will
-/// recursively import all children of previously created placeholders, and add them to
-/// the window tree. This function must be called from the X critical section. This
-/// function also subscribes to SubstructureNotify events for all newly imported windows,
-/// as well as for the (now completed) placeholder windows.
-///
-/// Returns false if our internal state is behind the X server's. In other words, if a
-/// window we think should be there, does not in fact exist. Returns true otherwise.
-bool wm_complete_import(struct wm *wm, struct x_connection *c, struct atom *atoms);
-
-bool wm_is_wid_masked(struct wm *wm, xcb_window_t wid);
-
 struct wm_change wm_dequeue_change(struct wm *wm);
+
+/// Whether the window tree should be in a consistent state. When the window tree is
+/// consistent, we should not be receiving X events that refer to windows that we don't
+/// know about. And we also should not have any orphaned windows in the tree.
+bool wm_is_consistent(const struct wm *wm);
+
+// Unit testing helpers
+
+struct wm_ref *wm_new_mock_window(struct wm *wm, xcb_window_t wid);
+void wm_free_mock_window(struct wm *wm, struct wm_ref *cursor);

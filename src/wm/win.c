@@ -1564,7 +1564,7 @@ static struct wm_ref *win_get_leader_raw(session_t *ps, struct win *w, int recur
 		// ancestors
 		if (w->cache_leader && w->cache_leader != client_win &&
 		    w->cache_leader != w->tree_ref) {
-			auto parent = wm_ref_toplevel_of(w->cache_leader);
+			auto parent = wm_ref_toplevel_of(ps->wm, w->cache_leader);
 			auto wp = parent ? wm_ref_deref(parent) : NULL;
 			if (wp) {
 				// Dead loop?
