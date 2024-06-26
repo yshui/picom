@@ -40,16 +40,25 @@ static void wm_tree_enqueue_change(struct wm_tree *tree, struct wm_tree_change c
 		// `WM_TREE_CHANGE_TOPLEVEL_NEW` change in the queue.
 		bool found = false;
 		list_foreach_safe(struct wm_tree_change_list, i, &tree->changes, siblings) {
-			if (i->item.type == WM_TREE_CHANGE_TOPLEVEL_NEW &&
-			    wm_treeid_eq(i->item.toplevel, change.toplevel)) {
+			if (!wm_treeid_eq(i->item.toplevel, change.toplevel)) {
+				continue;
+			}
+			if (i->item.type == WM_TREE_CHANGE_TOPLEVEL_NEW) {
 				list_remove(&i->siblings);
 				list_insert_after(&tree->free_changes, &i->siblings);
 				found = true;
-			} else if (wm_treeid_eq(i->item.toplevel, change.toplevel) && found) {
-				// We also need to delete all other changes related to
-				// this toplevel in between the new and gone changes.
+			} else if (found) {
+				// We also need to delete all other changes
+				// related to this toplevel in between the new and
+				// gone changes.
 				list_remove(&i->siblings);
 				list_insert_after(&tree->free_changes, &i->siblings);
+			} else if (i->item.type == WM_TREE_CHANGE_CLIENT) {
+				// Need to update client changes, so they points to the
+				// zombie instead of the old toplevel node, since the old
+				// toplevel node could be freed before tree changes are
+				// processed.
+				i->item.client.toplevel = change.killed;
 			}
 		}
 		if (found) {
