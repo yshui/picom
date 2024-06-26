@@ -15,6 +15,8 @@
     ...
   }:
     flake-utils.lib.eachDefaultSystem (system: let
+      # like lib.lists.remove, but takes a list of elements to remove
+      removeFromList = toRemove: list: pkgs.lib.foldl (l: e: pkgs.lib.remove e l) list toRemove;
       overlay = self: super: {
         picom = super.picom.overrideAttrs (oldAttrs: rec {
           version = "11";
@@ -24,10 +26,11 @@
               self.pcre2
               self.xorg.xcbutil
               self.libepoxy
-            ]
-            ++ self.lib.remove self.xorg.libXinerama (
-              self.lib.remove self.pcre oldAttrs.buildInputs
-            );
+            ] ++ (removeFromList [
+              self.xorg.libXinerama
+              self.xorg.libXext
+              self.pcre
+            ]  oldAttrs.buildInputs);
           src = git-ignore-nix.lib.gitignoreSource ./.;
         });
       };
