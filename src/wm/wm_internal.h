@@ -109,6 +109,7 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 
 static inline void wm_tree_init(struct wm_tree *tree) {
 	tree->nodes = NULL;
+	tree->gen = 1;
 	list_init_head(&tree->changes);
 	list_init_head(&tree->free_changes);
 }
