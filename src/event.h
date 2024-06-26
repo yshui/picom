@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2019, Yuxuan Shui <yshuiv7@gmail.com>
 
+#pragma once
 #include <xcb/xcb.h>
 
 #include "common.h"

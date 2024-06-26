@@ -15,6 +15,20 @@
 #include "wm.h"
 #include "wm_internal.h"
 
+struct wm_query_tree_request {
+	struct x_async_request_base base;
+	struct wm_tree_node *node;
+	struct wm *wm;
+	struct atom *atoms;
+	size_t pending_index;
+};
+
+struct wm_get_property_request {
+	struct x_async_request_base base;
+	struct wm *wm;
+	xcb_window_t wid;
+};
+
 struct wm {
 	/// Pointer to <code>win</code> of current active window. Used by
 	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
@@ -27,14 +41,20 @@ struct wm {
 	struct wm_tree_node *active_leader;
 	struct wm_tree tree;
 
-	struct wm_tree_node *root;
+	/// This is a virtual root for all "orphaned" windows. A window is orphaned
+	/// if it is not reachable from the root node. This can only be non-empty if
+	/// the tree is not consistent, i.e. there are pending async query tree requests.
+	///
+	/// Note an orphaned window cannot be a toplevel. This is trivially true because
+	/// a toplevel has the root window as its parent, and once the root window is
+	/// created its list of children is always up to date.
+	struct wm_tree_node orphan_root;
 
-	/// Incomplete imports. See `wm_import_incomplete` for an explanation.
-	/// This is a dynarr.
-	struct wm_tree_node **incompletes;
-	/// Tree nodes that we have chosen to forget, but we might still receive some
-	/// events from, we keep them here to ignore those events.
-	struct wm_tree_node **masked;
+	/// Tree nodes that have pending async query tree requests. We also have async get
+	/// property requests, but they are not tracked because they don't affect the tree
+	/// structure. We guarantee that when there are pending query tree requests, no
+	/// tree nodes will be freed. This is a dynarr.
+	struct wm_query_tree_request **pending_query_trees;
 };
 
 // TODO(yshui): this is a bit weird and I am not decided on it yet myself. Maybe we can
@@ -86,19 +106,6 @@ void wm_ref_set(struct wm_ref *cursor, struct win *w) {
 	to_tree_node_mut(cursor)->win = w;
 }
 
-static ptrdiff_t wm_find_masked(struct wm *wm, xcb_window_t wid) {
-	dynarr_foreach(wm->masked, m) {
-		if ((*m)->id.x == wid) {
-			return m - wm->masked;
-		}
-	}
-	return -1;
-}
-
-bool wm_is_wid_masked(struct wm *wm, xcb_window_t wid) {
-	return wm_find_masked(wm, wid) != -1;
-}
-
 struct win *wm_active_win(struct wm *wm) {
 	return wm->active_win;
 }
@@ -132,7 +139,7 @@ struct wm_ref *wm_ref_above(const struct wm_ref *cursor) {
 }
 
 struct wm_ref *wm_root_ref(const struct wm *wm) {
-	return (struct wm_ref *)&wm->root->siblings;
+	return (struct wm_ref *)&wm->tree.root->siblings;
 }
 
 struct wm_ref *wm_ref_topmost_child(const struct wm_ref *cursor) {
@@ -152,12 +159,16 @@ struct wm_ref *wm_find(const struct wm *wm, xcb_window_t id) {
 
 struct wm_ref *wm_find_by_client(const struct wm *wm, xcb_window_t client) {
 	auto node = wm_tree_find(&wm->tree, client);
-	return node != NULL ? (struct wm_ref *)&wm_tree_find_toplevel_for(node)->siblings
-	                    : NULL;
+	if (node == NULL) {
+		return NULL;
+	}
+	auto toplevel = wm_tree_find_toplevel_for(&wm->tree, node);
+	return toplevel != NULL ? (struct wm_ref *)&toplevel->siblings : NULL;
 }
 
-struct wm_ref *wm_ref_toplevel_of(struct wm_ref *cursor) {
-	return (struct wm_ref *)&wm_tree_find_toplevel_for(to_tree_node_mut(cursor))->siblings;
+struct wm_ref *wm_ref_toplevel_of(const struct wm *wm, struct wm_ref *cursor) {
+	auto toplevel = wm_tree_find_toplevel_for(&wm->tree, to_tree_node_mut(cursor));
+	return toplevel != NULL ? (struct wm_ref *)&toplevel->siblings : NULL;
 }
 
 struct wm_ref *wm_ref_client_of(struct wm_ref *cursor) {
@@ -165,29 +176,44 @@ struct wm_ref *wm_ref_client_of(struct wm_ref *cursor) {
 	return client != NULL ? (struct wm_ref *)&client->siblings : NULL;
 }
 
-void wm_remove(struct wm *wm, struct wm_ref *w) {
-	wm_tree_destroy_window(&wm->tree, (struct wm_tree_node *)w);
+struct wm_ref *wm_stack_end(struct wm *wm) {
+	return (struct wm_ref *)&wm->tree.root->children;
 }
 
-struct wm_ref *wm_stack_end(struct wm *wm) {
-	return (struct wm_ref *)&wm->root->children;
+static long wm_find_pending_query_tree(struct wm *wm, struct wm_tree_node *node) {
+	dynarr_foreach(wm->pending_query_trees, i) {
+		if ((*i)->node == node) {
+			return i - wm->pending_query_trees;
+		}
+	}
+	return -1;
 }
 
 /// Move window `w` so it's right above `below`, if `below` is 0, `w` is moved
 /// to the bottom of the stack
 void wm_stack_move_to_above(struct wm *wm, struct wm_ref *cursor, struct wm_ref *below) {
-	wm_tree_move_to_above(&wm->tree, to_tree_node_mut(cursor), to_tree_node_mut(below));
+	auto node = to_tree_node_mut(cursor);
+	if (node->parent == &wm->orphan_root) {
+		// If this window is orphaned, moving it around its siblings is
+		// meaningless. Same below.
+		return;
+	}
+	wm_tree_move_to_above(&wm->tree, node, to_tree_node_mut(below));
 }
 
 void wm_stack_move_to_end(struct wm *wm, struct wm_ref *cursor, bool to_bottom) {
-	wm_tree_move_to_end(&wm->tree, to_tree_node_mut(cursor), to_bottom);
+	auto node = to_tree_node_mut(cursor);
+	if (node->parent == &wm->orphan_root) {
+		return;
+	}
+	wm_tree_move_to_end(&wm->tree, node, to_bottom);
 }
 
 struct wm *wm_new(void) {
 	auto wm = ccalloc(1, struct wm);
 	wm_tree_init(&wm->tree);
-	wm->incompletes = dynarr_new(struct wm_tree_node *, 4);
-	wm->masked = dynarr_new(struct wm_tree_node *, 8);
+	list_init_head(&wm->orphan_root.children);
+	wm->pending_query_trees = dynarr_new(struct wm_query_tree_request *, 0);
 	return wm;
 }
 
@@ -195,47 +221,72 @@ void wm_free(struct wm *wm) {
 	// Free all `struct win`s associated with tree nodes, this leaves dangling
 	// pointers, but we are freeing the tree nodes immediately after, so everything
 	// is fine (TM).
-	wm_stack_foreach_safe(wm, i, next) {
-		auto w = wm_ref_deref(i);
-		auto tree_node = to_tree_node_mut(i);
-		free(w);
+	if (wm->tree.root != NULL) {
+		wm_stack_foreach_safe(wm, i, next) {
+			auto w = wm_ref_deref(i);
+			auto tree_node = to_tree_node_mut(i);
+			free(w);
 
-		if (tree_node->is_zombie) {
-			// This mainly happens on `session_destroy`, e.g. when there's
-			// ongoing animations.
-			log_debug("Leftover zombie node for window %#010x", tree_node->id.x);
-			wm_tree_reap_zombie(tree_node);
+			if (tree_node->is_zombie) {
+				// This mainly happens on `session_destroy`, e.g. when
+				// there's ongoing animations.
+				log_debug("Leftover zombie node for window %#010x",
+				          tree_node->id.x);
+				wm_tree_reap_zombie(tree_node);
+			}
 		}
 	}
 	wm_tree_clear(&wm->tree);
-	dynarr_free_pod(wm->incompletes);
-	dynarr_free_pod(wm->masked);
+	assert(wm_is_consistent(wm));
+	assert(list_is_empty(&wm->orphan_root.children));
+	dynarr_free_pod(wm->pending_query_trees);
 
 	free(wm);
 }
 
-void wm_destroy(struct wm *wm, xcb_window_t wid) {
-	auto masked = wm_find_masked(wm, wid);
-	if (masked != -1) {
-		free(wm->masked[masked]);
-		dynarr_remove_swap(wm->masked, (size_t)masked);
-		return;
+/// Once the window tree reaches a consistent state, we know any tree nodes that are not
+/// reachable from the root must have been destroyed, so we can safely free them.
+///
+/// There are cases where we won't receive DestroyNotify events for these windows. For
+/// example, if a window is reparented to a window that is not yet in our tree, then
+/// destroyed, we won't receive a DestroyNotify event for it.
+static void wm_reap_orphans(struct wm *wm) {
+	// Reap orphaned windows
+	while (!list_is_empty(&wm->orphan_root.children)) {
+		auto node =
+		    list_entry(wm->orphan_root.children.next, struct wm_tree_node, siblings);
+		list_remove(&node->siblings);
+		if (!list_is_empty(&node->children)) {
+			log_error("Orphaned window %#010x still has children", node->id.x);
+			list_splice(&node->children, &wm->orphan_root.children);
+		}
+		HASH_DEL(wm->tree.nodes, node);
+		free(node);
 	}
+}
 
+void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	struct wm_tree_node *node = wm_tree_find(&wm->tree, wid);
 	if (!node) {
-		log_error("Trying to destroy window %#010x, but it's not in the tree. "
-		          "Expect malfunction.",
-		          wid);
+		if (wm_is_consistent(wm)) {
+			log_error("Window %#010x destroyed, but it's not in our tree.", wid);
+		}
 		return;
 	}
 
-	auto index = dynarr_find_pod(wm->incompletes, node);
-	if (index != -1) {
-		dynarr_remove_swap(wm->incompletes, (size_t)index);
-	}
+	log_debug("Destroying window %#010x", wid);
 
-	wm_tree_destroy_window(&wm->tree, node);
+	if (!list_is_empty(&node->children)) {
+		log_error("Window %#010x is destroyed but it still has children", wid);
+	}
+	wm_tree_detach(&wm->tree, node);
+	// There could be an in-flight query tree request for this window, we orphan it.
+	// It will be reaped when all query tree requests are completed. (Or right now if
+	// the tree is already consistent.)
+	wm_tree_attach(&wm->tree, node, &wm->orphan_root);
+	if (wm_is_consistent(wm)) {
+		wm_reap_orphans(wm);
+	}
 }
 
 void wm_reap_zombie(struct wm_ref *zombie) {
@@ -245,185 +296,229 @@ void wm_reap_zombie(struct wm_ref *zombie) {
 void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent) {
 	auto window = wm_tree_find(&wm->tree, wid);
 	auto new_parent = wm_tree_find(&wm->tree, parent);
-	// We delete the window here if parent is not found, or if the parent is
-	// an incomplete import. We will rediscover this window later in
-	// `wm_complete_import`. Keeping it around will only confuse us.
-	bool should_forget =
-	    new_parent == NULL || dynarr_find_pod(wm->incompletes, new_parent) != -1;
+
+	// We orphan the window here if parent is not found. We will reconnect
+	// this window later as query tree requests being completed.
 	if (window == NULL) {
-		log_debug("Reparenting window %#010x which is not in our tree. Assuming "
-		          "it came from fog of war.",
-		          wid);
-		if (!should_forget) {
-			wm_import_incomplete(wm, wid, parent);
-		}
-		return;
-	}
-	if (should_forget) {
-		log_debug("Window %#010x reparented to window %#010x which is "
-		          "%s, forgetting and masking instead.",
-		          window->id.x, parent,
-		          new_parent == NULL ? "not in our tree" : "an incomplete import");
-
-		wm_tree_detach(&wm->tree, window);
-		for (auto curr = window; curr != NULL;) {
-			auto next = wm_tree_next(curr, window);
-			HASH_DEL(wm->tree.nodes, curr);
-			auto incomplete_index = dynarr_find_pod(wm->incompletes, curr);
-			if (incomplete_index != -1) {
-				dynarr_remove_swap(wm->incompletes, (size_t)incomplete_index);
-				// Incomplete imports cannot have children.
-				assert(list_is_empty(&curr->children));
-
-				// Incomplete imports won't have event masks set, so we
-				// don't need to mask them.
-				free(curr);
-			} else {
-				dynarr_push(wm->masked, curr);
-			}
-			curr = next;
+		if (wm_is_consistent(wm)) {
+			log_error("Window %#010x reparented,  but it's not in "
+			          "our tree.",
+			          wid);
 		}
 		return;
 	}
 
-	if (new_parent == window->parent) {
-		log_debug("Reparenting window %#010x to its current parent %#010x, "
-		          "moving it to the top.",
-		          wid, parent);
+	if (window->parent == new_parent) {
+		// Reparent to the same parent moves the window to the top of the
+		// stack
 		wm_tree_move_to_end(&wm->tree, window, false);
 		return;
 	}
 
 	wm_tree_detach(&wm->tree, window);
-	wm_tree_attach(&wm->tree, window, new_parent);
+
+	// Attaching `window` to `new_parent` will change the children list of
+	// `new_parent`, if there is a pending query tree request for `new_parent`, doing
+	// so will create an overlap. In other words, `window` will appear in the query
+	// tree reply too. Generally speaking, we want to keep a node's children list
+	// empty while there is a pending query tree request for it. (Imagine sending the
+	// query tree "locks" the children list until the reply is processed). Same logic
+	// applies to `wm_import_start`.
+	//
+	// Alternatively if the new parent isn't in our tree yet, we orphan the window
+	// too.
+	if (new_parent == NULL || wm_find_pending_query_tree(wm, new_parent) != -1) {
+		log_debug("Window %#010x is attached to window %#010x which is "
+		          "currently been queried, orphaning.",
+		          window->id.x, new_parent->id.x);
+		wm_tree_attach(&wm->tree, window, &wm->orphan_root);
+	} else {
+		wm_tree_attach(&wm->tree, window, new_parent);
+	}
 }
 
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state) {
 	wm_tree_set_wm_state(&wm->tree, to_tree_node_mut(cursor), has_wm_state);
 }
 
-void wm_import_incomplete(struct wm *wm, xcb_window_t wid, xcb_window_t parent) {
-	auto masked = wm_find_masked(wm, wid);
-	if (masked != -1) {
-		// A new window created with the same wid means the window we chose to
-		// forget has been deleted (without us knowing), and its ID was then
-		// reused.
-		free(wm->masked[masked]);
-		dynarr_remove_swap(wm->masked, (size_t)masked);
-	}
-	auto parent_cursor = NULL;
-	if (parent != XCB_NONE) {
-		parent_cursor = wm_tree_find(&wm->tree, parent);
-		if (parent_cursor == NULL) {
-			log_error("Importing window %#010x, but its parent %#010x is not "
-			          "in our tree, ignoring. Expect malfunction.",
-			          wid, parent);
-			return;
-		}
-	}
-	log_debug("Importing window %#010x with parent %#010x", wid, parent);
-	auto new = wm_tree_new_window(&wm->tree, wid);
-	wm_tree_add_window(&wm->tree, new);
-	wm_tree_attach(&wm->tree, new, parent_cursor);
-	dynarr_push(wm->incompletes, new);
-	if (parent == XCB_NONE) {
-		BUG_ON(wm->root != NULL);        // Can't have more than one root
-		wm->root = new;
-	}
-}
 static const xcb_event_mask_t WM_IMPORT_EV_MASK =
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE;
-static void wm_complete_import_single(struct wm *wm, struct x_connection *c,
-                                      struct atom *atoms, struct wm_tree_node *node) {
-	log_debug("Finishing importing window %#010x with parent %#010lx.", node->id.x,
-	          node->parent != NULL ? node->parent->id.x : XCB_NONE);
-	x_set_error_action_ignore(
-	    c, xcb_change_window_attributes(c->c, node->id.x, XCB_CW_EVENT_MASK,
-	                                    (const uint32_t[]){WM_IMPORT_EV_MASK}));
-	if (wid_has_prop(c->c, node->id.x, atoms->aWM_STATE)) {
-		wm_tree_set_wm_state(&wm->tree, node, true);
+
+static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                                     xcb_window_t wid, struct wm_tree_node *parent);
+
+static void
+wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *base,
+                           xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct wm_query_tree_request *)base;
+	auto wm = req->wm;
+	{
+		auto last_req = dynarr_last(wm->pending_query_trees);
+		dynarr_remove_swap(req->wm->pending_query_trees, req->pending_index);
+		last_req->pending_index = req->pending_index;
 	}
 
-	auto masked = wm_find_masked(wm, node->id.x);
-	if (masked != -1) {
-		free(wm->masked[masked]);
-		dynarr_remove_swap(wm->masked, (size_t)masked);
+	if (reply_or_error == NULL) {
+		goto out;
 	}
-}
 
-static bool wm_complete_import_subtree(struct wm *wm, struct x_connection *c,
-                                       struct atom *atoms, struct wm_tree_node *subroot) {
-	bool out_of_sync = false;
-	wm_complete_import_single(wm, c, atoms, subroot);
+	auto node = req->node;
 
-	for (auto curr = subroot; curr != NULL; curr = wm_tree_next(curr, subroot)) {
-		// Surprise! This newly imported window might already have children.
-		// Although we haven't setup SubstructureNotify for it yet, it's still
-		// possible for another window to be reparented to it.
+	if (reply_or_error->response_type == 0) {
+		// This is an error, most likely the window is gone when we tried
+		// to query it.
+		xcb_generic_error_t *err = (xcb_generic_error_t *)reply_or_error;
+		log_debug("Query tree request for window %#010x failed with "
+		          "error %s",
+		          node->id.x, x_strerror(err));
+		goto out;
+	}
 
-		xcb_query_tree_reply_t *tree = XCB_AWAIT(xcb_query_tree, c->c, curr->id.x);
-		if (!tree) {
-			log_error("Disappearing window subtree rooted at %#010x. We are "
-			          "out-of-sync.",
-			          curr->id.x);
-			out_of_sync = true;
+	xcb_query_tree_reply_t *reply = (xcb_query_tree_reply_t *)reply_or_error;
+	log_debug("Finished querying tree for window %#010x", node->id.x);
+
+	auto children = xcb_query_tree_children(reply);
+	log_debug("Window %#010x has %d children", node->id.x,
+	          xcb_query_tree_children_length(reply));
+	for (int i = 0; i < xcb_query_tree_children_length(reply); i++) {
+		auto child = children[i];
+		auto child_node = wm_tree_find(&wm->tree, child);
+		if (child_node == NULL) {
+			wm_import_start_no_flush(wm, c, req->atoms, child, node);
 			continue;
 		}
 
-		auto children = xcb_query_tree_children(tree);
-		auto children_len = xcb_query_tree_children_length(tree);
-		for (int i = 0; i < children_len; i++) {
-			// `children` goes from bottom to top, and `wm_tree_new_window`
-			// puts the new window at the top of the stacking order, which
-			// means the windows will naturally be in the correct stacking
-			// order.
-			auto existing = wm_tree_find(&wm->tree, children[i]);
-			if (existing != NULL) {
-				// This should never happen: we haven't subscribed to
-				// child creation events yet, and any window reparented to
-				// an incomplete is deleted. report an error and try to
-				// recover.
-				auto index = dynarr_find_pod(wm->incompletes, existing);
-				if (index != -1) {
-					dynarr_remove_swap(wm->incompletes, (size_t)index);
-				}
-				log_error("Window %#010x already exists in the tree, but "
-				          "it appeared again as a child of window "
-				          "%#010x. Deleting the old one, but expect "
-				          "malfunction.",
-				          children[i], curr->id.x);
-				wm_tree_destroy_window(&wm->tree, existing);
-			}
-			existing = wm_tree_new_window(&wm->tree, children[i]);
-			wm_tree_add_window(&wm->tree, existing);
-			wm_tree_attach(&wm->tree, existing, curr);
-			wm_complete_import_single(wm, c, atoms, existing);
-		}
-		free(tree);
+		// If child node exists, it must be a previously orphaned node.
+		assert(child_node->parent == &wm->orphan_root);
+		wm_tree_detach(&wm->tree, child_node);
+		wm_tree_attach(&wm->tree, child_node, node);
 	}
-	return !out_of_sync;
+
+out:
+	free(req);
+	xcb_flush(c->c);        // Actually send the requests
+	if (wm_is_consistent(wm)) {
+		wm_reap_orphans(wm);
+	}
 }
 
-bool wm_complete_import(struct wm *wm, struct x_connection *c, struct atom *atoms) {
-	while (!dynarr_is_empty(wm->incompletes)) {
-		auto i = dynarr_pop(wm->incompletes);
-		// This function modifies `wm->incompletes`, so we can't use
-		// `dynarr_foreach`.
-		if (!wm_complete_import_subtree(wm, c, atoms, i)) {
-			log_debug("Out-of-sync with the X server, try to resync.");
-			return false;
-		}
+static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
+                                         struct x_async_request_base *base,
+                                         xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct wm_get_property_request *)base;
+	if (reply_or_error == NULL) {
+		free(req);
+		return;
 	}
 
-	dynarr_foreach(wm->masked, m) {
-		free(*m);
+	// We guarantee that if a query tree request is pending, its corresponding
+	// window tree node won't be reaped. But we don't guarantee the same for
+	// get property requests. So we need to search the node by window ID again.
+
+	if (reply_or_error->response_type == 0) {
+		// This is an error, most likely the window is gone when we tried
+		// to query it. (Note the tree node might have been freed at this
+		// point if the query tree request also failed earlier.)
+		xcb_generic_error_t *err = (xcb_generic_error_t *)reply_or_error;
+		log_debug("Get WM_STATE request for window %#010x failed with "
+		          "error %s",
+		          req->wid, x_strerror(err));
+		free(req);
+		return;
 	}
-	dynarr_clear_pod(wm->masked);
-	return true;
+
+	auto node = wm_tree_find(&req->wm->tree, req->wid);
+	BUG_ON_NULL(node);        // window must exist at this point, but it might be
+	                          // freed then recreated while we were waiting for the
+	                          // reply.
+	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	wm_tree_set_wm_state(&req->wm->tree, node, reply->type != XCB_NONE);
+	free(req);
 }
 
-bool wm_has_incomplete_imports(const struct wm *wm) {
-	return !dynarr_is_empty(wm->incompletes);
+static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                                     xcb_window_t wid, struct wm_tree_node *parent) {
+	log_debug("Starting import process for window %#010x", wid);
+	x_set_error_action_ignore(
+	    c, xcb_change_window_attributes(c->c, wid, XCB_CW_EVENT_MASK,
+	                                    (const uint32_t[]){WM_IMPORT_EV_MASK}));
+
+	// Try to see if any orphaned window has the same window ID, if so, it must
+	// have been destroyed without us knowing, so we should reuse the node.
+	auto new = wm_tree_find(&wm->tree, wid);
+	if (new == NULL) {
+		new = wm_tree_new_window(&wm->tree, wid);
+		wm_tree_add_window(&wm->tree, new);
+	} else {
+		if (new->parent == parent) {
+			// What's going on???
+			log_error("Importing window %#010x a second time", wid);
+			assert(false);
+			return;
+		}
+		if (new->parent != &wm->orphan_root) {
+			log_error("Window %#010x appeared in the children list of both "
+			          "%#010x (previous) and %#010x (current).",
+			          wid, new->parent->id.x, parent->id.x);
+			assert(false);
+		}
+
+		wm_tree_detach(&wm->tree, new);
+		// Need to bump the generation number, as `new` is actually an entirely
+		// new window, just reusing the same window ID.
+		new->id.gen = wm->tree.gen++;
+	}
+	wm_tree_attach(&wm->tree, new, parent);
+	// In theory, though very very unlikely, a window could be reparented (so we won't
+	// receive its DestroyNotify), destroyed, and then a new window was created with
+	// the same window ID, all before the previous query tree request is completed. In
+	// this case, we shouldn't resend another query tree request. (And we also know in
+	// this case the previous get property request isn't completed either.)
+	if (wm_find_pending_query_tree(wm, new) != -1) {
+		return;
+	}
+
+	{
+		auto cookie = xcb_query_tree(c->c, wid);
+		auto req = ccalloc(1, struct wm_query_tree_request);
+		req->base.callback = wm_handle_query_tree_reply;
+		req->base.sequence = cookie.sequence;
+		req->node = new;
+		req->wm = wm;
+		req->atoms = atoms;
+		req->pending_index = dynarr_len(wm->pending_query_trees);
+		dynarr_push(wm->pending_query_trees, req);
+		x_await_request(c, &req->base);
+	}
+
+	// (It's OK to resend the get property request even if one is already in-flight,
+	// unlike query tree.)
+	{
+		auto cookie =
+		    xcb_get_property(c->c, 0, wid, atoms->aWM_STATE, XCB_ATOM_ANY, 0, 2);
+		auto req = ccalloc(1, struct wm_get_property_request);
+		req->base.callback = wm_handle_get_wm_state_reply;
+		req->base.sequence = cookie.sequence;
+		req->wm = wm;
+		req->wid = wid;
+		x_await_request(c, &req->base);
+	}
+}
+
+void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                     xcb_window_t wid, struct wm_ref *parent) {
+	struct wm_tree_node *parent_node = parent != NULL ? to_tree_node_mut(parent) : NULL;
+	if (parent_node != NULL && wm_find_pending_query_tree(wm, parent_node) != -1) {
+		// Parent node is currently being queried, we can't attach the new window
+		// to it as that will change its children list.
+		return;
+	}
+	wm_import_start_no_flush(wm, c, atoms, wid, parent_node);
+	xcb_flush(c->c);        // Actually send the requests
+}
+
+bool wm_is_consistent(const struct wm *wm) {
+	return dynarr_is_empty(wm->pending_query_trees);
 }
 
 bool wm_has_tree_changes(const struct wm *wm) {
@@ -451,4 +546,12 @@ struct wm_change wm_dequeue_change(struct wm *wm) {
 	default: break;
 	}
 	return ret;
+}
+
+struct wm_ref *wm_new_mock_window(struct wm *wm, xcb_window_t wid) {
+	auto node = wm_tree_new_window(&wm->tree, wid);
+	return (struct wm_ref *)&node->siblings;
+}
+void wm_free_mock_window(struct wm * /*wm*/, struct wm_ref *cursor) {
+	free(to_tree_node_mut(cursor));
 }

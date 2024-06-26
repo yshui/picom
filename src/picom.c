@@ -509,7 +509,11 @@ static void recheck_focus(session_t *ps) {
 		return;
 	}
 
-	cursor = wm_ref_toplevel_of(cursor);
+	cursor = wm_ref_toplevel_of(ps->wm, cursor);
+	if (cursor == NULL) {
+		assert(!wm_is_consistent(ps->wm));
+		return;
+	}
 
 	// And we set the focus state here
 	auto w = wm_ref_deref(cursor);
@@ -1575,10 +1579,6 @@ static void handle_x_events_ev(EV_P attr_unused, ev_prepare *w, int revents attr
 }
 
 static void handle_new_windows(session_t *ps) {
-	while (!wm_complete_import(ps->wm, &ps->c, ps->atoms)) {
-		handle_x_events(ps);
-	}
-
 	// Check tree changes first, because later property updates need accurate
 	// client window information
 	struct win *w = NULL;
@@ -1676,8 +1676,7 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 	/// and forces us to use some hacky code to recover when we discover we are
 	/// out-of-sync.)
 	handle_x_events(ps);
-	if (ps->pending_updates || wm_has_incomplete_imports(ps->wm) ||
-	    wm_has_tree_changes(ps->wm)) {
+	if (ps->pending_updates || wm_has_tree_changes(ps->wm)) {
 		log_debug("Delayed handling of events, entering critical section");
 		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
@@ -1804,9 +1803,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 				log_fatal("Couldn't find specified benchmark window.");
 				exit(1);
 			}
-			w = wm_ref_toplevel_of(w);
+			w = wm_ref_toplevel_of(ps->wm, w);
 
-			auto win = wm_ref_deref(w);
+			auto win = w == NULL ? NULL : wm_ref_deref(w);
 			if (win != NULL) {
 				add_damage_from_win(ps, win);
 			} else {
@@ -2511,38 +2510,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->wm = wm_new();
-	wm_import_incomplete(ps->wm, ps->c.screen_info->root, XCB_NONE);
-
-	e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
-	if (e) {
-		log_fatal_x_error(e, "Failed to grab X server");
-		free(e);
-		goto err;
-	}
-
-	ps->server_grabbed = true;
-
-	// We are going to pull latest information from X server now, events sent by X
-	// earlier is irrelevant at this point.
-	// A better solution is probably grabbing the server from the very start. But I
-	// think there still could be race condition that mandates discarding the events.
-	x_discard_events(&ps->c);
-
-	wm_complete_import(ps->wm, &ps->c, ps->atoms);
-
-	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
-	if (e) {
-		log_fatal_x_error(e, "Failed to ungrab server");
-		free(e);
-		goto err;
-	}
-
-	ps->server_grabbed = false;
-
-	log_debug("Initial stack:");
-	wm_stack_foreach(ps->wm, i) {
-		log_debug("    %#010x", wm_ref_win_id(i));
-	}
+	wm_import_start(ps->wm, &ps->c, ps->atoms, ps->c.screen_info->root, NULL);
 
 	ps->command_builder = command_builder_new();
 	ps->expose_rects = dynarr_new(rect_t, 0);
@@ -2737,8 +2705,10 @@ static void session_destroy(session_t *ps) {
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);
 
-	wm_free(ps->wm);
+	// The X connection could hold references to wm if there are pending async
+	// requests. Therefore the wm must be freed after the X connection.
 	free_x_connection(&ps->c);
+	wm_free(ps->wm);
 }
 
 /**
