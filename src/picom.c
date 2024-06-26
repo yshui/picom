@@ -457,8 +457,10 @@ void add_damage(session_t *ps, const region_t *damage) {
  */
 void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
+	bool exists;
 	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
-	                                       ps->atoms->a_NET_ACTIVE_WINDOW);
+	                                       ps->atoms->a_NET_ACTIVE_WINDOW, &exists);
+
 	auto cursor = wm_find_by_client(ps->wm, wid);
 	auto w = cursor ? wm_ref_deref(cursor) : NULL;
 
