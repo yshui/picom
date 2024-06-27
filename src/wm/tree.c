@@ -34,78 +34,8 @@ void wm_tree_reap_zombie(struct wm_tree_node *zombie) {
 	free(zombie);
 }
 
+/// Enqueue a tree change.
 static void wm_tree_enqueue_change(struct wm_tree *tree, struct wm_tree_change change) {
-	if (change.type == WM_TREE_CHANGE_TOPLEVEL_KILLED) {
-		// A gone toplevel will cancel out a previous
-		// `WM_TREE_CHANGE_TOPLEVEL_NEW` change in the queue.
-		bool found = false;
-		list_foreach_safe(struct wm_tree_change_list, i, &tree->changes, siblings) {
-			if (!wm_treeid_eq(i->item.toplevel, change.toplevel)) {
-				continue;
-			}
-			if (i->item.type == WM_TREE_CHANGE_TOPLEVEL_NEW) {
-				list_remove(&i->siblings);
-				list_insert_after(&tree->free_changes, &i->siblings);
-				found = true;
-			} else if (found) {
-				// We also need to delete all other changes
-				// related to this toplevel in between the new and
-				// gone changes.
-				list_remove(&i->siblings);
-				list_insert_after(&tree->free_changes, &i->siblings);
-			} else if (i->item.type == WM_TREE_CHANGE_CLIENT) {
-				// Need to update client changes, so they points to the
-				// zombie instead of the old toplevel node, since the old
-				// toplevel node could be freed before tree changes are
-				// processed.
-				i->item.client.toplevel = change.killed;
-			}
-		}
-		if (found) {
-			wm_tree_reap_zombie(change.killed);
-			return;
-		}
-	} else if (change.type == WM_TREE_CHANGE_CLIENT) {
-		// A client change can coalesce with a previous client change.
-		list_foreach_safe(struct wm_tree_change_list, i, &tree->changes, siblings) {
-			if (!wm_treeid_eq(i->item.toplevel, change.toplevel) ||
-			    i->item.type != WM_TREE_CHANGE_CLIENT) {
-				continue;
-			}
-
-			if (!wm_treeid_eq(i->item.client.new_, change.client.old)) {
-				log_warn("Inconsistent client change for toplevel "
-				         "%#010x. Missing changes from %#010x to %#010x. "
-				         "Possible bug.",
-				         change.toplevel.x, i->item.client.new_.x,
-				         change.client.old.x);
-			}
-
-			i->item.client.new_ = change.client.new_;
-			if (wm_treeid_eq(i->item.client.old, change.client.new_)) {
-				list_remove(&i->siblings);
-				list_insert_after(&tree->free_changes, &i->siblings);
-			}
-			return;
-		}
-	} else if (change.type == WM_TREE_CHANGE_TOPLEVEL_RESTACKED) {
-		list_foreach(struct wm_tree_change_list, i, &tree->changes, siblings) {
-			if (i->item.type == WM_TREE_CHANGE_TOPLEVEL_RESTACKED ||
-			    i->item.type == WM_TREE_CHANGE_TOPLEVEL_NEW ||
-			    i->item.type == WM_TREE_CHANGE_TOPLEVEL_KILLED) {
-				// Only need to keep one
-				// `WM_TREE_CHANGE_TOPLEVEL_RESTACKED` change, and order
-				// doesn't matter.
-				return;
-			}
-		}
-	}
-
-	// We don't let a `WM_TREE_CHANGE_TOPLEVEL_NEW` cancel out a previous
-	// `WM_TREE_CHANGE_TOPLEVEL_GONE`, because the new toplevel would be a different
-	// window reusing the same ID. So we need to go through the proper destruction
-	// process for the previous toplevel. Changes are not commutative (naturally).
-
 	struct wm_tree_change_list *change_list;
 	if (!list_is_empty(&tree->free_changes)) {
 		change_list = list_entry(tree->free_changes.next,
@@ -117,6 +47,114 @@ static void wm_tree_enqueue_change(struct wm_tree *tree, struct wm_tree_change c
 
 	change_list->item = change;
 	list_insert_before(&tree->changes, &change_list->siblings);
+}
+
+/// Enqueue a `WM_TREE_CHANGE_TOPLEVEL_KILLED` change for a toplevel window. If there are
+/// any `WM_TREE_CHANGE_TOPLEVEL_NEW` changes in the queue for the same toplevel, they
+/// will be cancelled out.
+///
+/// @return true if this change is cancelled out by a previous change, false otherwise.
+static bool wm_tree_enqueue_toplevel_killed(struct wm_tree *tree, wm_treeid toplevel,
+                                            struct wm_tree_node *zombie) {
+	// A gone toplevel will cancel out a previous
+	// `WM_TREE_CHANGE_TOPLEVEL_NEW` change in the queue.
+	bool found = false;
+	list_foreach_safe(struct wm_tree_change_list, i, &tree->changes, siblings) {
+		if (!wm_treeid_eq(i->item.toplevel, toplevel)) {
+			continue;
+		}
+		if (i->item.type == WM_TREE_CHANGE_TOPLEVEL_NEW) {
+			list_remove(&i->siblings);
+			list_insert_after(&tree->free_changes, &i->siblings);
+			found = true;
+		} else if (found) {
+			// We also need to delete all other changes
+			// related to this toplevel in between the new and
+			// gone changes.
+			list_remove(&i->siblings);
+			list_insert_after(&tree->free_changes, &i->siblings);
+		} else if (i->item.type == WM_TREE_CHANGE_CLIENT) {
+			// Need to update client changes, so they points to the
+			// zombie instead of the old toplevel node, since the old
+			// toplevel node could be freed before tree changes are
+			// processed.
+			i->item.client.toplevel = zombie;
+		}
+	}
+	if (found) {
+		wm_tree_reap_zombie(zombie);
+		return true;
+	}
+
+	wm_tree_enqueue_change(tree, (struct wm_tree_change){
+	                                 .toplevel = toplevel,
+	                                 .type = WM_TREE_CHANGE_TOPLEVEL_KILLED,
+	                                 .killed = zombie,
+	                             });
+	return false;
+}
+
+static void wm_tree_enqueue_client_change(struct wm_tree *tree, struct wm_tree_node *toplevel,
+                                          wm_treeid old_client, wm_treeid new_client) {
+	// A client change can coalesce with a previous client change.
+	list_foreach_safe(struct wm_tree_change_list, i, &tree->changes, siblings) {
+		if (!wm_treeid_eq(i->item.toplevel, toplevel->id) ||
+		    i->item.type != WM_TREE_CHANGE_CLIENT) {
+			continue;
+		}
+
+		if (!wm_treeid_eq(i->item.client.new_, old_client)) {
+			log_warn("Inconsistent client change for toplevel "
+			         "%#010x. Missing changes from %#010x to %#010x. "
+			         "Possible bug.",
+			         toplevel->id.x, i->item.client.new_.x, old_client.x);
+		}
+
+		i->item.client.new_ = new_client;
+		if (wm_treeid_eq(i->item.client.old, new_client)) {
+			list_remove(&i->siblings);
+			list_insert_after(&tree->free_changes, &i->siblings);
+		}
+		return;
+	}
+	wm_tree_enqueue_change(tree, (struct wm_tree_change){
+	                                 .toplevel = toplevel->id,
+	                                 .type = WM_TREE_CHANGE_CLIENT,
+	                                 .client =
+	                                     {
+	                                         .toplevel = toplevel,
+	                                         .old = old_client,
+	                                         .new_ = new_client,
+	                                     },
+	                             });
+}
+
+static void wm_tree_enqueue_toplevel_new(struct wm_tree *tree, struct wm_tree_node *toplevel) {
+	// We don't let a `WM_TREE_CHANGE_TOPLEVEL_NEW` cancel out a previous
+	// `WM_TREE_CHANGE_TOPLEVEL_KILLED`, because the new toplevel would be a different
+	// window reusing the same ID. So we need to go through the proper destruction
+	// process for the previous toplevel. Changes are not commutative (naturally).
+	wm_tree_enqueue_change(tree, (struct wm_tree_change){
+	                                 .toplevel = toplevel->id,
+	                                 .type = WM_TREE_CHANGE_TOPLEVEL_NEW,
+	                                 .new_ = toplevel,
+	                             });
+}
+
+static void wm_tree_enqueue_toplevel_restacked(struct wm_tree *tree) {
+	list_foreach(struct wm_tree_change_list, i, &tree->changes, siblings) {
+		if (i->item.type == WM_TREE_CHANGE_TOPLEVEL_RESTACKED ||
+		    i->item.type == WM_TREE_CHANGE_TOPLEVEL_NEW ||
+		    i->item.type == WM_TREE_CHANGE_TOPLEVEL_KILLED) {
+			// Only need to keep one
+			// `WM_TREE_CHANGE_TOPLEVEL_RESTACKED` change, and order
+			// doesn't matter.
+			return;
+		}
+	}
+	wm_tree_enqueue_change(tree, (struct wm_tree_change){
+	                                 .type = WM_TREE_CHANGE_TOPLEVEL_RESTACKED,
+	                             });
 }
 
 /// Dequeue the oldest change from the change queue. If the queue is empty, a change with
@@ -222,22 +260,15 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 		return;
 	}
 
-	struct wm_tree_change change = {
-	    .toplevel = toplevel->id,
-	    .type = WM_TREE_CHANGE_CLIENT,
-	    .client = {.toplevel = toplevel},
-	};
 	if (!has_wm_state && toplevel->client_window == node) {
 		auto new_client = wm_tree_find_client(toplevel);
 		toplevel->client_window = new_client;
-		change.client.old = node->id;
-		change.client.new_ = new_client != NULL ? new_client->id : WM_TREEID_NONE;
-		wm_tree_enqueue_change(tree, change);
+		wm_tree_enqueue_client_change(
+		    tree, toplevel, node->id,
+		    new_client != NULL ? new_client->id : WM_TREEID_NONE);
 	} else if (has_wm_state && toplevel->client_window == NULL) {
 		toplevel->client_window = node;
-		change.client.old = WM_TREEID_NONE;
-		change.client.new_ = node->id;
-		wm_tree_enqueue_change(tree, change);
+		wm_tree_enqueue_client_change(tree, toplevel, WM_TREEID_NONE, node->id);
 	} else if (has_wm_state) {
 		// If the toplevel window already has a client window, we won't
 		// try to usurp it.
@@ -268,27 +299,24 @@ wm_tree_refresh_client_and_queue_change(struct wm_tree *tree, struct wm_tree_nod
 	BUG_ON(toplevel->parent->parent != NULL);
 	auto new_client = wm_tree_find_client(toplevel);
 	if (new_client != toplevel->client_window) {
-		struct wm_tree_change change = {.toplevel = toplevel->id,
-		                                .type = WM_TREE_CHANGE_CLIENT,
-		                                .client = {.toplevel = toplevel,
-		                                           .old = WM_TREEID_NONE,
-		                                           .new_ = WM_TREEID_NONE}};
+		wm_treeid old_client_id = WM_TREEID_NONE, new_client_id = WM_TREEID_NONE;
 		if (toplevel->client_window != NULL) {
-			change.client.old = toplevel->client_window->id;
+			old_client_id = toplevel->client_window->id;
 		}
 		if (new_client != NULL) {
-			change.client.new_ = new_client->id;
+			new_client_id = new_client->id;
 		}
 		toplevel->client_window = new_client;
-		wm_tree_enqueue_change(tree, change);
+		wm_tree_enqueue_client_change(tree, toplevel, old_client_id, new_client_id);
 	}
 }
 
-void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot) {
+struct wm_tree_node *wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot) {
 	BUG_ON(subroot == NULL);
 	BUG_ON(subroot->parent == NULL);        // Trying to detach the root window?!
 
 	auto toplevel = wm_tree_find_toplevel_for(tree, subroot);
+	struct wm_tree_node *zombie = NULL;
 	if (toplevel != subroot) {
 		list_remove(&subroot->siblings);
 		if (toplevel != NULL) {
@@ -296,21 +324,18 @@ void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot) {
 		}
 	} else {
 		// Detached a toplevel, create a zombie for it
-		auto zombie = ccalloc(1, struct wm_tree_node);
+		zombie = ccalloc(1, struct wm_tree_node);
 		zombie->parent = subroot->parent;
 		zombie->id = subroot->id;
 		zombie->is_zombie = true;
-		zombie->win = subroot->win;
-		subroot->win = NULL;
 		list_init_head(&zombie->children);
 		list_replace(&subroot->siblings, &zombie->siblings);
-		wm_tree_enqueue_change(tree, (struct wm_tree_change){
-		                                 .toplevel = subroot->id,
-		                                 .type = WM_TREE_CHANGE_TOPLEVEL_KILLED,
-		                                 .killed = zombie,
-		                             });
+		if (wm_tree_enqueue_toplevel_killed(tree, subroot->id, zombie)) {
+			zombie = NULL;
+		}
 	}
 	subroot->parent = NULL;
+	return zombie;
 }
 
 void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
@@ -329,11 +354,7 @@ void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
 
 	auto toplevel = wm_tree_find_toplevel_for(tree, child);
 	if (child == toplevel) {
-		wm_tree_enqueue_change(tree, (struct wm_tree_change){
-		                                 .toplevel = child->id,
-		                                 .type = WM_TREE_CHANGE_TOPLEVEL_NEW,
-		                                 .new_ = child,
-		                             });
+		wm_tree_enqueue_toplevel_new(tree, child);
 	} else if (toplevel != NULL) {
 		wm_tree_refresh_client_and_queue_change(tree, toplevel);
 	}
@@ -355,9 +376,7 @@ void wm_tree_move_to_end(struct wm_tree *tree, struct wm_tree_node *node, bool t
 		list_insert_after(&node->parent->children, &node->siblings);
 	}
 	if (node->parent == tree->root) {
-		wm_tree_enqueue_change(tree, (struct wm_tree_change){
-		                                 .type = WM_TREE_CHANGE_TOPLEVEL_RESTACKED,
-		                             });
+		wm_tree_enqueue_toplevel_restacked(tree);
 	}
 }
 
@@ -377,9 +396,7 @@ void wm_tree_move_to_above(struct wm_tree *tree, struct wm_tree_node *node,
 	list_remove(&node->siblings);
 	list_insert_before(&other->siblings, &node->siblings);
 	if (node->parent == tree->root) {
-		wm_tree_enqueue_change(tree, (struct wm_tree_change){
-		                                 .type = WM_TREE_CHANGE_TOPLEVEL_RESTACKED,
-		                             });
+		wm_tree_enqueue_toplevel_restacked(tree);
 	}
 }
 
@@ -433,7 +450,7 @@ TEST_CASE(tree_manipulation) {
 	assert(change.toplevel.x == 3);
 	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_NEW);
 
-	wm_tree_detach(&tree, node2);
+	auto zombie = wm_tree_detach(&tree, node2);
 	wm_tree_attach(&tree, node2, node3);
 	assert(node2->parent == node3);
 	assert(node3->children.next == &node2->siblings);
@@ -442,6 +459,7 @@ TEST_CASE(tree_manipulation) {
 	change = wm_tree_dequeue_change(&tree);
 	assert(change.toplevel.x == 2);
 	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_KILLED);
+	TEST_EQUAL(change.killed, zombie);
 	wm_tree_reap_zombie(change.killed);
 
 	wm_tree_set_wm_state(&tree, node2, true);
@@ -462,7 +480,7 @@ TEST_CASE(tree_manipulation) {
 	// node3 already has node2 as its client window, so the new one should be ignored.
 	assert(change.type == WM_TREE_CHANGE_NONE);
 
-	wm_tree_detach(&tree, node2);
+	TEST_EQUAL(wm_tree_detach(&tree, node2), NULL);
 	HASH_DEL(tree.nodes, node2);
 	free(node2);
 	change = wm_tree_dequeue_change(&tree);
@@ -472,7 +490,7 @@ TEST_CASE(tree_manipulation) {
 	assert(change.client.new_.x == 4);
 
 	// Test window ID reuse
-	wm_tree_detach(&tree, node4);
+	TEST_EQUAL(wm_tree_detach(&tree, node4), NULL);
 	HASH_DEL(tree.nodes, node4);
 	free(node4);
 	node4 = wm_tree_new_window(&tree, 4);
@@ -489,7 +507,7 @@ TEST_CASE(tree_manipulation) {
 	auto node5 = wm_tree_new_window(&tree, 5);
 	wm_tree_add_window(&tree, node5);
 	wm_tree_attach(&tree, node5, root);
-	wm_tree_detach(&tree, node5);
+	TEST_EQUAL(wm_tree_detach(&tree, node5), NULL);
 	HASH_DEL(tree.nodes, node5);
 	free(node5);
 	change = wm_tree_dequeue_change(&tree);

@@ -1597,8 +1597,6 @@ static void handle_new_windows(session_t *ps) {
 		case WM_TREE_CHANGE_TOPLEVEL_KILLED:
 			w = wm_ref_deref(wm_change.toplevel);
 			if (w != NULL) {
-				// Pointing the window tree_ref to the zombie.
-				w->tree_ref = wm_change.toplevel;
 				win_destroy_start(ps, w);
 			} else {
 				// This window is not managed, no point keeping the zombie
