@@ -310,13 +310,10 @@ void add_damage_from_win(session_t *ps, const struct win *w) {
 /// Release the images attached to this window
 static inline void win_release_pixmap(backend_t *base, struct win *w) {
 	log_debug("Releasing pixmap of window %#010x (%s)", win_id(w), w->name);
-	assert(w->win_image);
 	if (w->win_image) {
 		xcb_pixmap_t pixmap = XCB_NONE;
 		pixmap = base->ops.release_image(base, w->win_image);
 		w->win_image = NULL;
-		// Bypassing win_set_flags, because `w` might have been destroyed
-		w->flags |= WIN_FLAGS_PIXMAP_NONE;
 		if (pixmap != XCB_NONE) {
 			xcb_free_pixmap(base->c->c, pixmap);
 		}
@@ -366,7 +363,6 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct win *w) {
 		return false;
 	}
 
-	win_clear_flags(w, WIN_FLAGS_PIXMAP_NONE);
 	return true;
 }
 
@@ -374,12 +370,9 @@ void win_release_images(struct backend_base *backend, struct win *w) {
 	// We don't want to decide what we should do if the image we want to
 	// release is stale (do we clear the stale flags or not?) But if we are
 	// not releasing any images anyway, we don't care about the stale flags.
+	assert(w->win_image == NULL || !win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
 
-	if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
-		assert(!win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
-		win_release_pixmap(backend, w);
-	}
-
+	win_release_pixmap(backend, w);
 	win_release_shadow(backend, w);
 	win_release_mask(backend, w);
 }
@@ -582,11 +575,10 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 			// otherwise we won't be able to rebind pixmap after
 			// releasing it, yet we might still need the pixmap for
 			// rendering.
-			if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
-				// Must release images first, otherwise breaks
-				// NVIDIA driver
-				win_release_pixmap(ps->backend_data, w);
-			}
+
+			// Must release images first, otherwise breaks
+			// NVIDIA driver
+			win_release_pixmap(ps->backend_data, w);
 			win_bind_pixmap(ps->backend_data, w);
 		}
 
@@ -845,9 +837,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 	if (ps->backend_data) {
 		// Only the pixmap needs to be freed and reacquired when mapping.
 		// Shadow image can be preserved.
-		if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
-			win_release_pixmap(ps->backend_data, w);
-		}
+		win_release_pixmap(ps->backend_data, w);
 	} else {
 		assert(!w->win_image);
 		assert(!w->shadow_image);
@@ -1389,9 +1379,9 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	    .frame_opacity = 1.0,
 	    .in_openclose = true,        // set to false after first map is done,
 	                                 // true here because window is just created
-	    .flags = WIN_FLAGS_PIXMAP_NONE,        // updated by
-	                                           // property/attributes/etc
-	                                           // change
+	    .flags = 0,                  // updated by
+	                                 // property/attributes/etc
+	                                 // change
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,

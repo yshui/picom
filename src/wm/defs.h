@@ -50,8 +50,6 @@ enum win_flags {
 
 	/// pixmap is out of date, will be update in win_process_flags
 	WIN_FLAGS_PIXMAP_STALE = 1,
-	/// window does not have pixmap bound
-	WIN_FLAGS_PIXMAP_NONE = 2,
 	/// there was an error trying to bind the images
 	WIN_FLAGS_IMAGE_ERROR = 4,
 	/// the client window needs to be updated
