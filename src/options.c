@@ -793,7 +793,7 @@ static bool sanitize_options(struct options *opt) {
 			for (size_t i = 0; i < ARR_SIZE(opt->animations); i++) {
 				opt->animations[i].script = NULL;
 			}
-			dynarr_free(opt->all_scripts, script_ptr_deinit);
+			dynarr_clear(opt->all_scripts, script_ptr_deinit);
 		}
 
 		if (opt->window_shader_fg || opt->window_shader_fg_rules) {
