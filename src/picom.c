@@ -1691,9 +1691,6 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 		refresh_windows(ps);
 
 		recheck_focus(ps);
-
-		// Process window flags (stale images)
-		refresh_images(ps);
 	}
 	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
 	if (e) {
@@ -1703,8 +1700,12 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 	}
 
 	ps->server_grabbed = false;
-	ps->pending_updates = false;
 	log_trace("Exited critical section");
+
+	// Process window flags (stale images)
+	refresh_images(ps);
+
+	ps->pending_updates = false;
 
 	wm_stack_foreach_safe(ps->wm, cursor, tmp) {
 		auto w = wm_ref_deref(cursor);
