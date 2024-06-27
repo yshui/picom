@@ -1662,17 +1662,17 @@ void win_set_focused(session_t *ps, struct win *w) {
 	}
 
 	auto old_active_win = wm_active_win(ps->wm);
-	if (w->is_ewmh_focused) {
+	if (w->is_focused) {
 		assert(old_active_win == w);
 		return;
 	}
 
 	wm_set_active_win(ps->wm, w);
-	w->is_ewmh_focused = true;
+	w->is_focused = true;
 
 	if (old_active_win) {
-		assert(old_active_win->is_ewmh_focused);
-		old_active_win->is_ewmh_focused = false;
+		assert(old_active_win->is_focused);
+		old_active_win->is_focused = false;
 		win_on_focus_change(ps, old_active_win);
 	}
 	win_on_focus_change(ps, w);
@@ -2306,5 +2306,5 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w) {
  * settings
  */
 bool win_is_focused_raw(const struct win *w) {
-	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_ewmh_focused;
+	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused;
 }

@@ -195,8 +195,8 @@ struct win {
 	/// `is_ewmh_fullscreen`, or the windows spatial relation with the
 	/// root window. Which one is used is determined by user configuration.
 	bool is_fullscreen;
-	/// Whether the window is the EWMH active window.
-	bool is_ewmh_focused;
+	/// Whether the window is the active window.
+	bool is_focused;
 
 	// Opacity-related members
 	/// Window opacity
