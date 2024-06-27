@@ -2412,12 +2412,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
 	apply_driver_workarounds(ps, ps->drivers);
 
-	// Initialize filters, must be preceded by OpenGL context creation
-	if (ps->o.use_legacy_backends && !init_render(ps)) {
-		log_fatal("Failed to initialize the backend");
-		exit(1);
-	}
-
 	if (ps->o.print_diagnostics) {
 		ps->root_width = ps->c.screen_info->width_in_pixels;
 		ps->root_height = ps->c.screen_info->height_in_pixels;
@@ -2578,6 +2572,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->root_height = r->height;
 	free(r);
 	rebuild_screen_reg(ps);
+
+	// Initialize filters, must be preceded by OpenGL context creation
+	if (ps->o.use_legacy_backends && !init_render(ps)) {
+		log_fatal("Failed to initialize the backend");
+		exit(1);
+	}
 
 	ps->pending_updates = true;
 
