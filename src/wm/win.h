@@ -355,7 +355,7 @@ void win_destroy_start(session_t *ps, struct win *w);
 void win_map_start(struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
-void win_release_images(struct backend_base *base, struct win *w);
+void win_release_images(struct backend_base *backend, struct win *w);
 winmode_t attr_pure win_calc_mode_raw(const struct win *w);
 // TODO(yshui) `win_calc_mode` is only used by legacy backends
 winmode_t attr_pure win_calc_mode(const struct win *w);
