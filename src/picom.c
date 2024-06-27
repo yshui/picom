@@ -125,12 +125,6 @@ const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
 /// XXX Limit what xerror can access by not having this pointer
 session_t *ps_g = NULL;
 
-void set_root_flags(session_t *ps, uint64_t flags) {
-	log_debug("Setting root flags: %" PRIu64, flags);
-	ps->root_flags |= flags;
-	ps->pending_updates = true;
-}
-
 void quit(session_t *ps) {
 	ps->quit = true;
 	ev_break(ps->loop, EVBREAK_ALL);
@@ -652,7 +646,7 @@ static inline void invalidate_reg_ignore(session_t *ps) {
 }
 
 /// Handle configure event of the root window
-static void configure_root(session_t *ps) {
+void configure_root(session_t *ps) {
 	// TODO(yshui) re-initializing backend should be done outside of the
 	// critical section. Probably set a flag and do it in draw_callback_impl.
 	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
@@ -730,13 +724,6 @@ static void configure_root(session_t *ps) {
 			root_damaged(ps);
 		}
 		force_repaint(ps);
-	}
-}
-
-static void handle_root_flags(session_t *ps) {
-	if ((ps->root_flags & ROOT_FLAGS_CONFIGURED) != 0) {
-		configure_root(ps);
-		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_CONFIGURED;
 	}
 }
 
@@ -1596,12 +1583,6 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 		log_debug("Delayed handling of events, entering critical section");
 		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
-
-		// Handle screen changes
-		// This HAS TO be called before refresh_windows, as handle_root_flags
-		// could call configure_root, which will release images and mark them
-		// stale.
-		handle_root_flags(ps);
 
 		// Process window flags
 		refresh_windows(ps);
