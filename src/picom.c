@@ -1689,8 +1689,6 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 
 		// Process window flags
 		refresh_windows(ps);
-
-		recheck_focus(ps);
 	}
 	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
 	if (e) {
@@ -1701,6 +1699,8 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 
 	ps->server_grabbed = false;
 	log_trace("Exited critical section");
+
+	recheck_focus(ps);
 
 	// Process window flags (stale images)
 	refresh_images(ps);
