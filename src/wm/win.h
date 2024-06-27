@@ -408,7 +408,8 @@ void win_get_region_frame_local(const struct win *w, region_t *res);
 region_t win_get_region_frame_local_by_val(const struct win *w);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
-struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor);
+struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
+                               xcb_get_window_attributes_reply_t *attrs);
 
 /**
  * Release a destroyed window that is no longer needed.

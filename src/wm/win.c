@@ -1358,7 +1358,8 @@ void free_win_res(session_t *ps, struct win *w) {
 
 /// Query the Xorg for information about window `win`, and assign a window to `cursor` if
 /// this window should be managed.
-struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
+struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
+                               xcb_get_window_attributes_reply_t *attrs) {
 	static const struct win win_def = {
 	    .frame_opacity = 1.0,
 	    .in_openclose = true,        // set to false after first map is done,
@@ -1395,23 +1396,18 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 
 	xcb_window_t wid = wm_ref_win_id(cursor);
 	log_debug("Managing window %#010x", wid);
-	xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c.c, wid);
-	xcb_get_window_attributes_reply_t *a =
-	    xcb_get_window_attributes_reply(ps->c.c, acookie, NULL);
-	if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
+	if (attrs->map_state == XCB_MAP_STATE_UNVIEWABLE) {
 		// Failed to get window attributes or geometry probably means
 		// the window is gone already. Unviewable means the window is
 		// already reparented elsewhere.
 		// BTW, we don't care about Input Only windows, except for
 		// stacking proposes, so we need to keep track of them still.
-		free(a);
 		return NULL;
 	}
 
-	if (a->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
+	if (attrs->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
 		// No need to manage this window, but we still keep it on the
 		// window stack
-		free(a);
 		return NULL;
 	}
 
@@ -1422,16 +1418,14 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	// We only need to initialize the part that are not initialized
 	// by map_win
 	*new = win_def;
-	new->a = *a;
+	new->a = *attrs;
 	new->shadow_opacity = ps->o.shadow_opacity;
 	pixman_region32_init(&new->bounding_shape);
-
-	free(a);
 
 	xcb_generic_error_t *e;
 	auto g = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, wid), &e);
 	if (!g) {
-		log_error_x_error(e, "Failed to get geometry of window %#010x", wid);
+		log_debug("Failed to get geometry of window %#010x: %s", wid, x_strerror(e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1452,7 +1446,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	    ps->c.c, xcb_damage_create_checked(ps->c.c, new->damage, wid,
 	                                       XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
 	if (e) {
-		log_error_x_error(e, "Failed to create damage");
+		log_debug("Failed to create damage for window %#010x: %s", wid, x_strerror(e));
 		free(e);
 		free(new);
 		return NULL;

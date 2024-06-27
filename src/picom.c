@@ -1483,6 +1483,66 @@ static void handle_x_events_ev(EV_P attr_unused, ev_prepare *w, int revents attr
 	handle_x_events(ps);
 }
 
+struct new_window_attributes_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+};
+
+static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
+                                               struct x_async_request_base *req_base,
+                                               xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct new_window_attributes_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	auto new_window = wm_find(ps->wm, wid);
+	free(req);
+
+	if (reply_or_error->response_type == 0) {
+		log_debug("Failed to get window attributes for newly created window "
+		          "%#010x",
+		          wid);
+		return;
+	}
+
+	if (new_window == NULL) {
+		// Highly unlikely. This window is destroyed, then another window is
+		// created with the same window ID before this request completed, and the
+		// latter window isn't in our tree yet.
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Newly created window %#010x is not in the window tree", wid);
+			assert(false);
+		}
+		return;
+	}
+
+	auto toplevel = wm_ref_toplevel_of(ps->wm, new_window);
+	if (toplevel != new_window) {
+		log_debug("Newly created window %#010x was moved away from toplevel "
+		          "while we were waiting for its attributes",
+		          wid);
+		return;
+	}
+	if (wm_ref_deref(toplevel) != NULL) {
+		// This is possible if a toplevel is reparented away, then reparented to
+		// root so it became a toplevel again. If the GetWindowAttributes request
+		// sent for the first time it became a toplevel wasn't completed for this
+		// whole duration, it will create a managed window object for the
+		// toplevel. But there is another get attributes request sent the
+		// second time it became a toplevel. When we get the reply for the second
+		// request, we will reach here.
+		log_debug("Newly created window %#010x is already managed", wid);
+		return;
+	}
+
+	auto w = win_maybe_allocate(ps, toplevel,
+	                            (xcb_get_window_attributes_reply_t *)reply_or_error);
+	if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+		win_map_start(w);
+		ps->pending_updates = true;
+	}
+}
+
 static void handle_new_windows(session_t *ps) {
 	// Check tree changes first, because later property updates need accurate
 	// client window information
@@ -1493,11 +1553,18 @@ static void handle_new_windows(session_t *ps) {
 			break;
 		}
 		switch (wm_change.type) {
-		case WM_TREE_CHANGE_TOPLEVEL_NEW:
-			w = win_maybe_allocate(ps, wm_change.toplevel);
-			if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				win_map_start(w);
-			}
+		case WM_TREE_CHANGE_TOPLEVEL_NEW:;
+			auto req = ccalloc(1, struct new_window_attributes_request);
+			// We don't directly record the toplevel wm_ref here, because any
+			// number of things could happen before we get the reply. The
+			// window can be reparented, destroyed, then get its window ID
+			// reused, etc.
+			req->wid = wm_ref_win_id(wm_change.toplevel);
+			req->ps = ps;
+			req->base.callback = handle_new_window_attributes_reply,
+			req->base.sequence =
+			    xcb_get_window_attributes(ps->c.c, req->wid).sequence;
+			x_await_request(&ps->c, &req->base);
 			break;
 		case WM_TREE_CHANGE_TOPLEVEL_KILLED:
 			w = wm_ref_deref(wm_change.toplevel);
