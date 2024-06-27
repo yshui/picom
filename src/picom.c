@@ -2355,8 +2355,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		goto err;
 	}
 
-	rebuild_screen_reg(ps);
-
 	bool compositor_running = false;
 	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL) {
 		// We are running in the manual redirection mode, meaning we are running
@@ -2368,44 +2366,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		// Create registration window
 		int ret = register_cm(ps);
 		if (ret == -1) {
-			exit(1);
+			goto err;
 		}
 
 		compositor_running = ret == 1;
-		if (compositor_running) {
-			// Don't take the overlay when there is another compositor
-			// running, so we don't disrupt it.
-
-			// If we are printing diagnostic, we will continue a bit further
-			// to get more diagnostic information, otherwise we will exit.
-			if (!ps->o.print_diagnostics) {
-				log_fatal("Another composite manager is already running");
-				exit(1);
-			}
-		} else {
-			if (!init_overlay(ps)) {
-				goto err;
-			}
-		}
-	} else {
-		// We are here if we don't really function as a compositor, so we are not
-		// taking over the screen, and we don't need to register as a compositor
-
-		// If we are in debug mode, we need to create a window for rendering if
-		// the backend supports presenting.
-
-		// The old backends doesn't have a automatic redirection mode
-		log_info("The compositor is started in automatic redirection mode.");
-		assert(!ps->o.use_legacy_backends);
-
-		if (backend_can_present(ps->o.backend)) {
-			// If the backend has `present`, we couldn't be in automatic
-			// redirection mode unless we are in debug mode.
-			assert(ps->o.debug_mode);
-			if (!init_debug_window(ps)) {
-				goto err;
-			}
-		}
 	}
 
 	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
@@ -2545,6 +2509,41 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ps->o.use_legacy_backends && !init_render(ps)) {
 		log_fatal("Failed to initialize the backend");
 		exit(1);
+	}
+
+	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL && compositor_running) {
+		// Don't take the overlay when there is another compositor
+		// running, so we don't disrupt it.
+
+		// If we are printing diagnostic, we will continue a bit further
+		// to get more diagnostic information, otherwise we will exit.
+		log_fatal("Another composite manager is already running");
+		goto err;
+	}
+
+	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL && !init_overlay(ps)) {
+		goto err;
+	}
+
+	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_AUTOMATIC) {
+		// We are here if we don't really function as a compositor, so we are not
+		// taking over the screen, and we don't need to register as a compositor
+
+		// If we are in debug mode, we need to create a window for rendering if
+		// the backend supports presenting.
+
+		// The old backends doesn't have a automatic redirection mode
+		log_info("The compositor is started in automatic redirection mode.");
+		assert(!ps->o.use_legacy_backends);
+
+		if (backend_can_present(ps->o.backend)) {
+			// If the backend has `present`, we couldn't be in automatic
+			// redirection mode unless we are in debug mode.
+			assert(ps->o.debug_mode);
+			if (!init_debug_window(ps)) {
+				goto err;
+			}
+		}
 	}
 
 	ps->pending_updates = true;
