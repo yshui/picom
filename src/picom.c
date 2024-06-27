@@ -450,81 +450,6 @@ void add_damage(session_t *ps, const region_t *damage) {
 // === Windows ===
 
 /**
- * Update current active window based on EWMH _NET_ACTIVE_WIN.
- *
- * Does not change anything if we fail to get the attribute or the window
- * returned could not be found.
- */
-void update_ewmh_active_win(session_t *ps) {
-	// Search for the window
-	bool exists;
-	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
-	                                       ps->atoms->a_NET_ACTIVE_WINDOW, &exists);
-
-	auto cursor = wm_find_by_client(ps->wm, wid);
-	auto w = cursor ? wm_ref_deref(cursor) : NULL;
-
-	// Mark the window focused. No need to unfocus the previous one.
-	if (w) {
-		win_set_focused(ps, w);
-	}
-}
-
-/**
- * Recheck currently focused window and set its <code>w->focused</code>
- * to true.
- *
- * @param ps current session
- * @return struct _win of currently focused window, NULL if not found
- */
-static void recheck_focus(session_t *ps) {
-	// Use EWMH _NET_ACTIVE_WINDOW if enabled
-	if (ps->o.use_ewmh_active_win) {
-		update_ewmh_active_win(ps);
-		return;
-	}
-
-	// Determine the currently focused window so we can apply appropriate
-	// opacity on it
-	xcb_generic_error_t *e = NULL;
-	auto reply = xcb_get_input_focus_reply(ps->c.c, xcb_get_input_focus(ps->c.c), &e);
-	if (reply == NULL) {
-		// Not able to get input focus means very not good things...
-		log_error_x_error(e, "Failed to get focused window.");
-		free(e);
-		return;
-	}
-	xcb_window_t wid = reply->focus;
-	free(reply);
-
-	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||
-	    wid == ps->c.screen_info->root) {
-		// Focus is not on a toplevel.
-		return;
-	}
-
-	auto cursor = wm_find(ps->wm, wid);
-	if (cursor == NULL) {
-		log_error("Window %#010x not found in window tree.", wid);
-		return;
-	}
-
-	cursor = wm_ref_toplevel_of(ps->wm, cursor);
-	if (cursor == NULL) {
-		assert(!wm_is_consistent(ps->wm));
-		return;
-	}
-
-	// And we set the focus state here
-	auto w = wm_ref_deref(cursor);
-	if (w) {
-		log_debug("%#010" PRIx32 " (%#010" PRIx32 " \"%s\") focused.", wid,
-		          win_id(w), w->name);
-		win_set_focused(ps, w);
-	}
-}
-
-/**
  * Rebuild cached <code>screen_reg</code>.
  */
 static void rebuild_screen_reg(session_t *ps) {
@@ -1697,8 +1622,6 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 
 	ps->server_grabbed = false;
 	log_trace("Exited critical section");
-
-	recheck_focus(ps);
 
 	// Process window flags (stale images)
 	refresh_images(ps);

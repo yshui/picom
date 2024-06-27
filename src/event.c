@@ -190,16 +190,128 @@ static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *e
 
 #undef CASESTRRET
 
+struct ev_ewmh_active_win_request {
+	struct x_async_request_base base;
+	session_t *ps;
+};
+
+/// Update current active window based on EWMH _NET_ACTIVE_WIN.
+///
+/// Does not change anything if we fail to get the attribute or the window
+/// returned could not be found.
+static void
+update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base *req_base,
+                       xcb_raw_generic_event_t *reply_or_error) {
+	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
+	free(req_base);
+
+	if (reply_or_error->response_type == 0) {
+		log_error("Failed to get _NET_ACTIVE_WINDOW: %s",
+		          x_strerror(((xcb_generic_error_t *)reply_or_error)));
+		return;
+	}
+
+	// Search for the window
+	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	if (reply->type == XCB_NONE || xcb_get_property_value_length(reply) < 4) {
+		log_debug("EWMH _NET_ACTIVE_WINDOW not set.");
+		return;
+	}
+
+	auto wid = *(xcb_window_t *)xcb_get_property_value(reply);
+	log_debug("EWMH _NET_ACTIVE_WINDOW is %#010x", wid);
+
+	auto cursor = wm_find_by_client(ps->wm, wid);
+	auto w = cursor ? wm_ref_deref(cursor) : NULL;
+
+	// Mark the window focused. No need to unfocus the previous one.
+	if (w) {
+		win_set_focused(ps, w);
+	}
+}
+
+struct ev_recheck_focus_request {
+	struct x_async_request_base base;
+	session_t *ps;
+};
+
+/**
+ * Recheck currently focused window and set its <code>w->focused</code>
+ * to true.
+ *
+ * @param ps current session
+ * @return struct _win of currently focused window, NULL if not found
+ */
+static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_base *req_base,
+                          xcb_raw_generic_event_t *reply_or_error) {
+	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
+	free(req_base);
+
+	// Determine the currently focused window so we can apply appropriate
+	// opacity on it
+	if (reply_or_error->response_type == 0) {
+		// Not able to get input focus means very not good things...
+		auto e = (xcb_generic_error_t *)reply_or_error;
+		log_error_x_error(e, "Failed to get focused window.");
+		return;
+	}
+
+	auto reply = (xcb_get_input_focus_reply_t *)reply_or_error;
+	xcb_window_t wid = reply->focus;
+	log_debug("Current focused window is %#010x", wid);
+	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||
+	    wid == ps->c.screen_info->root) {
+		// Focus is not on a toplevel.
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	if (cursor == NULL) {
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Window %#010x not found in window tree.", wid);
+			assert(false);
+		}
+		return;
+	}
+
+	cursor = wm_ref_toplevel_of(ps->wm, cursor);
+	if (cursor == NULL) {
+		assert(!wm_is_consistent(ps->wm));
+		return;
+	}
+
+	// And we set the focus state here
+	auto w = wm_ref_deref(cursor);
+	if (w) {
+		log_debug("%#010x (%s) focused.", wid, w->name);
+		win_set_focused(ps, w);
+	}
+}
+
+static inline void ev_focus_change(session_t *ps) {
+	if (ps->o.use_ewmh_active_win) {
+		// Not using focus_in/focus_out events.
+		return;
+	}
+
+	auto req = ccalloc(1, struct ev_recheck_focus_request);
+	req->base.sequence = xcb_get_input_focus(ps->c.c).sequence;
+	req->base.callback = recheck_focus;
+	req->ps = ps;
+	x_await_request(&ps->c, &req->base);
+	log_debug("Started async request to recheck focus");
+}
+
 static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
-	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+	log_debug("{ mode: %s, detail: %s }", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-	ps->pending_updates = true;
+	ev_focus_change(ps);
 }
 
 static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
-	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+	log_debug("{ mode: %s, detail: %s }", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-	ps->pending_updates = true;
+	ev_focus_change(ps);
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
@@ -425,6 +537,8 @@ static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 }
 
 static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
+	log_debug("{ atom = %#010x, window = %#010x, state = %d }", ev->atom, ev->window,
+	          ev->state);
 	if (unlikely(log_get_level_tls() <= LOG_LEVEL_TRACE)) {
 		// Print out changed atom
 		xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
@@ -442,8 +556,16 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	if (ps->c.screen_info->root == ev->window) {
 		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
-			// to update focus
-			ps->pending_updates = true;
+			auto req = ccalloc(1, struct ev_ewmh_active_win_request);
+			req->base.sequence =
+			    xcb_get_property(ps->c.c, 0, ps->c.screen_info->root,
+			                     ps->atoms->a_NET_ACTIVE_WINDOW,
+			                     XCB_ATOM_WINDOW, 0, 1)
+			        .sequence;
+			req->base.callback = update_ewmh_active_win;
+			req->ps = ps;
+			x_await_request(&ps->c, &req->base);
+			log_debug("Started async request to get _NET_ACTIVE_WINDOW");
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
 			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
