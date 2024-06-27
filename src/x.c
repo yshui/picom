@@ -334,39 +334,35 @@ xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid,
  */
 bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
                        xcb_atom_t prop, char ***pstrlst, int *pnstr) {
-	auto prop_info = x_get_prop_info(c, wid, prop);
-	auto type = prop_info.type;
-	auto format = prop_info.format;
-	auto length = prop_info.length;
-
-	if (type == XCB_ATOM_NONE) {
-		return false;
-	}
-
-	if (!x_is_type_string(atoms, type)) {
-		log_warn("Text property %d of window %#010x has unsupported type: %d",
-		         prop, wid, type);
-		return false;
-	}
-
-	if (format != 8) {
-		log_warn("Text property %d of window %#010x has unexpected format: %d",
-		         prop, wid, format);
-		return false;
-	}
-
 	xcb_generic_error_t *e = NULL;
-	auto word_count = (length + 4 - 1) / 4;
 	auto r = xcb_get_property_reply(
-	    c->c, xcb_get_property(c->c, 0, wid, prop, type, 0, word_count), &e);
+	    c->c, xcb_get_property(c->c, 0, wid, prop, XCB_ATOM_ANY, 0, UINT_MAX), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
 		free(e);
 		return false;
 	}
 
-	assert(length == (uint32_t)xcb_get_property_value_length(r));
+	if (r->type == XCB_ATOM_NONE) {
+		free(r);
+		return false;
+	}
 
+	if (!x_is_type_string(atoms, r->type)) {
+		log_warn("Text property %d of window %#010x has unsupported type: %d",
+		         prop, wid, r->type);
+		free(r);
+		return false;
+	}
+
+	if (r->format != 8) {
+		log_warn("Text property %d of window %#010x has unexpected format: %d",
+		         prop, wid, r->format);
+		free(r);
+		return false;
+	}
+
+	uint32_t length = to_u32_checked(xcb_get_property_value_length(r));
 	void *data = xcb_get_property_value(r);
 	unsigned int nstr = 0;
 	uint32_t current_offset = 0;
