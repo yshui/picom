@@ -343,29 +343,6 @@ static inline void win_release_mask(backend_t *base, struct win *w) {
 	}
 }
 
-static inline bool win_bind_pixmap(struct backend_base *b, struct win *w) {
-	assert(!w->win_image);
-	auto pixmap = x_new_id(b->c);
-	auto e = xcb_request_check(
-	    b->c->c, xcb_composite_name_window_pixmap_checked(b->c->c, win_id(w), pixmap));
-	if (e) {
-		log_error("Failed to get named pixmap for window %#010x(%s)", win_id(w),
-		          w->name);
-		free(e);
-		return false;
-	}
-	log_debug("New named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
-	w->win_image = b->ops.bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual));
-	if (!w->win_image) {
-		log_error("Failed to bind pixmap");
-		xcb_free_pixmap(b->c->c, pixmap);
-		win_set_flags(w, WIN_FLAGS_IMAGE_ERROR);
-		return false;
-	}
-
-	return true;
-}
-
 void win_release_images(struct backend_base *backend, struct win *w) {
 	// We don't want to decide what we should do if the image we want to
 	// release is stale (do we clear the stale flags or not?) But if we are
@@ -562,34 +539,41 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
-	// Not a loop
-	while (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) &&
-	       !win_check_flags_all(w, WIN_FLAGS_IMAGE_ERROR)) {
-		// Image needs to be updated, update it.
-		if (!ps->backend_data) {
-			// We are using legacy backend, nothing to do here.
-			break;
-		}
-
-		if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE)) {
-			// Check to make sure the window is still mapped,
-			// otherwise we won't be able to rebind pixmap after
-			// releasing it, yet we might still need the pixmap for
-			// rendering.
-
-			// Must release images first, otherwise breaks
-			// NVIDIA driver
-			win_release_pixmap(ps->backend_data, w);
-			win_bind_pixmap(ps->backend_data, w);
-		}
-
-		// break here, loop always run only once
-		break;
+	if (!win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) ||
+	    win_check_flags_all(w, WIN_FLAGS_PIXMAP_ERROR) ||
+	    // We don't need to do anything here for legacy backends
+	    ps->backend_data == NULL) {
+		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+		return;
 	}
 
-	// Clear stale image flags
-	if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE)) {
-		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+	// Image needs to be updated, update it.
+	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+
+	// Check to make sure the window is still mapped, otherwise we won't be able to
+	// rebind pixmap after releasing it, yet we might still need the pixmap for
+	// rendering.
+	auto pixmap = x_new_id(&ps->c);
+	auto e = xcb_request_check(
+	    ps->c.c, xcb_composite_name_window_pixmap_checked(ps->c.c, win_id(w), pixmap));
+	if (e != NULL) {
+		log_debug("Failed to get named pixmap for window %#010x(%s): %s. "
+		          "Retaining its current window image",
+		          win_id(w), w->name, x_strerror(e));
+		free(e);
+		return;
+	}
+
+	log_debug("New named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
+
+	// Must release images first, otherwise breaks NVIDIA driver
+	win_release_pixmap(ps->backend_data, w);
+	w->win_image = ps->backend_data->ops.bind_pixmap(
+	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual));
+	if (!w->win_image) {
+		log_error("Failed to bind pixmap");
+		xcb_free_pixmap(ps->c.c, pixmap);
+		win_set_flags(w, WIN_FLAGS_PIXMAP_ERROR);
 	}
 }
 
@@ -849,7 +833,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 
 	// Try again at binding images when the window is mapped next time
 	if (w->state != WSTATE_DESTROYED) {
-		win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
+		win_clear_flags(w, WIN_FLAGS_PIXMAP_ERROR);
 	}
 	assert(w->running_animation == NULL);
 }
