@@ -1446,6 +1446,10 @@ static void unredirect(session_t *ps) {
 /// keeps an internal queue of events, so we have to be 100% sure no events are
 /// left in that queue before we go to sleep.
 static void handle_x_events(struct session *ps) {
+	if (ps->vblank_scheduler) {
+		vblank_handle_x_events(ps->vblank_scheduler);
+	}
+
 	// Flush because if we go into sleep when there is still requests in the
 	// outgoing buffer, they will not be sent for an indefinite amount of
 	// time. Use XFlush here too, we might still use some Xlib functions
@@ -1461,10 +1465,6 @@ static void handle_x_events(struct session *ps) {
 	// another.
 	XFlush(ps->c.dpy);
 	xcb_flush(ps->c.c);
-
-	if (ps->vblank_scheduler) {
-		vblank_handle_x_events(ps->vblank_scheduler);
-	}
 
 	xcb_generic_event_t *ev;
 	while ((ev = x_poll_for_event(&ps->c))) {
