@@ -941,7 +941,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		} else if (w->paint_excluded) {
 			log_trace("|- is excluded from painting");
 			to_paint = false;
-		} else if (unlikely((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0)) {
+		} else if (unlikely((w->flags & WIN_FLAGS_PIXMAP_ERROR) != 0)) {
 			log_trace("|- has image errors");
 			to_paint = false;
 		}
