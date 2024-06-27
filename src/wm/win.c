@@ -1458,12 +1458,13 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	if (!ps->o.use_ewmh_active_win) {
 		frame_event_mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
 	}
-	xcb_change_window_attributes(ps->c.c, wid, XCB_CW_EVENT_MASK,
-	                             (const uint32_t[]){frame_event_mask});
+	x_set_error_action_ignore(
+	    &ps->c, xcb_change_window_attributes(ps->c.c, wid, XCB_CW_EVENT_MASK,
+	                                         (const uint32_t[]){frame_event_mask}));
 
 	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
-		xcb_shape_select_input(ps->c.c, wid, 1);
+		x_set_error_action_ignore(&ps->c, xcb_shape_select_input(ps->c.c, wid, 1));
 	}
 
 	new->pictfmt = x_get_pictform_for_visual(&ps->c, new->a.visual);
