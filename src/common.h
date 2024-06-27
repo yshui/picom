@@ -166,8 +166,6 @@ typedef struct session {
 	// === Display related ===
 	/// X connection
 	struct x_connection c;
-	/// Whether the X server is grabbed by us
-	bool server_grabbed;
 	/// Width of root window.
 	int root_width;
 	/// Height of root window.

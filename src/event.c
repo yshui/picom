@@ -406,7 +406,6 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 	if (ev->window == ps->c.screen_info->root) {
 		configure_root(ps);
-		ps->pending_updates = true;
 	} else {
 		configure_win(ps, ev);
 	}

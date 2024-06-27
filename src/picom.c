@@ -1625,44 +1625,16 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 }
 
 static void handle_pending_updates(struct session *ps, double delta_t) {
-	log_trace("Delayed handling of events, entering critical section");
-	auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
-	if (e) {
-		log_fatal_x_error(e, "failed to grab x server");
-		free(e);
-		return quit(ps);
-	}
+	// Process new windows, and maybe allocate struct managed_win for them
+	handle_new_windows(ps);
 
-	ps->server_grabbed = true;
+	if (ps->pending_updates) {
+		log_debug("Delayed handling of events");
 
-	// Catching up with X server
-	// Handle all events X server has sent us so far, so that our internal state will
-	// catch up with the X server's state. It only makes sense to call this function
-	// in the X critical section, otherwise we will be chasing a moving goal post.
-	//
-	// (Disappointingly, grabbing the X server doesn't actually prevent the X server
-	// state from changing. It should, but in practice we have observed window still
-	// being destroyed while we have the server grabbed. This is very disappointing
-	// and forces us to use some hacky code to recover when we discover we are
-	// out-of-sync.)
-	handle_x_events(ps);
-	if (ps->pending_updates || wm_has_tree_changes(ps->wm)) {
-		log_debug("Delayed handling of events, entering critical section");
-		// Process new windows, and maybe allocate struct managed_win for them
-		handle_new_windows(ps);
-
-		// Process window flags
+		// Process window flags. This needs to happen before `refresh_images`
+		// because this might set the pixmap stale window flag.
 		refresh_windows(ps);
 	}
-	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
-	if (e) {
-		log_fatal_x_error(e, "failed to ungrab x server");
-		free(e);
-		return quit(ps);
-	}
-
-	ps->server_grabbed = false;
-	log_trace("Exited critical section");
 
 	// Process window flags (stale images)
 	refresh_images(ps);
@@ -1938,13 +1910,9 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 	}
 }
 
-static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
-	session_t *ps = (session_t *)w;
-	xcb_generic_event_t *ev = x_poll_for_event(&ps->c);
-	if (ev) {
-		ev_handle(ps, ev);
-		free(ev);
-	}
+static void x_event_callback(EV_P attr_unused, ev_io * /*w*/, int revents attr_unused) {
+	// This function is intentionally left blank, events are actually read and handled
+	// in the ev_prepare listener.
 }
 
 static void config_file_change_cb(void *_ps) {
