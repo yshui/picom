@@ -2003,10 +2003,17 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 
 bool win_process_animation_and_state_change(struct session *ps, struct win *w, double delta_t) {
 	// If the window hasn't ever been damaged yet, it won't be rendered in this frame.
-	// And if it is also unmapped/destroyed, it won't receive damage events. In this
-	// case we can skip its animation. For mapped windows, we need to provisionally
-	// start animation, because its first damage event might come a bit late.
-	bool will_never_render = !w->ever_damaged && w->state != WSTATE_MAPPED;
+	// Or if it doesn't have a image bound, it won't be rendered either. (This can
+	// happen is a window is destroyed during a backend reset. Backend resets releases
+	// all images, and if a window is freed during that, its image cannot be
+	// reacquired.)
+	//
+	// If the window won't be rendered, and it is also unmapped/destroyed, it won't
+	// receive damage events or reacquire an image. In this case we can skip its
+	// animation. For mapped windows, we need to provisionally start animation,
+	// because its first damage event might come a bit late.
+	bool will_never_render =
+	    (!w->ever_damaged || w->win_image == NULL) && w->state != WSTATE_MAPPED;
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
 		bool state_changed = w->previous.state != w->state;
