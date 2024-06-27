@@ -734,13 +734,6 @@ static void configure_root(session_t *ps) {
 }
 
 static void handle_root_flags(session_t *ps) {
-	if ((ps->root_flags & ROOT_FLAGS_SCREEN_CHANGE) != 0) {
-		if (ps->o.crop_shadow_to_monitor && ps->randr_exists) {
-			x_update_monitors(&ps->c, &ps->monitors);
-		}
-		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_SCREEN_CHANGE;
-	}
-
 	if ((ps->root_flags & ROOT_FLAGS_CONFIGURED) != 0) {
 		configure_root(ps);
 		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_CONFIGURED;
@@ -2330,7 +2323,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
-		x_update_monitors(&ps->c, &ps->monitors);
+		x_update_monitors_async(&ps->c, &ps->monitors);
 	}
 
 	{

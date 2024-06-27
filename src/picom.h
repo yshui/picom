@@ -25,8 +25,6 @@
 #include "x.h"
 
 enum root_flags {
-	ROOT_FLAGS_SCREEN_CHANGE = 1,        // Received RandR screen change notify, we
-	                                     // use this to track refresh rate changes
 	ROOT_FLAGS_CONFIGURED = 2        // Received configure notify on the root window
 };
 

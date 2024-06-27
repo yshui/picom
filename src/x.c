@@ -904,25 +904,43 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 	};
 }
 
-void x_update_monitors(struct x_connection *c, struct x_monitors *m) {
-	x_free_monitor_info(m);
+struct x_update_monitors_request {
+	struct x_async_request_base base;
+	struct x_monitors *monitors;
+};
 
-	xcb_randr_get_monitors_reply_t *r = xcb_randr_get_monitors_reply(
-	    c->c, xcb_randr_get_monitors(c->c, c->screen_info->root, true), NULL);
-	if (!r) {
+static void x_handle_update_monitors_reply(struct x_connection * /*c*/,
+                                           struct x_async_request_base *req_base,
+                                           xcb_raw_generic_event_t *reply_or_error) {
+	auto m = ((struct x_update_monitors_request *)req_base)->monitors;
+	free(req_base);
+
+	if (reply_or_error->response_type == 0) {
+		log_warn("Failed to get monitor information using RandR: %s",
+		         x_strerror((xcb_generic_error_t *)reply_or_error));
 		return;
 	}
 
-	m->count = xcb_randr_get_monitors_monitors_length(r);
+	x_free_monitor_info(m);
+
+	auto reply = (xcb_randr_get_monitors_reply_t *)reply_or_error;
+
+	m->count = xcb_randr_get_monitors_monitors_length(reply);
 	m->regions = ccalloc(m->count, region_t);
 	xcb_randr_monitor_info_iterator_t monitor_info_it =
-	    xcb_randr_get_monitors_monitors_iterator(r);
+	    xcb_randr_get_monitors_monitors_iterator(reply);
 	for (int i = 0; monitor_info_it.rem; xcb_randr_monitor_info_next(&monitor_info_it)) {
 		xcb_randr_monitor_info_t *mi = monitor_info_it.data;
 		pixman_region32_init_rect(&m->regions[i++], mi->x, mi->y, mi->width, mi->height);
 	}
+}
 
-	free(r);
+void x_update_monitors_async(struct x_connection *c, struct x_monitors *m) {
+	auto req = ccalloc(1, struct x_update_monitors_request);
+	req->base.callback = x_handle_update_monitors_reply;
+	req->base.sequence = xcb_randr_get_monitors(c->c, c->screen_info->root, 1).sequence;
+	req->monitors = m;
+	x_await_request(c, &req->base);
 }
 
 void x_free_monitor_info(struct x_monitors *m) {

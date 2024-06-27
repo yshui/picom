@@ -834,9 +834,9 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
-		if (ps->randr_exists &&
+		if (ps->randr_exists && ps->o.crop_shadow_to_monitor &&
 		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
-			set_root_flags(ps, ROOT_FLAGS_SCREEN_CHANGE);
+			x_update_monitors_async(&ps->c, &ps->monitors);
 			break;
 		}
 		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
