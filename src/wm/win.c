@@ -449,7 +449,8 @@ static void win_update_properties(session_t *ps, struct win *w) {
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
-	    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR)) {
+	    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR) ||
+	    win_fetch_and_unset_property_stale(w, XCB_ATOM_WM_HINTS)) {
 		auto client_win = win_client_id(w, /*fallback_to_self=*/true);
 		auto new_leader = win_get_leader_property(&ps->c, ps->atoms, client_win,
 		                                          ps->o.detect_transient,
@@ -1532,17 +1533,37 @@ static xcb_window_t
 win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
                         bool detect_transient, bool detect_client_leader) {
 	xcb_window_t leader = XCB_NONE;
+	bool exists = false;
 
 	// Read the leader properties
 	if (detect_transient) {
-		leader = wid_get_prop_window(c, wid, atoms->aWM_TRANSIENT_FOR);
+		leader = wid_get_prop_window(c, wid, atoms->aWM_TRANSIENT_FOR, &exists);
+		log_debug("Leader via WM_TRANSIENT_FOR of window %#010x: %#010x", wid, leader);
+		if (exists && (leader == c->screen_info->root || leader == XCB_NONE)) {
+			// If WM_TRANSIENT_FOR is set to NONE or the root window, use the
+			// window group leader.
+			//
+			// Ref:
+			// https://specifications.freedesktop.org/wm-spec/wm-spec-1.5.html#idm44981516332096
+			auto prop = x_get_prop(c, wid, XCB_ATOM_WM_HINTS, INT_MAX,
+			                       XCB_ATOM_WM_HINTS, 32);
+			if (prop.nitems >= 9) {        // 9-th member is window_group
+				leader = prop.c32[8];
+				log_debug("Leader via WM_HINTS of window %#010x: %#010x",
+				          wid, leader);
+			} else {
+				leader = XCB_NONE;
+			}
+			free_winprop(&prop);
+		}
 	}
 
 	if (detect_client_leader && leader == XCB_NONE) {
-		leader = wid_get_prop_window(c, wid, atoms->aWM_CLIENT_LEADER);
+		leader = wid_get_prop_window(c, wid, atoms->aWM_CLIENT_LEADER, &exists);
+		log_debug("Leader via WM_CLIENT_LEADER of window %#010x: %#010x", wid, leader);
 	}
 
-	log_trace("window %#010x: leader %#010x", wid, leader);
+	log_debug("window %#010x: leader %#010x", wid, leader);
 	return leader;
 }
 
@@ -1556,6 +1577,12 @@ static struct wm_ref *win_get_leader_raw(session_t *ps, struct win *w, int recur
 		// Leader defaults to client window, or to the window itself if
 		// it doesn't have a client window
 		w->cache_leader = wm_find(ps->wm, w->leader);
+		if (w->cache_leader == wm_root_ref(ps->wm)) {
+			log_warn("Window manager set the leader of window %#010x to "
+			         "root, a broken window manager.",
+			         win_id(w));
+			w->cache_leader = NULL;
+		}
 		if (!w->cache_leader) {
 			w->cache_leader = client_win ?: w->tree_ref;
 		}

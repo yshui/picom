@@ -284,14 +284,18 @@ winprop_info_t x_get_prop_info(const struct x_connection *c, xcb_window_t w, xcb
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_atom_t aprop) {
+xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid,
+                                 xcb_atom_t aprop, bool *exists) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
 	winprop_t prop = x_get_prop(c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
+		*exists = true;
 		p = (xcb_window_t)*prop.p32;
+	} else {
+		*exists = false;
 	}
 
 	free_winprop(&prop);

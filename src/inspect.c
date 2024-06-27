@@ -63,8 +63,10 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 
 	// Determine if the window is focused
 	xcb_window_t wid = XCB_NONE;
+	bool exists;
 	if (options->use_ewmh_active_win) {
-		wid_get_prop_window(c, c->screen_info->root, atoms->a_NET_ACTIVE_WINDOW);
+		wid_get_prop_window(c, c->screen_info->root, atoms->a_NET_ACTIVE_WINDOW,
+		                    &exists);
 	} else {
 		// Determine the currently focused window so we can apply appropriate
 		// opacity on it

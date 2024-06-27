@@ -249,7 +249,8 @@ static inline void x_discard_events(struct x_connection *c) {
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_atom_t aprop);
+xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid,
+                                 xcb_atom_t aprop, bool *exists);
 
 /**
  * Get the value of a text property of a window.
