@@ -1,6 +1,5 @@
 #pragma once
 
-#include <assert.h>
 #include <stdalign.h>
 
 #include <uthash.h>
@@ -24,6 +23,7 @@ struct wm_tree {
 	uint64_t gen;
 	/// wm tree nodes indexed by their X window ID.
 	struct wm_tree_node *nodes;
+	struct wm_tree_node *root;
 
 	struct list_node changes;
 	struct list_node free_changes;
@@ -77,7 +77,10 @@ struct wm_tree_change {
 /// shutting down.
 void wm_tree_clear(struct wm_tree *tree);
 struct wm_tree_node *attr_pure wm_tree_find(const struct wm_tree *tree, xcb_window_t id);
-struct wm_tree_node *attr_pure wm_tree_find_toplevel_for(struct wm_tree_node *node);
+/// Find the toplevel that is an ancestor of `node` or `node` itself. Returns NULL if
+/// `node` is part of an orphaned subtree.
+struct wm_tree_node *attr_pure wm_tree_find_toplevel_for(const struct wm_tree *tree,
+                                                         struct wm_tree_node *node);
 struct wm_tree_node *attr_pure wm_tree_next(struct wm_tree_node *node,
                                             struct wm_tree_node *subroot);
 /// Create a new window node in the tree, with X window ID `id`, and parent `parent`. If
@@ -85,15 +88,17 @@ struct wm_tree_node *attr_pure wm_tree_next(struct wm_tree_node *node,
 /// permitted, and the root window cannot be destroyed once created, until
 /// `wm_tree_clear` is called. If `parent` is not NULL, the new node will be put at the
 /// top of the stacking order among its siblings.
-struct wm_tree_node *
-wm_tree_new_window(struct wm_tree *tree, xcb_window_t id, struct wm_tree_node *parent);
+struct wm_tree_node *wm_tree_new_window(struct wm_tree *tree, xcb_window_t id);
+void wm_tree_add_window(struct wm_tree *tree, struct wm_tree_node *node);
 void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node);
 /// Detach the subtree rooted at `subroot` from `tree`. The subtree root is removed from
 /// its parent, and the disconnected tree nodes won't be able to be found via
 /// `wm_tree_find`. Relevant events will be generated.
 void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot);
-void wm_tree_reparent(struct wm_tree *tree, struct wm_tree_node *node,
-                      struct wm_tree_node *new_parent);
+/// Attach `node` to `parent`. `node` becomes the topmost child of `parent`. If `parent`
+/// is NULL, `node` becomes the root window.
+void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
+                    struct wm_tree_node *parent);
 void wm_tree_move_to_above(struct wm_tree *tree, struct wm_tree_node *node,
                            struct wm_tree_node *other);
 /// Move `node` to the top or the bottom of its parent's child window stack.
@@ -104,6 +109,7 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 
 static inline void wm_tree_init(struct wm_tree *tree) {
 	tree->nodes = NULL;
+	tree->gen = 1;
 	list_init_head(&tree->changes);
 	list_init_head(&tree->free_changes);
 }

@@ -203,10 +203,14 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	if (wm_is_wid_masked(ps->wm, ev->parent)) {
-		return;
+	auto parent = wm_find(ps->wm, ev->parent);
+	if (parent == NULL) {
+		log_error("Create notify received for window %#010x, but its parent "
+		          "window %#010x is not in our tree. Expect malfunction.",
+		          ev->window, ev->parent);
+		assert(false);
 	}
-	wm_import_incomplete(ps->wm, ev->window, ev->parent);
+	wm_import_start(ps->wm, &ps->c, ps->atoms, ev->window, parent);
 }
 
 /// Handle configure event of a regular window
@@ -215,7 +219,11 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto below = wm_find(ps->wm, ce->above_sibling);
 
 	if (!cursor) {
-		log_error("Configure event received for unknown window %#010x", ce->window);
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Configure event received for unknown window %#010x",
+			          ce->window);
+			assert(false);
+		}
 		return;
 	}
 
@@ -223,6 +231,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		log_error("Configure event received for window %#010x, but its sibling "
 		          "window %#010x is not in our tree. Expect malfunction.",
 		          ce->window, ce->above_sibling);
+		assert(false);
 	} else if (below != NULL) {
 		wm_stack_move_to_above(ps->wm, cursor, below);
 	} else {
@@ -288,7 +297,7 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 	if (ev->window == ps->c.screen_info->root) {
 		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
-	} else if (!wm_is_wid_masked(ps->wm, ev->event)) {
+	} else {
 		configure_win(ps, ev);
 	}
 }
@@ -314,15 +323,14 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 		return;
 	}
 
-	if (wm_is_wid_masked(ps->wm, ev->event)) {
-		return;
-	}
-
 	auto cursor = wm_find(ps->wm, ev->window);
 	if (cursor == NULL) {
-		log_error("Map event received for unknown window %#010x, overlay is "
-		          "%#010x",
-		          ev->window, ps->overlay);
+		if (wm_is_consistent(ps->wm)) {
+			log_debug("Map event received for unknown window %#010x, overlay "
+			          "is %#010x",
+			          ev->window, ps->overlay);
+			assert(false);
+		}
 		return;
 	}
 
@@ -349,13 +357,12 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 		return;
 	}
 
-	if (wm_is_wid_masked(ps->wm, ev->event)) {
-		return;
-	}
-
 	auto cursor = wm_find(ps->wm, ev->window);
 	if (cursor == NULL) {
-		log_error("Unmap event received for unknown window %#010x", ev->window);
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Unmap event received for unknown window %#010x", ev->window);
+			assert(false);
+		}
 		return;
 	}
 	auto w = wm_ref_deref(cursor);
@@ -372,14 +379,14 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
-	if (wm_is_wid_masked(ps->wm, ev->event)) {
-		return;
-	}
-
 	auto cursor = wm_find(ps->wm, ev->window);
 
 	if (cursor == NULL) {
-		log_error("Circulate event received for unknown window %#010x", ev->window);
+		if (wm_is_consistent(ps->wm)) {
+			log_debug("Circulate event received for unknown window %#010x",
+			          ev->window);
+			assert(false);
+		}
 		return;
 	}
 
@@ -451,23 +458,28 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		return;
 	}
 
-	if (wm_is_wid_masked(ps->wm, ev->window)) {
-		return;
-	}
-
 	ps->pending_updates = true;
 	auto cursor = wm_find(ps->wm, ev->window);
 	if (cursor == NULL) {
-		log_error("Property notify received for unknown window %#010x", ev->window);
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Property notify received for unknown window %#010x",
+			          ev->window);
+			assert(false);
+		}
 		return;
 	}
 
-	auto toplevel_cursor = wm_ref_toplevel_of(cursor);
+	auto toplevel_cursor = wm_ref_toplevel_of(ps->wm, cursor);
 	if (ev->atom == ps->atoms->aWM_STATE) {
 		log_debug("WM_STATE changed for window %#010x (%s): %s", ev->window,
 		          ev_window_name(ps, ev->window),
 		          ev->state == XCB_PROPERTY_DELETE ? "deleted" : "set");
 		wm_set_has_wm_state(ps->wm, cursor, ev->state != XCB_PROPERTY_DELETE);
+	}
+
+	if (toplevel_cursor == NULL) {
+		assert(!wm_is_consistent(ps->wm));
+		return;
 	}
 
 	// We only care if the property is set on the toplevel itself, or on its
@@ -629,10 +641,6 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
-	if (XCB_EVENT_RESPONSE_TYPE(ev) != KeymapNotify) {
-		x_discard_pending_errors(&ps->c, ev->full_sequence);
-	}
-
 	xcb_window_t wid = ev_window(ps, ev);
 	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
@@ -702,7 +710,6 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	case XCB_SELECTION_CLEAR:
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
-	case 0: x_handle_error(&ps->c, (xcb_generic_error_t *)ev); break;
 	default:
 		if (ps->shape_exists && ev->response_type == ps->shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);

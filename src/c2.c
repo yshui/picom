@@ -442,11 +442,11 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL3(str, "name = \"xterm\"", len);
 
 	struct wm *wm = wm_new();
-	wm_import_incomplete(wm, 1, XCB_NONE);
+	struct wm_ref *node = wm_new_mock_window(wm, 1);
 
 	struct win test_win = {
 	    .name = "xterm",
-	    .tree_ref = wm_find(wm, 1),
+	    .tree_ref = node,
 	};
 	TEST_TRUE(c2_match(state, &test_win, cond, NULL));
 	c2_list_postprocess(state, NULL, cond);
@@ -568,6 +568,7 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL3(str, rule, len);
 	c2_list_free(&cond, NULL);
 
+	wm_free_mock_window(wm, test_win.tree_ref);
 	wm_free(wm);
 }
 
