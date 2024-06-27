@@ -538,8 +538,6 @@ void win_process_update_flags(session_t *ps, struct win *w) {
 			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
 		}
-
-		win_update_monitor(&ps->monitors, w);
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
@@ -1401,7 +1399,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	    .focused_force = UNSET,
 	    .invert_color_force = UNSET,
 
-	    .randr_monitor = -1,
 	    .mode = WMODE_TRANS,
 	    .leader = XCB_NONE,
 	    .cache_leader = XCB_NONE,
@@ -1983,9 +1980,10 @@ void unmap_win_start(struct win *w) {
 }
 
 struct win_script_context win_script_context_prepare(struct session *ps, struct win *w) {
+	auto monitor_index = win_find_monitor(&ps->monitors, w);
 	auto monitor =
-	    (w->randr_monitor >= 0 && w->randr_monitor < ps->monitors.count)
-	        ? *pixman_region32_extents(&ps->monitors.regions[w->randr_monitor])
+	    monitor_index >= 0
+	        ? *pixman_region32_extents(&ps->monitors.regions[monitor_index])
 	        : (pixman_box32_t){
 	              .x1 = 0, .y1 = 0, .x2 = ps->root_width, .y2 = ps->root_height};
 	struct win_script_context ret = {
@@ -2158,24 +2156,23 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 
 #undef WSTATE_PAIR
 
-// TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
-// the x.c.
-void win_update_monitor(struct x_monitors *monitors, struct win *mw) {
-	mw->randr_monitor = -1;
+/// Find which monitor a window is on.
+int win_find_monitor(const struct x_monitors *monitors, const struct win *mw) {
+	int ret = -1;
 	for (int i = 0; i < monitors->count; i++) {
 		auto e = pixman_region32_extents(&monitors->regions[i]);
 		if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
 		    e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
-			mw->randr_monitor = i;
 			log_debug("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
 			          "monitor %d (%dx%d+%dx%d)",
 			          win_id(mw), mw->name, mw->g.x, mw->g.y, mw->widthb,
 			          mw->heightb, i, e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
-			return;
+			return i;
 		}
 	}
 	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not entirely on any monitor",
 	          win_id(mw), mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
+	return ret;
 }
 
 /// Start the mapping of a window. We cannot map immediately since we might need to fade

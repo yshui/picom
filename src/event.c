@@ -277,9 +277,6 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 			w->pending_g.border_width = ce->border_width;
 			win_set_flags(w, WIN_FLAGS_SIZE_STALE);
 		}
-
-		// Recalculate which monitor this window is on
-		win_update_monitor(&ps->monitors, w);
 	}
 
 	// override_redirect flag cannot be changed after window creation, as far

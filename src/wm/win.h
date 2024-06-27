@@ -114,8 +114,6 @@ struct win {
 	struct win_geometry g;
 	/// Updated geometry received in events
 	struct win_geometry pending_g;
-	/// X RandR monitor this window is on.
-	int randr_monitor;
 	/// Window visual pict format
 	const xcb_render_pictforminfo_t *pictfmt;
 	/// Client window visual pict format
@@ -372,7 +370,7 @@ void win_on_client_update(session_t *ps, struct win *w);
 
 bool attr_pure win_should_dim(session_t *ps, const struct win *w);
 
-void win_update_monitor(struct x_monitors *monitors, struct win *mw);
+int attr_pure win_find_monitor(const struct x_monitors *monitors, const struct win *mw);
 
 /// Recheck if a window is fullscreen
 void win_update_is_fullscreen(const session_t *ps, struct win *w);

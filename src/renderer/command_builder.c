@@ -135,9 +135,12 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		}
 	}
 	log_region(TRACE, &cmd->target_mask);
-	if (monitors && w->randr_monitor >= 0 && w->randr_monitor < monitors->count) {
-		pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask,
-		                          &monitors->regions[w->randr_monitor]);
+	if (monitors) {
+		auto monitor_index = win_find_monitor(monitors, w);
+		if (monitor_index >= 0) {
+			pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask,
+			                          &monitors->regions[monitor_index]);
+		}
 	}
 	log_region(TRACE, &cmd->target_mask);
 	if (w->corner_radius > 0) {

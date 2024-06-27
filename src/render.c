@@ -1121,18 +1121,20 @@ void paint_all(session_t *ps, struct win *t) {
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape_no_corners);
 			}
 
-			if (ps->o.crop_shadow_to_monitor && w->randr_monitor >= 0 &&
-			    w->randr_monitor < ps->monitors.count) {
-				// There can be a window where number of monitors is
-				// updated, but the monitor number attached to the window
-				// have not.
-				//
-				// Window monitor number will be updated eventually, so
-				// here we just check to make sure we don't access out of
-				// bounds.
-				pixman_region32_intersect(
-				    &reg_tmp, &reg_tmp,
-				    &ps->monitors.regions[w->randr_monitor]);
+			if (ps->o.crop_shadow_to_monitor) {
+				auto monitor_index = win_find_monitor(&ps->monitors, w);
+				if (monitor_index >= 0) {
+					// There can be a window where number of monitors
+					// is updated, but the monitor number attached to
+					// the window have not.
+					//
+					// Window monitor number will be updated
+					// eventually, so here we just check to make sure
+					// we don't access out of bounds.
+					pixman_region32_intersect(
+					    &reg_tmp, &reg_tmp,
+					    &ps->monitors.regions[monitor_index]);
+				}
 			}
 
 			// Detect if the region is empty before painting
