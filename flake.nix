@@ -64,7 +64,7 @@
           # See: https://github.com/NixOS/nixpkgs/issues/287763
           export LD_LIBRARY_PATH+=":/run/opengl-driver/lib"
           export UBSAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1:print_stacktrace=1"
-          export ASAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1"
+          export ASAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1:abort_on_error=1"
         '';
       });
     in rec {
