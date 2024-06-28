@@ -419,8 +419,8 @@ xcb_visualid_t x_get_visual_for_depth(xcb_screen_t *screen, uint8_t depth);
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std);
 
-/// Populates a `struct x_monitors` with the current monitor configuration.
-void x_update_monitors(struct x_connection *, struct x_monitors *);
+/// Populates a `struct x_monitors` with the current monitor configuration asynchronously.
+void x_update_monitors_async(struct x_connection *, struct x_monitors *);
 /// Free memory allocated for a `struct x_monitors`.
 void x_free_monitor_info(struct x_monitors *);
 

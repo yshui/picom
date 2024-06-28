@@ -401,6 +401,10 @@ static void handle_present_complete_notify(struct present_vblank_scheduler *self
 
 	assert(self->base.vblank_event_requested);
 
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	auto now_us = (unsigned long)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
+
 	// X sometimes sends duplicate/bogus MSC events, when screen has just been turned
 	// off. Don't use the msc value in these events. We treat this as not receiving a
 	// vblank event at all, and try to get a new one.
@@ -409,18 +413,15 @@ static void handle_present_complete_notify(struct present_vblank_scheduler *self
 	// https://gitlab.freedesktop.org/xorg/xserver/-/issues/1418
 	bool event_is_invalid = cne->msc <= self->last_msc || cne->ust == 0;
 	if (event_is_invalid) {
-		log_debug("Invalid PresentCompleteNotify event, %" PRIu64 " %" PRIu64,
+		log_debug("Invalid PresentCompleteNotify event, %" PRIu64 " %" PRIu64
+		          ". Trying to recover, reporting a fake vblank.",
 		          cne->msc, cne->ust);
-		x_request_vblank_event(self->base.c, cne->window, self->last_msc + 1);
-		return;
+		self->last_ust = now_us;
+		self->last_msc += 1;
+	} else {
+		self->last_ust = cne->ust;
+		self->last_msc = cne->msc;
 	}
-
-	self->last_ust = cne->ust;
-	self->last_msc = cne->msc;
-
-	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	auto now_us = (unsigned long)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
 	double delay_sec = 0.0;
 	if (now_us < cne->ust) {
 		log_trace("The end of this vblank is %" PRIu64 " us into the "

@@ -195,8 +195,8 @@ struct win {
 	/// `is_ewmh_fullscreen`, or the windows spatial relation with the
 	/// root window. Which one is used is determined by user configuration.
 	bool is_fullscreen;
-	/// Whether the window is the EWMH active window.
-	bool is_ewmh_focused;
+	/// Whether the window is the active window.
+	bool is_focused;
 
 	// Opacity-related members
 	/// Window opacity
@@ -353,7 +353,7 @@ void win_destroy_start(session_t *ps, struct win *w);
 void win_map_start(struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
-void win_release_images(struct backend_base *base, struct win *w);
+void win_release_images(struct backend_base *backend, struct win *w);
 winmode_t attr_pure win_calc_mode_raw(const struct win *w);
 // TODO(yshui) `win_calc_mode` is only used by legacy backends
 winmode_t attr_pure win_calc_mode(const struct win *w);
@@ -408,7 +408,8 @@ void win_get_region_frame_local(const struct win *w, region_t *res);
 region_t win_get_region_frame_local_by_val(const struct win *w);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
-struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor);
+struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
+                               xcb_get_window_attributes_reply_t *attrs);
 
 /**
  * Release a destroyed window that is no longer needed.

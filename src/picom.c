@@ -125,12 +125,6 @@ const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
 /// XXX Limit what xerror can access by not having this pointer
 session_t *ps_g = NULL;
 
-void set_root_flags(session_t *ps, uint64_t flags) {
-	log_debug("Setting root flags: %" PRIu64, flags);
-	ps->root_flags |= flags;
-	ps->pending_updates = true;
-}
-
 void quit(session_t *ps) {
 	ps->quit = true;
 	ev_break(ps->loop, EVBREAK_ALL);
@@ -450,81 +444,6 @@ void add_damage(session_t *ps, const region_t *damage) {
 // === Windows ===
 
 /**
- * Update current active window based on EWMH _NET_ACTIVE_WIN.
- *
- * Does not change anything if we fail to get the attribute or the window
- * returned could not be found.
- */
-void update_ewmh_active_win(session_t *ps) {
-	// Search for the window
-	bool exists;
-	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
-	                                       ps->atoms->a_NET_ACTIVE_WINDOW, &exists);
-
-	auto cursor = wm_find_by_client(ps->wm, wid);
-	auto w = cursor ? wm_ref_deref(cursor) : NULL;
-
-	// Mark the window focused. No need to unfocus the previous one.
-	if (w) {
-		win_set_focused(ps, w);
-	}
-}
-
-/**
- * Recheck currently focused window and set its <code>w->focused</code>
- * to true.
- *
- * @param ps current session
- * @return struct _win of currently focused window, NULL if not found
- */
-static void recheck_focus(session_t *ps) {
-	// Use EWMH _NET_ACTIVE_WINDOW if enabled
-	if (ps->o.use_ewmh_active_win) {
-		update_ewmh_active_win(ps);
-		return;
-	}
-
-	// Determine the currently focused window so we can apply appropriate
-	// opacity on it
-	xcb_generic_error_t *e = NULL;
-	auto reply = xcb_get_input_focus_reply(ps->c.c, xcb_get_input_focus(ps->c.c), &e);
-	if (reply == NULL) {
-		// Not able to get input focus means very not good things...
-		log_error_x_error(e, "Failed to get focused window.");
-		free(e);
-		return;
-	}
-	xcb_window_t wid = reply->focus;
-	free(reply);
-
-	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||
-	    wid == ps->c.screen_info->root) {
-		// Focus is not on a toplevel.
-		return;
-	}
-
-	auto cursor = wm_find(ps->wm, wid);
-	if (cursor == NULL) {
-		log_error("Window %#010x not found in window tree.", wid);
-		return;
-	}
-
-	cursor = wm_ref_toplevel_of(ps->wm, cursor);
-	if (cursor == NULL) {
-		assert(!wm_is_consistent(ps->wm));
-		return;
-	}
-
-	// And we set the focus state here
-	auto w = wm_ref_deref(cursor);
-	if (w) {
-		log_debug("%#010" PRIx32 " (%#010" PRIx32 " \"%s\") focused.", wid,
-		          win_id(w), w->name);
-		win_set_focused(ps, w);
-	}
-}
-
-/**
  * Rebuild cached <code>screen_reg</code>.
  */
 static void rebuild_screen_reg(session_t *ps) {
@@ -727,7 +646,7 @@ static inline void invalidate_reg_ignore(session_t *ps) {
 }
 
 /// Handle configure event of the root window
-static void configure_root(session_t *ps) {
+void configure_root(session_t *ps) {
 	// TODO(yshui) re-initializing backend should be done outside of the
 	// critical section. Probably set a flag and do it in draw_callback_impl.
 	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
@@ -805,20 +724,6 @@ static void configure_root(session_t *ps) {
 			root_damaged(ps);
 		}
 		force_repaint(ps);
-	}
-}
-
-static void handle_root_flags(session_t *ps) {
-	if ((ps->root_flags & ROOT_FLAGS_SCREEN_CHANGE) != 0) {
-		if (ps->o.crop_shadow_to_monitor && ps->randr_exists) {
-			x_update_monitors(&ps->c, &ps->monitors);
-		}
-		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_SCREEN_CHANGE;
-	}
-
-	if ((ps->root_flags & ROOT_FLAGS_CONFIGURED) != 0) {
-		configure_root(ps);
-		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_CONFIGURED;
 	}
 }
 
@@ -941,7 +846,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		} else if (w->paint_excluded) {
 			log_trace("|- is excluded from painting");
 			to_paint = false;
-		} else if (unlikely((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0)) {
+		} else if (unlikely((w->flags & WIN_FLAGS_PIXMAP_ERROR) != 0)) {
 			log_trace("|- has image errors");
 			to_paint = false;
 		}
@@ -1541,6 +1446,10 @@ static void unredirect(session_t *ps) {
 /// keeps an internal queue of events, so we have to be 100% sure no events are
 /// left in that queue before we go to sleep.
 static void handle_x_events(struct session *ps) {
+	if (ps->vblank_scheduler) {
+		vblank_handle_x_events(ps->vblank_scheduler);
+	}
+
 	// Flush because if we go into sleep when there is still requests in the
 	// outgoing buffer, they will not be sent for an indefinite amount of
 	// time. Use XFlush here too, we might still use some Xlib functions
@@ -1556,10 +1465,6 @@ static void handle_x_events(struct session *ps) {
 	// another.
 	XFlush(ps->c.dpy);
 	xcb_flush(ps->c.c);
-
-	if (ps->vblank_scheduler) {
-		vblank_handle_x_events(ps->vblank_scheduler);
-	}
 
 	xcb_generic_event_t *ev;
 	while ((ev = x_poll_for_event(&ps->c))) {
@@ -1578,6 +1483,66 @@ static void handle_x_events_ev(EV_P attr_unused, ev_prepare *w, int revents attr
 	handle_x_events(ps);
 }
 
+struct new_window_attributes_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+};
+
+static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
+                                               struct x_async_request_base *req_base,
+                                               xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct new_window_attributes_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	auto new_window = wm_find(ps->wm, wid);
+	free(req);
+
+	if (reply_or_error->response_type == 0) {
+		log_debug("Failed to get window attributes for newly created window "
+		          "%#010x",
+		          wid);
+		return;
+	}
+
+	if (new_window == NULL) {
+		// Highly unlikely. This window is destroyed, then another window is
+		// created with the same window ID before this request completed, and the
+		// latter window isn't in our tree yet.
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Newly created window %#010x is not in the window tree", wid);
+			assert(false);
+		}
+		return;
+	}
+
+	auto toplevel = wm_ref_toplevel_of(ps->wm, new_window);
+	if (toplevel != new_window) {
+		log_debug("Newly created window %#010x was moved away from toplevel "
+		          "while we were waiting for its attributes",
+		          wid);
+		return;
+	}
+	if (wm_ref_deref(toplevel) != NULL) {
+		// This is possible if a toplevel is reparented away, then reparented to
+		// root so it became a toplevel again. If the GetWindowAttributes request
+		// sent for the first time it became a toplevel wasn't completed for this
+		// whole duration, it will create a managed window object for the
+		// toplevel. But there is another get attributes request sent the
+		// second time it became a toplevel. When we get the reply for the second
+		// request, we will reach here.
+		log_debug("Newly created window %#010x is already managed", wid);
+		return;
+	}
+
+	auto w = win_maybe_allocate(ps, toplevel,
+	                            (xcb_get_window_attributes_reply_t *)reply_or_error);
+	if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+		win_map_start(w);
+		ps->pending_updates = true;
+	}
+}
+
 static void handle_new_windows(session_t *ps) {
 	// Check tree changes first, because later property updates need accurate
 	// client window information
@@ -1588,17 +1553,22 @@ static void handle_new_windows(session_t *ps) {
 			break;
 		}
 		switch (wm_change.type) {
-		case WM_TREE_CHANGE_TOPLEVEL_NEW:
-			w = win_maybe_allocate(ps, wm_change.toplevel);
-			if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				win_map_start(w);
-			}
+		case WM_TREE_CHANGE_TOPLEVEL_NEW:;
+			auto req = ccalloc(1, struct new_window_attributes_request);
+			// We don't directly record the toplevel wm_ref here, because any
+			// number of things could happen before we get the reply. The
+			// window can be reparented, destroyed, then get its window ID
+			// reused, etc.
+			req->wid = wm_ref_win_id(wm_change.toplevel);
+			req->ps = ps;
+			req->base.callback = handle_new_window_attributes_reply,
+			req->base.sequence =
+			    xcb_get_window_attributes(ps->c.c, req->wid).sequence;
+			x_await_request(&ps->c, &req->base);
 			break;
 		case WM_TREE_CHANGE_TOPLEVEL_KILLED:
 			w = wm_ref_deref(wm_change.toplevel);
 			if (w != NULL) {
-				// Pointing the window tree_ref to the zombie.
-				w->tree_ref = wm_change.toplevel;
 				win_destroy_start(ps, w);
 			} else {
 				// This window is not managed, no point keeping the zombie
@@ -1655,56 +1625,21 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 }
 
 static void handle_pending_updates(struct session *ps, double delta_t) {
-	log_trace("Delayed handling of events, entering critical section");
-	auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
-	if (e) {
-		log_fatal_x_error(e, "failed to grab x server");
-		free(e);
-		return quit(ps);
-	}
+	// Process new windows, and maybe allocate struct managed_win for them
+	handle_new_windows(ps);
 
-	ps->server_grabbed = true;
+	if (ps->pending_updates) {
+		log_debug("Delayed handling of events");
 
-	// Catching up with X server
-	// Handle all events X server has sent us so far, so that our internal state will
-	// catch up with the X server's state. It only makes sense to call this function
-	// in the X critical section, otherwise we will be chasing a moving goal post.
-	//
-	// (Disappointingly, grabbing the X server doesn't actually prevent the X server
-	// state from changing. It should, but in practice we have observed window still
-	// being destroyed while we have the server grabbed. This is very disappointing
-	// and forces us to use some hacky code to recover when we discover we are
-	// out-of-sync.)
-	handle_x_events(ps);
-	if (ps->pending_updates || wm_has_tree_changes(ps->wm)) {
-		log_debug("Delayed handling of events, entering critical section");
-		// Process new windows, and maybe allocate struct managed_win for them
-		handle_new_windows(ps);
-
-		// Handle screen changes
-		// This HAS TO be called before refresh_windows, as handle_root_flags
-		// could call configure_root, which will release images and mark them
-		// stale.
-		handle_root_flags(ps);
-
-		// Process window flags
+		// Process window flags. This needs to happen before `refresh_images`
+		// because this might set the pixmap stale window flag.
 		refresh_windows(ps);
-
-		recheck_focus(ps);
-
-		// Process window flags (stale images)
-		refresh_images(ps);
-	}
-	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
-	if (e) {
-		log_fatal_x_error(e, "failed to ungrab x server");
-		free(e);
-		return quit(ps);
 	}
 
-	ps->server_grabbed = false;
+	// Process window flags (stale images)
+	refresh_images(ps);
+
 	ps->pending_updates = false;
-	log_trace("Exited critical section");
 
 	wm_stack_foreach_safe(ps->wm, cursor, tmp) {
 		auto w = wm_ref_deref(cursor);
@@ -1975,13 +1910,9 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 	}
 }
 
-static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
-	session_t *ps = (session_t *)w;
-	xcb_generic_event_t *ev = x_poll_for_event(&ps->c);
-	if (ev) {
-		ev_handle(ps, ev);
-		free(ev);
-	}
+static void x_event_callback(EV_P attr_unused, ev_io * /*w*/, int revents attr_unused) {
+	// This function is intentionally left blank, events are actually read and handled
+	// in the ev_prepare listener.
 }
 
 static void config_file_change_cb(void *_ps) {
@@ -2408,7 +2339,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
-		x_update_monitors(&ps->c, &ps->monitors);
+		x_update_monitors_async(&ps->c, &ps->monitors);
 	}
 
 	{

@@ -56,6 +56,10 @@
 * `xcb-dpms` is not needed anymore.
 * `libXext` is not needed anymore.
 
+## Behind the scene changes
+
+* The X critical section is removed, picom no longer grabs the server to fetch updates. Hopefully, if everything works, this change is unnoticeable. Minor responsiveness improvements could be possible, but I won't bet on it. The main point of this change is this makes debugging much less painful. Previously if you breaks inside the X critical section, the whole X server will lock up, and you would have to connect to the computer remotely to recover. Now there is no longer such worries. This also avoids a bug inside Xorg that makes server grabbing unreliable.
+
 # v11.2 (2024-Feb-13)
 
 ## Build changes

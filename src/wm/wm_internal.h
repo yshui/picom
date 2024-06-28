@@ -94,7 +94,9 @@ void wm_tree_destroy_window(struct wm_tree *tree, struct wm_tree_node *node);
 /// Detach the subtree rooted at `subroot` from `tree`. The subtree root is removed from
 /// its parent, and the disconnected tree nodes won't be able to be found via
 /// `wm_tree_find`. Relevant events will be generated.
-void wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot);
+///
+/// Returns the zombie tree node if one is created, or NULL.
+struct wm_tree_node *must_use wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *subroot);
 /// Attach `node` to `parent`. `node` becomes the topmost child of `parent`. If `parent`
 /// is NULL, `node` becomes the root window.
 void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,

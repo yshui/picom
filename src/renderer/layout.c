@@ -44,6 +44,9 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	if (!w->ever_damaged || w->paint_excluded) {
 		goto out;
 	}
+	if (w->win_image == NULL) {
+		goto out;
+	}
 
 	out_layer->scale = (vec2){
 	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X),

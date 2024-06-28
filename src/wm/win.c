@@ -310,13 +310,10 @@ void add_damage_from_win(session_t *ps, const struct win *w) {
 /// Release the images attached to this window
 static inline void win_release_pixmap(backend_t *base, struct win *w) {
 	log_debug("Releasing pixmap of window %#010x (%s)", win_id(w), w->name);
-	assert(w->win_image);
 	if (w->win_image) {
 		xcb_pixmap_t pixmap = XCB_NONE;
 		pixmap = base->ops.release_image(base, w->win_image);
 		w->win_image = NULL;
-		// Bypassing win_set_flags, because `w` might have been destroyed
-		w->flags |= WIN_FLAGS_PIXMAP_NONE;
 		if (pixmap != XCB_NONE) {
 			xcb_free_pixmap(base->c->c, pixmap);
 		}
@@ -346,40 +343,13 @@ static inline void win_release_mask(backend_t *base, struct win *w) {
 	}
 }
 
-static inline bool win_bind_pixmap(struct backend_base *b, struct win *w) {
-	assert(!w->win_image);
-	auto pixmap = x_new_id(b->c);
-	auto e = xcb_request_check(
-	    b->c->c, xcb_composite_name_window_pixmap_checked(b->c->c, win_id(w), pixmap));
-	if (e) {
-		log_error("Failed to get named pixmap for window %#010x(%s)", win_id(w),
-		          w->name);
-		free(e);
-		return false;
-	}
-	log_debug("New named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
-	w->win_image = b->ops.bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual));
-	if (!w->win_image) {
-		log_error("Failed to bind pixmap");
-		xcb_free_pixmap(b->c->c, pixmap);
-		win_set_flags(w, WIN_FLAGS_IMAGE_ERROR);
-		return false;
-	}
-
-	win_clear_flags(w, WIN_FLAGS_PIXMAP_NONE);
-	return true;
-}
-
 void win_release_images(struct backend_base *backend, struct win *w) {
 	// We don't want to decide what we should do if the image we want to
 	// release is stale (do we clear the stale flags or not?) But if we are
 	// not releasing any images anyway, we don't care about the stale flags.
+	assert(w->win_image == NULL || !win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
 
-	if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
-		assert(!win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
-		win_release_pixmap(backend, w);
-	}
-
+	win_release_pixmap(backend, w);
 	win_release_shadow(backend, w);
 	win_release_mask(backend, w);
 }
@@ -568,35 +538,41 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
-	// Not a loop
-	while (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) &&
-	       !win_check_flags_all(w, WIN_FLAGS_IMAGE_ERROR)) {
-		// Image needs to be updated, update it.
-		if (!ps->backend_data) {
-			// We are using legacy backend, nothing to do here.
-			break;
-		}
-
-		if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE)) {
-			// Check to make sure the window is still mapped,
-			// otherwise we won't be able to rebind pixmap after
-			// releasing it, yet we might still need the pixmap for
-			// rendering.
-			if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
-				// Must release images first, otherwise breaks
-				// NVIDIA driver
-				win_release_pixmap(ps->backend_data, w);
-			}
-			win_bind_pixmap(ps->backend_data, w);
-		}
-
-		// break here, loop always run only once
-		break;
+	if (!win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) ||
+	    win_check_flags_all(w, WIN_FLAGS_PIXMAP_ERROR) ||
+	    // We don't need to do anything here for legacy backends
+	    ps->backend_data == NULL) {
+		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+		return;
 	}
 
-	// Clear stale image flags
-	if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE)) {
-		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+	// Image needs to be updated, update it.
+	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+
+	// Check to make sure the window is still mapped, otherwise we won't be able to
+	// rebind pixmap after releasing it, yet we might still need the pixmap for
+	// rendering.
+	auto pixmap = x_new_id(&ps->c);
+	auto e = xcb_request_check(
+	    ps->c.c, xcb_composite_name_window_pixmap_checked(ps->c.c, win_id(w), pixmap));
+	if (e != NULL) {
+		log_debug("Failed to get named pixmap for window %#010x(%s): %s. "
+		          "Retaining its current window image",
+		          win_id(w), w->name, x_strerror(e));
+		free(e);
+		return;
+	}
+
+	log_debug("New named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
+
+	// Must release images first, otherwise breaks NVIDIA driver
+	win_release_pixmap(ps->backend_data, w);
+	w->win_image = ps->backend_data->ops.bind_pixmap(
+	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual));
+	if (!w->win_image) {
+		log_error("Failed to bind pixmap");
+		xcb_free_pixmap(ps->c.c, pixmap);
+		win_set_flags(w, WIN_FLAGS_PIXMAP_ERROR);
 	}
 }
 
@@ -845,9 +821,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 	if (ps->backend_data) {
 		// Only the pixmap needs to be freed and reacquired when mapping.
 		// Shadow image can be preserved.
-		if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
-			win_release_pixmap(ps->backend_data, w);
-		}
+		win_release_pixmap(ps->backend_data, w);
 	} else {
 		assert(!w->win_image);
 		assert(!w->shadow_image);
@@ -858,7 +832,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 
 	// Try again at binding images when the window is mapped next time
 	if (w->state != WSTATE_DESTROYED) {
-		win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
+		win_clear_flags(w, WIN_FLAGS_PIXMAP_ERROR);
 	}
 	assert(w->running_animation == NULL);
 }
@@ -1384,14 +1358,15 @@ void free_win_res(session_t *ps, struct win *w) {
 
 /// Query the Xorg for information about window `win`, and assign a window to `cursor` if
 /// this window should be managed.
-struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
+struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
+                               xcb_get_window_attributes_reply_t *attrs) {
 	static const struct win win_def = {
 	    .frame_opacity = 1.0,
 	    .in_openclose = true,        // set to false after first map is done,
 	                                 // true here because window is just created
-	    .flags = WIN_FLAGS_PIXMAP_NONE,        // updated by
-	                                           // property/attributes/etc
-	                                           // change
+	    .flags = 0,                  // updated by
+	                                 // property/attributes/etc
+	                                 // change
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,
@@ -1421,23 +1396,18 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 
 	xcb_window_t wid = wm_ref_win_id(cursor);
 	log_debug("Managing window %#010x", wid);
-	xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c.c, wid);
-	xcb_get_window_attributes_reply_t *a =
-	    xcb_get_window_attributes_reply(ps->c.c, acookie, NULL);
-	if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
+	if (attrs->map_state == XCB_MAP_STATE_UNVIEWABLE) {
 		// Failed to get window attributes or geometry probably means
 		// the window is gone already. Unviewable means the window is
 		// already reparented elsewhere.
 		// BTW, we don't care about Input Only windows, except for
 		// stacking proposes, so we need to keep track of them still.
-		free(a);
 		return NULL;
 	}
 
-	if (a->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
+	if (attrs->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
 		// No need to manage this window, but we still keep it on the
 		// window stack
-		free(a);
 		return NULL;
 	}
 
@@ -1448,16 +1418,14 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	// We only need to initialize the part that are not initialized
 	// by map_win
 	*new = win_def;
-	new->a = *a;
+	new->a = *attrs;
 	new->shadow_opacity = ps->o.shadow_opacity;
 	pixman_region32_init(&new->bounding_shape);
-
-	free(a);
 
 	xcb_generic_error_t *e;
 	auto g = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, wid), &e);
 	if (!g) {
-		log_error_x_error(e, "Failed to get geometry of window %#010x", wid);
+		log_debug("Failed to get geometry of window %#010x: %s", wid, x_strerror(e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1478,7 +1446,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	    ps->c.c, xcb_damage_create_checked(ps->c.c, new->damage, wid,
 	                                       XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
 	if (e) {
-		log_error_x_error(e, "Failed to create damage");
+		log_debug("Failed to create damage for window %#010x: %s", wid, x_strerror(e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1490,12 +1458,13 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor) {
 	if (!ps->o.use_ewmh_active_win) {
 		frame_event_mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
 	}
-	xcb_change_window_attributes(ps->c.c, wid, XCB_CW_EVENT_MASK,
-	                             (const uint32_t[]){frame_event_mask});
+	x_set_error_action_ignore(
+	    &ps->c, xcb_change_window_attributes(ps->c.c, wid, XCB_CW_EVENT_MASK,
+	                                         (const uint32_t[]){frame_event_mask}));
 
 	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
-		xcb_shape_select_input(ps->c.c, wid, 1);
+		x_set_error_action_ignore(&ps->c, xcb_shape_select_input(ps->c.c, wid, 1));
 	}
 
 	new->pictfmt = x_get_pictform_for_visual(&ps->c, new->a.visual);
@@ -1688,17 +1657,17 @@ void win_set_focused(session_t *ps, struct win *w) {
 	}
 
 	auto old_active_win = wm_active_win(ps->wm);
-	if (w->is_ewmh_focused) {
+	if (w->is_focused) {
 		assert(old_active_win == w);
 		return;
 	}
 
 	wm_set_active_win(ps->wm, w);
-	w->is_ewmh_focused = true;
+	w->is_focused = true;
 
 	if (old_active_win) {
-		assert(old_active_win->is_ewmh_focused);
-		old_active_win->is_ewmh_focused = false;
+		assert(old_active_win->is_focused);
+		old_active_win->is_focused = false;
 		win_on_focus_change(ps, old_active_win);
 	}
 	win_on_focus_change(ps, w);
@@ -2029,10 +1998,17 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 
 bool win_process_animation_and_state_change(struct session *ps, struct win *w, double delta_t) {
 	// If the window hasn't ever been damaged yet, it won't be rendered in this frame.
-	// And if it is also unmapped/destroyed, it won't receive damage events. In this
-	// case we can skip its animation. For mapped windows, we need to provisionally
-	// start animation, because its first damage event might come a bit late.
-	bool will_never_render = !w->ever_damaged && w->state != WSTATE_MAPPED;
+	// Or if it doesn't have a image bound, it won't be rendered either. (This can
+	// happen is a window is destroyed during a backend reset. Backend resets releases
+	// all images, and if a window is freed during that, its image cannot be
+	// reacquired.)
+	//
+	// If the window won't be rendered, and it is also unmapped/destroyed, it won't
+	// receive damage events or reacquire an image. In this case we can skip its
+	// animation. For mapped windows, we need to provisionally start animation,
+	// because its first damage event might come a bit late.
+	bool will_never_render =
+	    (!w->ever_damaged || w->win_image == NULL) && w->state != WSTATE_MAPPED;
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
 		bool state_changed = w->previous.state != w->state;
@@ -2332,5 +2308,5 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w) {
  * settings
  */
 bool win_is_focused_raw(const struct win *w) {
-	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_ewmh_focused;
+	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused;
 }

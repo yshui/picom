@@ -265,6 +265,15 @@ static void wm_reap_orphans(struct wm *wm) {
 	}
 }
 
+/// Move `from->win` to `to->win`, update `win->tree_ref`.
+static void wm_move_win(struct wm_tree_node *from, struct wm_tree_node *to) {
+	if (from->win != NULL) {
+		from->win->tree_ref = (struct wm_ref *)&to->siblings;
+	}
+	to->win = from->win;
+	from->win = NULL;
+}
+
 void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	struct wm_tree_node *node = wm_tree_find(&wm->tree, wid);
 	if (!node) {
@@ -279,7 +288,11 @@ void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	if (!list_is_empty(&node->children)) {
 		log_error("Window %#010x is destroyed but it still has children", wid);
 	}
-	wm_tree_detach(&wm->tree, node);
+	auto zombie = wm_tree_detach(&wm->tree, node);
+	assert(zombie != NULL || node->win == NULL);
+	if (zombie != NULL) {
+		wm_move_win(node, zombie);
+	}
 	// There could be an in-flight query tree request for this window, we orphan it.
 	// It will be reaped when all query tree requests are completed. (Or right now if
 	// the tree is already consistent.)
@@ -315,7 +328,11 @@ void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent) {
 		return;
 	}
 
-	wm_tree_detach(&wm->tree, window);
+	auto zombie = wm_tree_detach(&wm->tree, window);
+	assert(zombie != NULL || window->win == NULL);
+	if (zombie != NULL) {
+		wm_move_win(window, zombie);
+	}
 
 	// Attaching `window` to `new_parent` will change the children list of
 	// `new_parent`, if there is a pending query tree request for `new_parent`, doing
@@ -390,7 +407,13 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 
 		// If child node exists, it must be a previously orphaned node.
 		assert(child_node->parent == &wm->orphan_root);
-		wm_tree_detach(&wm->tree, child_node);
+		auto zombie = wm_tree_detach(&wm->tree, child_node);
+		if (zombie != NULL) {
+			// This only happens if `child_node` is not orphaned, which means
+			// things are already going wrong. (the assert above would fail
+			// too).
+			wm_tree_reap_zombie(zombie);
+		}
 		wm_tree_attach(&wm->tree, child_node, node);
 	}
 
@@ -463,7 +486,12 @@ static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, stru
 			assert(false);
 		}
 
-		wm_tree_detach(&wm->tree, new);
+		auto zombie = wm_tree_detach(&wm->tree, new);
+		if (zombie != NULL) {
+			// This only happens if `new` is not orphaned, which means things
+			// are already going wrong.
+			wm_tree_reap_zombie(zombie);
+		}
 		// Need to bump the generation number, as `new` is actually an entirely
 		// new window, just reusing the same window ID.
 		new->id.gen = wm->tree.gen++;
