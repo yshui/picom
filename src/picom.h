@@ -24,12 +24,6 @@
 #include "wm/win.h"
 #include "x.h"
 
-enum root_flags {
-	ROOT_FLAGS_SCREEN_CHANGE = 1,        // Received RandR screen change notify, we
-	                                     // use this to track refresh rate changes
-	ROOT_FLAGS_CONFIGURED = 2        // Received configure notify on the root window
-};
-
 // == Functions ==
 // TODO(yshui) move static inline functions that are only used in picom.c, into picom.c
 
@@ -43,7 +37,7 @@ void queue_redraw(session_t *ps);
 
 void discard_pending(session_t *ps, uint32_t sequence);
 
-void set_root_flags(session_t *ps, uint64_t flags);
+void configure_root(session_t *ps);
 
 void quit(session_t *ps);
 

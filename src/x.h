@@ -17,6 +17,7 @@
 #include "log.h"
 #include "region.h"
 #include "utils/kernel.h"
+#include "utils/list.h"
 
 typedef struct session session_t;
 struct atom;
@@ -44,17 +45,24 @@ typedef struct winprop_info {
 	uint32_t length;
 } winprop_info_t;
 
-enum pending_reply_action {
+enum x_error_action {
 	PENDING_REPLY_ACTION_IGNORE,
 	PENDING_REPLY_ACTION_ABORT,
 	PENDING_REPLY_ACTION_DEBUG_ABORT,
 };
 
-typedef struct pending_reply {
-	struct pending_reply *next;
+/// Represents a X request we sent that might error.
+struct pending_x_error {
 	unsigned long sequence;
-	enum pending_reply_action action;
-} pending_reply_t;
+	enum x_error_action action;
+
+	// Debug information, where in the code was this request sent.
+	const char *func;
+	const char *file;
+	int line;
+
+	struct list_node siblings;
+};
 
 struct x_connection {
 	// Public fields
@@ -68,11 +76,19 @@ struct x_connection {
 	int screen;
 
 	// Private fields
-	/// Head pointer of the error ignore linked list.
-	pending_reply_t *pending_reply_head;
-	/// Pointer to the <code>next</code> member of tail element of the error
-	/// ignore linked list.
-	pending_reply_t **pending_reply_tail;
+	/// The error handling list.
+	struct list_node pending_x_errors;
+	/// The list of pending async requests that we have
+	/// yet to receive a reply for.
+	struct list_node pending_x_requests;
+	/// A message, either an event or a reply, that is currently being held, because
+	/// there are messages of the opposite type with lower sequence numbers that we
+	/// need to return first.
+	xcb_raw_generic_event_t *message_on_hold;
+	/// The sequence number of the last message returned by
+	/// `x_poll_for_message`. Used for sequence number overflow
+	/// detection.
+	uint32_t last_sequence;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
@@ -133,51 +149,65 @@ static inline uint32_t x_new_id(struct x_connection *c) {
 	return ret;
 }
 
-static void set_reply_action(struct x_connection *c, uint32_t sequence,
-                             enum pending_reply_action action) {
-	auto i = cmalloc(pending_reply_t);
+/// Set error handler for a specific X request.
+///
+/// @param c X connection
+/// @param sequence sequence number of the X request to set error handler for
+/// @param action action to take when error occurs
+static inline void
+x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
+                   const char *func, const char *file, int line) {
+	auto i = cmalloc(struct pending_x_error);
 
 	i->sequence = sequence;
-	i->next = 0;
 	i->action = action;
-	*c->pending_reply_tail = i;
-	c->pending_reply_tail = &i->next;
+	i->func = func;
+	i->file = file;
+	i->line = line;
+	list_insert_before(&c->pending_x_errors, &i->siblings);
 }
 
-/**
- * Ignore X errors caused by given X request.
- */
-static inline void attr_unused set_ignore_cookie(struct x_connection *c,
-                                                 xcb_void_cookie_t cookie) {
-	set_reply_action(c, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
-}
+/// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_IGNORE`
+#define x_set_error_action_ignore(c, cookie)                                             \
+	x_set_error_action(c, (cookie).sequence, PENDING_REPLY_ACTION_IGNORE, __func__,  \
+	                   __FILE__, __LINE__)
 
-static inline void attr_unused set_cant_fail_cookie(struct x_connection *c,
-                                                    xcb_void_cookie_t cookie) {
-	set_reply_action(c, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
-}
+/// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_ABORT`
+#define x_set_error_action_abort(c, cookie)                                              \
+	x_set_error_action(c, (cookie).sequence, PENDING_REPLY_ACTION_ABORT, __func__,   \
+	                   __FILE__, __LINE__)
 
-static inline void attr_unused set_debug_cant_fail_cookie(struct x_connection *c,
-                                                          xcb_void_cookie_t cookie) {
+/// Convenience wrapper for x_set_error_action with action
+/// `PENDING_REPLY_ACTION_DEBUG_ABORT`
 #ifndef NDEBUG
-	set_reply_action(c, cookie.sequence, PENDING_REPLY_ACTION_DEBUG_ABORT);
+#define x_set_error_action_debug_abort(c, cookie)                                        \
+	x_set_error_action(c, (cookie).sequence, PENDING_REPLY_ACTION_DEBUG_ABORT,       \
+	                   __func__, __FILE__, __LINE__)
 #else
-	(void)c;
-	(void)cookie;
+#define x_set_error_action_debug_abort(c, cookie)                                        \
+	((void)(c));                                                                     \
+	((void)(cookie))
 #endif
-}
+
+struct x_async_request_base {
+	struct list_node siblings;
+	/// The callback function to call when the reply is received. If `reply_or_error`
+	/// is NULL, it means the X connection is closed while waiting for the reply.
+	void (*callback)(struct x_connection *, struct x_async_request_base *,
+	                 xcb_raw_generic_event_t *reply_or_error);
+	/// The sequence number of the X request.
+	unsigned int sequence;
+};
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
-	pending_reply_t *next = NULL;
-	for (auto ign = c->pending_reply_head; ign; ign = next) {
-		next = ign->next;
-
-		free(ign);
+	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
+		list_remove(&i->siblings);
+		free(i);
 	}
-
-	// Reset head and tail
-	c->pending_reply_head = NULL;
-	c->pending_reply_tail = &c->pending_reply_head;
+	list_foreach_safe(struct x_async_request_base, i, &c->pending_x_requests, siblings) {
+		list_remove(&i->siblings);
+		i->callback(c, i, NULL);
+	}
 
 	XSetErrorHandler(c->previous_xerror_handler);
 }
@@ -187,18 +217,6 @@ static inline void attr_unused free_x_connection(struct x_connection *c) {
 /// Note this function doesn't take ownership of the Display, the caller is still
 /// responsible for closing it after `free_x_connection` is called.
 void x_connection_init(struct x_connection *c, Display *dpy);
-
-/// Discard queued pending replies.
-///
-/// We have received reply with sequence number `sequence`, which means all pending
-/// replies with sequence number less than `sequence` will never be received. So discard
-/// them.
-void x_discard_pending(struct x_connection *c, uint32_t sequence);
-
-/// Handle X errors.
-///
-/// This function logs X errors, or aborts the program based on severity of the error.
-void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev);
 
 /**
  * Get a specific attribute of a window.
@@ -244,7 +262,8 @@ static inline void x_discard_events(struct x_connection *c) {
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_atom_t aprop);
+xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid,
+                                 xcb_atom_t aprop, bool *exists);
 
 /**
  * Get the value of a text property of a window.
@@ -330,9 +349,10 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p);
 /**
  * Log a X11 error
  */
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code);
-void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
-                 uint16_t minor, uint8_t error_code);
+void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
+                        uint8_t error_code, const char *func);
+#define x_print_error(serial, major, minor, error_code)                                  \
+	x_print_error_impl(serial, major, minor, error_code, __func__)
 
 /*
  * Convert a xcb_generic_error_t to a string that describes the error
@@ -399,8 +419,8 @@ xcb_visualid_t x_get_visual_for_depth(xcb_screen_t *screen, uint8_t depth);
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std);
 
-/// Populates a `struct x_monitors` with the current monitor configuration.
-void x_update_monitors(struct x_connection *, struct x_monitors *);
+/// Populates a `struct x_monitors` with the current monitor configuration asynchronously.
+void x_update_monitors_async(struct x_connection *, struct x_monitors *);
 /// Free memory allocated for a `struct x_monitors`.
 void x_free_monitor_info(struct x_monitors *);
 
@@ -408,3 +428,24 @@ uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);
 
 /// Ask X server to send us a notification for the next end of vblank.
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc);
+
+/// Register an X request as async request. Its reply will be processed as part of the
+/// event stream. i.e. the registered callback will only be called when all preceding
+/// events have been retrieved via `x_poll_for_event`.
+/// `req` store information about the request, including the callback. The callback is
+/// responsible for freeing `req`.
+static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
+	list_insert_before(&c->pending_x_requests, &req->siblings);
+}
+
+/// Cancel an async request.
+void x_cancel_request(struct x_connection *c, struct x_async_request_base *req);
+
+/// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
+/// machinery for handling async replies. Calling `xcb_poll_for_event` directly will
+/// cause replies to async requests to be lost, so that should never be called.
+xcb_generic_event_t *x_poll_for_event(struct x_connection *c);
+
+static inline bool x_has_pending_requests(struct x_connection *c) {
+	return !list_is_empty(&c->pending_x_requests);
+}

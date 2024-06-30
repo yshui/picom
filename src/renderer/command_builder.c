@@ -51,8 +51,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	if (w->corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
-	region_scale_floor(&cmd->target_mask, layer->window.origin, layer->scale);
-	region_scale_floor(&cmd->opaque_region, layer->window.origin, layer->scale);
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 	pixman_region32_intersect(&cmd->opaque_region, &cmd->opaque_region, &crop);
 	cmd->op = BACKEND_COMMAND_BLIT;
@@ -82,7 +82,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd -= 1;
 
 	pixman_region32_copy(&cmd->target_mask, frame_region);
-	region_scale_floor(&cmd->target_mask, cmd->origin, layer->scale);
+	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 	pixman_region32_init(&cmd->opaque_region);
 	cmd->op = BACKEND_COMMAND_BLIT;
@@ -115,7 +115,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	                           layer->shadow.origin.x, layer->shadow.origin.y,
 	                           (unsigned)shadow_size_scaled.width,
 	                           (unsigned)shadow_size_scaled.height);
-	log_trace("Calculate shadow for %#010x (%s)", w->base.id, w->name);
+	log_trace("Calculate shadow for %#010x (%s)", win_id(w), w->name);
 	log_region(TRACE, &cmd->target_mask);
 	if (!wintype_options[w->window_type].full_shadow) {
 		// We need to not draw under the window
@@ -140,9 +140,12 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		}
 	}
 	log_region(TRACE, &cmd->target_mask);
-	if (monitors && w->randr_monitor >= 0 && w->randr_monitor < monitors->count) {
-		pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask,
-		                          &monitors->regions[w->randr_monitor]);
+	if (monitors) {
+		auto monitor_index = win_find_monitor(monitors, w);
+		if (monitor_index >= 0) {
+			pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask,
+			                          &monitors->regions[monitor_index]);
+		}
 	}
 	log_region(TRACE, &cmd->target_mask);
 	if (w->corner_radius > 0) {
@@ -184,7 +187,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	} else {
 		return 0;
 	}
-	region_scale_floor(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
 
 	scoped_region_t crop = region_from_box(layer->crop);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);

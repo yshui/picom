@@ -360,15 +360,10 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	// we never actually use that capability anywhere.
 	assert(source->y_inverted);
 
-	GLuint vao[2];
-	glGenVertexArrays(2, vao);
-	GLuint bo[4];
-	glGenBuffers(4, bo);
-
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	glBindVertexArray(vao[0]);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBindVertexArray(gd->vertex_array_objects[0]);
+	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[1]);
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
 	             indices, GL_STREAM_DRAW);
@@ -378,9 +373,9 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
 	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 
-	glBindVertexArray(vao[1]);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[3]);
+	glBindVertexArray(gd->vertex_array_objects[1]);
+	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[2]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[3]);
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord_resized) * nrects_resized * 16,
 	             coord_resized, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER,
@@ -396,13 +391,15 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 
 	auto target_fbo = gl_bind_image_to_fbo(gd, (image_handle)target);
 	if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
-		ret = gl_dual_kawase_blur(args->opacity, bctx, args->source_mask, vao,
-		                          vao_nelems, source, gd->samplers[GL_SAMPLER_BLUR],
-		                          target_fbo, gd->default_mask_texture);
+		ret = gl_dual_kawase_blur(args->opacity, bctx, args->source_mask,
+		                          gd->vertex_array_objects, vao_nelems, source,
+		                          gd->samplers[GL_SAMPLER_BLUR], target_fbo,
+		                          gd->default_mask_texture);
 	} else {
-		ret = gl_kernel_blur(args->opacity, bctx, args->source_mask, vao,
-		                     vao_nelems, source, gd->samplers[GL_SAMPLER_BLUR],
-		                     target_fbo, gd->default_mask_texture);
+		ret = gl_kernel_blur(args->opacity, bctx, args->source_mask,
+		                     gd->vertex_array_objects, vao_nelems, source,
+		                     gd->samplers[GL_SAMPLER_BLUR], target_fbo,
+		                     gd->default_mask_texture);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -410,11 +407,25 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 0);
+
+	// Invalidate buffer data
+	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, NULL, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6, NULL,
+	             GL_STREAM_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[2]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[3]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord_resized) * nrects_resized * 16,
+	             NULL, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+	             (long)sizeof(*indices_resized) * nrects_resized * 6, NULL,
+	             GL_STREAM_DRAW);
+
+	// Cleanup vertex array states
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(4, bo);
 	glBindVertexArray(0);
-	glDeleteVertexArrays(2, vao);
 	glUseProgram(0);
 
 	free(indices);

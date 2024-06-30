@@ -1,6 +1,7 @@
 {
   inputs = {
     flake-utils.url = github:numtide/flake-utils;
+    nixpkgs.url = github:nixos/nixpkgs;
     git-ignore-nix = {
       url = github:hercules-ci/gitignore.nix/master;
       inputs.nixpkgs.follows = "nixpkgs";
@@ -14,6 +15,8 @@
     ...
   }:
     flake-utils.lib.eachDefaultSystem (system: let
+      # like lib.lists.remove, but takes a list of elements to remove
+      removeFromList = toRemove: list: pkgs.lib.foldl (l: e: pkgs.lib.remove e l) list toRemove;
       overlay = self: super: {
         picom = super.picom.overrideAttrs (oldAttrs: rec {
           version = "11";
@@ -23,10 +26,11 @@
               self.pcre2
               self.xorg.xcbutil
               self.libepoxy
-            ]
-            ++ self.lib.remove self.xorg.libXinerama (
-              self.lib.remove self.pcre oldAttrs.buildInputs
-            );
+            ] ++ (removeFromList [
+              self.xorg.libXinerama
+              self.xorg.libXext
+              self.pcre
+            ]  oldAttrs.buildInputs);
           src = git-ignore-nix.lib.gitignoreSource ./.;
         });
       };
@@ -59,8 +63,8 @@
           # Workaround a NixOS limitation on sanitizers:
           # See: https://github.com/NixOS/nixpkgs/issues/287763
           export LD_LIBRARY_PATH+=":/run/opengl-driver/lib"
-          export UBSAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1"
-          export ASAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1"
+          export UBSAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1:print_stacktrace=1"
+          export ASAN_OPTIONS="disable_coredump=0:unmap_shadow_on_exit=1:abort_on_error=1"
         '';
       });
     in rec {

@@ -18,7 +18,7 @@ struct c2_window_state {
 	struct c2_property_value *values;
 };
 struct atom;
-struct managed_win;
+struct win;
 
 typedef void (*c2_userdata_free)(void *);
 c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data);
@@ -50,10 +50,10 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
                             xcb_connection_t *c, xcb_window_t client_win,
                             xcb_window_t frame_win);
 
-bool c2_match(struct c2_state *state, const struct managed_win *w,
-              const c2_lptr_t *condlst, void **pdata);
-bool c2_match_one(struct c2_state *state, const struct managed_win *w,
-                  const c2_lptr_t *condlst, void **pdata);
+bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
+              void **pdata);
+bool c2_match_one(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
+                  void **pdata);
 
 bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, c2_lptr_t *list);
 typedef bool (*c2_list_foreach_cb_t)(const c2_lptr_t *cond, void *data);

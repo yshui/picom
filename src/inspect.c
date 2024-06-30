@@ -12,6 +12,7 @@
 #include "inspect.h"
 
 #include "atom.h"
+#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "config.h"
@@ -22,22 +23,33 @@
 #include "wm/win.h"
 #include "x.h"
 
-static struct managed_win *
+static struct win *
 setup_window(struct x_connection *c, struct atom *atoms, struct options *options,
-             struct c2_state *state, xcb_window_t target) {
+             struct wm *wm, struct c2_state *state, xcb_window_t target) {
 	// Pretend we are the compositor, and build up the window state
-	struct managed_win *w = ccalloc(1, struct managed_win);
+	auto cursor = wm_find(wm, target);
+	if (cursor == NULL) {
+		log_fatal("Could not find window %#010x", target);
+		wm_free(wm);
+		return NULL;
+	}
+
+	auto toplevel = wm_ref_toplevel_of(wm, cursor);
+	BUG_ON_NULL(toplevel);
+	struct win *w = ccalloc(1, struct win);
 	w->state = WSTATE_MAPPED;
-	w->base.id = target;
-	w->client_win = win_get_client_window(c, NULL, atoms, w);
+	w->tree_ref = toplevel;
+	log_debug("Toplevel is %#010x", wm_ref_win_id(toplevel));
+	log_debug("Client is %#010x", win_client_id(w, true));
 	win_update_wintype(c, atoms, w);
-	win_update_frame_extents(c, atoms, w, w->client_win, options->frame_opacity);
+	win_update_frame_extents(c, atoms, w, win_client_id(w, /*fallback_to_self=*/true),
+	                         options->frame_opacity);
 	// TODO(yshui) get leader
 	win_update_name(c, atoms, w);
 	win_update_class(c, atoms, w);
 	win_update_role(c, atoms, w);
 
-	auto geometry_reply = XCB_AWAIT(xcb_get_geometry, c->c, w->base.id);
+	auto geometry_reply = XCB_AWAIT(xcb_get_geometry, c->c, win_id(w));
 	w->g = (struct win_geometry){
 	    .x = geometry_reply->x,
 	    .y = geometry_reply->y,
@@ -54,8 +66,10 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 
 	// Determine if the window is focused
 	xcb_window_t wid = XCB_NONE;
+	bool exists;
 	if (options->use_ewmh_active_win) {
-		wid_get_prop_window(c, c->screen_info->root, atoms->a_NET_ACTIVE_WINDOW);
+		wid_get_prop_window(c, c->screen_info->root, atoms->a_NET_ACTIVE_WINDOW,
+		                    &exists);
 	} else {
 		// Determine the currently focused window so we can apply appropriate
 		// opacity on it
@@ -67,17 +81,18 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 			free(reply);
 		}
 	}
-	if (wid == w->base.id || wid == w->client_win) {
+	if (wid == win_id(w) || wid == win_client_id(w, /*fallback_to_self=*/false)) {
 		w->focused = true;
 	}
 
-	auto attributes_reply = XCB_AWAIT(xcb_get_window_attributes, c->c, w->base.id);
+	auto attributes_reply = XCB_AWAIT(xcb_get_window_attributes, c->c, win_id(w));
 	w->a = *attributes_reply;
 	w->pictfmt = x_get_pictform_for_visual(c, w->a.visual);
 	free(attributes_reply);
 
 	c2_window_state_init(state, &w->c2_state);
-	c2_window_state_update(state, &w->c2_state, c->c, w->client_win, w->base.id);
+	c2_window_state_update(state, &w->c2_state, c->c,
+	                       win_client_id(w, /*fallback_to_self=*/true), win_id(w));
 	return w;
 }
 
@@ -139,7 +154,7 @@ xcb_window_t select_window(struct x_connection *c) {
 
 struct c2_match_state {
 	struct c2_state *state;
-	struct managed_win *w;
+	struct win *w;
 	bool print_value;
 };
 
@@ -176,19 +191,51 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	}
 
 	// Parse all of the rest command line options
+	options.backend = backend_find("dummy");
 	if (!get_cfg(&options, argc, argv)) {
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
 		return 1;
 	}
 
-	auto atoms attr_unused = init_atoms(c.c);
+	auto atoms = init_atoms(c.c);
 	auto state = c2_state_new(atoms);
 	options_postprocess_c2_lists(state, &c, &options);
 
+	struct wm *wm = wm_new();
+
+	wm_import_start(wm, &c, atoms, c.screen_info->root, NULL);
+	// Process events until the window tree is consistent
+	while (x_has_pending_requests(&c)) {
+		auto ev = x_poll_for_event(&c);
+		if (ev == NULL) {
+			continue;
+		}
+		switch (ev->response_type) {
+		case XCB_CREATE_NOTIFY:;
+			auto create = (xcb_create_notify_event_t *)ev;
+			auto parent = wm_find(wm, create->parent);
+			wm_import_start(wm, &c, atoms,
+			                ((xcb_create_notify_event_t *)ev)->window, parent);
+			break;
+		case XCB_DESTROY_NOTIFY:
+			wm_destroy(wm, ((xcb_destroy_notify_event_t *)ev)->window);
+			break;
+		case XCB_REPARENT_NOTIFY:;
+			auto reparent = (xcb_reparent_notify_event_t *)ev;
+			wm_reparent(wm, reparent->window, reparent->parent);
+			break;
+		default:
+			// Ignore ConfigureNotify and CirculateNotify, because we don't
+			// use stacking order for window rules.
+			break;
+		}
+		free(ev);
+	}
+
 	auto target = select_window(&c);
 	log_info("Target window: %#x", target);
-	auto w = setup_window(&c, atoms, &options, state, target);
+	auto w = setup_window(&c, atoms, &options, wm, state, target);
 	struct c2_match_state match_state = {
 	    .state = state,
 	    .w = w,
@@ -249,6 +296,8 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	free(w->role);
 	c2_window_state_destroy(state, &w->c2_state);
 	free(w);
+
+	wm_free(wm);
 
 	log_deinit_tls();
 	c2_state_free(state);

@@ -8,14 +8,6 @@
 
 #include "damage.h"
 
-static inline bool attr_unused layer_key_eq(const struct layer_key *a,
-                                            const struct layer_key *b) {
-	if (!a->generation || !b->generation) {
-		return false;
-	}
-	return a->window == b->window && a->generation == b->generation;
-}
-
 /// Compare two layers that contain the same window, return if they are the "same". Same
 /// means these two layers are render in the same way at the same position, with the only
 /// possible differences being the contents inside the window.
@@ -105,7 +97,7 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	if (cmd1->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 		layout_manager_collect_window_damage(lm, layer_index, buffer_age,
 		                                     scratch_region);
-		region_scale_floor(scratch_region, cmd2->origin, cmd2->blit.scale);
+		region_scale(scratch_region, cmd2->origin, cmd2->blit.scale);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd1->target_mask);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd2->target_mask);
 		pixman_region32_union(damage, damage, scratch_region);
@@ -164,7 +156,7 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 			auto layout = layout_manager_layout(lm, l);
 			dynarr_foreach(layout->layers, layer) {
 				log_trace("\t%#010x %dx%d+%dx%d (prev %d, next %d)",
-				          layer->key.window, layer->window.size.width,
+				          layer->key.x, layer->window.size.width,
 				          layer->window.size.height,
 				          layer->window.origin.x, layer->window.origin.y,
 				          layer->prev_rank, layer->next_rank);
@@ -265,9 +257,9 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 			break;
 		}
 
-		assert(layer_key_eq(&past_layer->key, &curr_layer->key));
-		log_trace("%#010x == %#010x %s", past_layer->key.window,
-		          curr_layer->key.window, curr_layer->win->name);
+		assert(wm_treeid_eq(past_layer->key, curr_layer->key));
+		log_trace("%#010x == %#010x %s", past_layer->key.x, curr_layer->key.x,
+		          curr_layer->win->name);
 
 		if (!layer_compare(past_layer, past_layer_cmd, curr_layer, curr_layer_cmd)) {
 			region_union_render_layer(damage, curr_layer, curr_layer_cmd);

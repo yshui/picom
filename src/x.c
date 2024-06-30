@@ -18,6 +18,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xcb_renderutil.h>
+#include <xcb/xcb_util.h>
+#include <xcb/xcbext.h>
 #include <xcb/xfixes.h>
 
 #include "atom.h"
@@ -30,6 +32,177 @@
 #include "x.h"
 
 // === Error handling ===
+
+/// Discard pending error handlers.
+///
+/// We have received reply with sequence number `sequence`, which means all pending
+/// replies with sequence number strictly less than `sequence` will never be received. So
+/// discard them.
+static void x_discard_pending_errors(struct x_connection *c, uint32_t sequence) {
+	if (sequence < c->last_sequence) {
+		// Overflown, drop from `pending_x_errors` until its sequence number
+		// decreases.
+		log_debug("X sequence number overflown, %u -> %u", c->last_sequence, sequence);
+		list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
+			if (sequence >= i->sequence) {
+				break;
+			}
+			list_remove(&i->siblings);
+			free(i);
+		}
+	}
+	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
+		if (sequence <= i->sequence) {
+			break;
+		}
+		list_remove(&i->siblings);
+		free(i);
+	}
+}
+
+enum {
+	XSyncBadCounter = 0,
+	XSyncBadAlarm = 1,
+	XSyncBadFence = 2,
+};
+
+/// Convert a X11 error to string
+///
+/// @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+///         for multiple calls to this function,
+static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
+                                          uint16_t minor, uint8_t error_code) {
+	session_t *const ps = ps_g;
+
+	int o = 0;
+	const char *name = "Unknown";
+
+#define CASESTRRET(s)                                                                    \
+	case s: name = #s; break
+
+#define CASESTRRET2(s)                                                                   \
+	case XCB_##s: name = #s; break
+
+	// TODO(yshui) separate error code out from session_t
+	o = error_code - ps->xfixes_error;
+	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
+
+	o = error_code - ps->damage_error;
+	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
+
+	o = error_code - ps->render_error;
+	switch (o) {
+		CASESTRRET2(RENDER_PICT_FORMAT);
+		CASESTRRET2(RENDER_PICTURE);
+		CASESTRRET2(RENDER_PICT_OP);
+		CASESTRRET2(RENDER_GLYPH_SET);
+		CASESTRRET2(RENDER_GLYPH);
+	}
+
+	if (ps->glx_exists) {
+		o = error_code - ps->glx_error;
+		switch (o) {
+			CASESTRRET2(GLX_BAD_CONTEXT);
+			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
+			CASESTRRET2(GLX_BAD_DRAWABLE);
+			CASESTRRET2(GLX_BAD_PIXMAP);
+			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
+			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
+			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
+			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
+			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
+			CASESTRRET2(GLX_BAD_FB_CONFIG);
+			CASESTRRET2(GLX_BAD_PBUFFER);
+			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
+			CASESTRRET2(GLX_BAD_WINDOW);
+			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
+		}
+	}
+
+	if (ps->xsync_exists) {
+		o = error_code - ps->xsync_error;
+		switch (o) {
+			CASESTRRET(XSyncBadCounter);
+			CASESTRRET(XSyncBadAlarm);
+			CASESTRRET(XSyncBadFence);
+		}
+	}
+
+	switch (error_code) {
+		CASESTRRET2(ACCESS);
+		CASESTRRET2(ALLOC);
+		CASESTRRET2(ATOM);
+		CASESTRRET2(COLORMAP);
+		CASESTRRET2(CURSOR);
+		CASESTRRET2(DRAWABLE);
+		CASESTRRET2(FONT);
+		CASESTRRET2(G_CONTEXT);
+		CASESTRRET2(ID_CHOICE);
+		CASESTRRET2(IMPLEMENTATION);
+		CASESTRRET2(LENGTH);
+		CASESTRRET2(MATCH);
+		CASESTRRET2(NAME);
+		CASESTRRET2(PIXMAP);
+		CASESTRRET2(REQUEST);
+		CASESTRRET2(VALUE);
+		CASESTRRET2(WINDOW);
+	}
+
+#undef CASESTRRET
+#undef CASESTRRET2
+
+	thread_local static char buffer[256];
+	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
+	         error_code, name, major, minor, serial);
+	return buffer;
+}
+
+void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
+                        uint8_t error_code, const char *func) {
+	if (unlikely(LOG_LEVEL_DEBUG >= log_get_level_tls())) {
+		log_printf(tls_logger, LOG_LEVEL_DEBUG, func, "%s",
+		           x_error_code_to_string(serial, major, minor, error_code));
+	}
+}
+
+/// Handle X errors.
+///
+/// This function logs X errors, or aborts the program based on severity of the error.
+static void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
+	x_discard_pending_errors(c, ev->full_sequence);
+	struct pending_x_error *first_error_action = NULL;
+	if (!list_is_empty(&c->pending_x_errors)) {
+		first_error_action =
+		    list_entry(c->pending_x_errors.next, struct pending_x_error, siblings);
+	}
+	if (first_error_action != NULL && first_error_action->sequence == ev->full_sequence) {
+		if (first_error_action->action != PENDING_REPLY_ACTION_IGNORE) {
+			log_error("X error for request in %s at %s:%d: %s",
+			          first_error_action->func, first_error_action->file,
+			          first_error_action->line,
+			          x_error_code_to_string(ev->full_sequence, ev->major_code,
+			                                 ev->minor_code, ev->error_code));
+		} else {
+			log_debug("Expected X error for request in %s at %s:%d: %s",
+			          first_error_action->func, first_error_action->file,
+			          first_error_action->line,
+			          x_error_code_to_string(ev->full_sequence, ev->major_code,
+			                                 ev->minor_code, ev->error_code));
+		}
+		switch (first_error_action->action) {
+		case PENDING_REPLY_ACTION_ABORT:
+			log_fatal("An unrecoverable X error occurred, "
+			          "aborting...");
+			abort();
+		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
+		case PENDING_REPLY_ACTION_IGNORE: break;
+		}
+		return;
+	}
+	log_warn("Stray X error: %s",
+	         x_error_code_to_string(ev->full_sequence, ev->major_code, ev->minor_code,
+	                                ev->error_code));
+}
 
 /**
  * Xlib error handler function.
@@ -50,37 +223,6 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
-void x_discard_pending(struct x_connection *c, uint32_t sequence) {
-	while (c->pending_reply_head && sequence > c->pending_reply_head->sequence) {
-		auto next = c->pending_reply_head->next;
-		free(c->pending_reply_head);
-		c->pending_reply_head = next;
-	}
-	if (!c->pending_reply_head) {
-		c->pending_reply_tail = &c->pending_reply_head;
-	}
-}
-
-void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
-	x_discard_pending(c, ev->full_sequence);
-	if (c->pending_reply_head && c->pending_reply_head->sequence == ev->full_sequence) {
-		if (c->pending_reply_head->action != PENDING_REPLY_ACTION_IGNORE) {
-			x_log_error(LOG_LEVEL_ERROR, ev->full_sequence, ev->major_code,
-			            ev->minor_code, ev->error_code);
-		}
-		switch (c->pending_reply_head->action) {
-		case PENDING_REPLY_ACTION_ABORT:
-			log_fatal("An unrecoverable X error occurred, aborting...");
-			abort();
-		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
-		case PENDING_REPLY_ACTION_IGNORE: break;
-		}
-		return;
-	}
-	x_log_error(LOG_LEVEL_WARN, ev->full_sequence, ev->major_code, ev->minor_code,
-	            ev->error_code);
-}
-
 /// Initialize x_connection struct from an Xlib Display.
 ///
 /// Note this function doesn't take ownership of the Display, the caller is still
@@ -88,11 +230,18 @@ void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 void x_connection_init(struct x_connection *c, Display *dpy) {
 	c->dpy = dpy;
 	c->c = XGetXCBConnection(dpy);
-	c->pending_reply_tail = &c->pending_reply_head;
+	list_init_head(&c->pending_x_errors);
+	list_init_head(&c->pending_x_requests);
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	c->screen = DefaultScreen(dpy);
 	c->screen_info = xcb_aux_get_screen(c->c, c->screen);
+	c->message_on_hold = NULL;
+
+	// Do a round trip to fetch the current sequence number
+	auto cookie = xcb_get_input_focus(c->c);
+	free(xcb_get_input_focus_reply(c->c, cookie, NULL));
+	c->last_sequence = cookie.sequence;
 }
 
 /**
@@ -161,14 +310,18 @@ winprop_info_t x_get_prop_info(const struct x_connection *c, xcb_window_t w, xcb
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_atom_t aprop) {
+xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid,
+                                 xcb_atom_t aprop, bool *exists) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
 	winprop_t prop = x_get_prop(c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
+		*exists = true;
 		p = (xcb_window_t)*prop.p32;
+	} else {
+		*exists = false;
 	}
 
 	free_winprop(&prop);
@@ -181,39 +334,35 @@ xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_a
  */
 bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
                        xcb_atom_t prop, char ***pstrlst, int *pnstr) {
-	auto prop_info = x_get_prop_info(c, wid, prop);
-	auto type = prop_info.type;
-	auto format = prop_info.format;
-	auto length = prop_info.length;
-
-	if (type == XCB_ATOM_NONE) {
-		return false;
-	}
-
-	if (!x_is_type_string(atoms, type)) {
-		log_warn("Text property %d of window %#010x has unsupported type: %d",
-		         prop, wid, type);
-		return false;
-	}
-
-	if (format != 8) {
-		log_warn("Text property %d of window %#010x has unexpected format: %d",
-		         prop, wid, format);
-		return false;
-	}
-
 	xcb_generic_error_t *e = NULL;
-	auto word_count = (length + 4 - 1) / 4;
 	auto r = xcb_get_property_reply(
-	    c->c, xcb_get_property(c->c, 0, wid, prop, type, 0, word_count), &e);
+	    c->c, xcb_get_property(c->c, 0, wid, prop, XCB_ATOM_ANY, 0, UINT_MAX), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
 		free(e);
 		return false;
 	}
 
-	assert(length == (uint32_t)xcb_get_property_value_length(r));
+	if (r->type == XCB_ATOM_NONE) {
+		free(r);
+		return false;
+	}
 
+	if (!x_is_type_string(atoms, r->type)) {
+		log_warn("Text property %d of window %#010x has unsupported type: %d",
+		         prop, wid, r->type);
+		free(r);
+		return false;
+	}
+
+	if (r->format != 8) {
+		log_warn("Text property %d of window %#010x has unexpected format: %d",
+		         prop, wid, r->format);
+		free(r);
+		return false;
+	}
+
+	uint32_t length = to_u32_checked(xcb_get_property_value_length(r));
 	void *data = xcb_get_property_value(r);
 	unsigned int nstr = 0;
 	uint32_t current_offset = 0;
@@ -411,7 +560,7 @@ x_create_picture_with_pictfmt(struct x_connection *c, int w, int h,
 	xcb_render_picture_t picture = x_create_picture_with_pictfmt_and_pixmap(
 	    c, pictfmt, tmp_pixmap, valuemask, attr);
 
-	set_cant_fail_cookie(c, xcb_free_pixmap(c->c, tmp_pixmap));
+	x_set_error_action_abort(c, xcb_free_pixmap(c->c, tmp_pixmap));
 
 	return picture;
 }
@@ -508,7 +657,7 @@ uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 
 void x_destroy_region(struct x_connection *c, xcb_xfixes_region_t r) {
 	if (r != XCB_NONE) {
-		set_debug_cant_fail_cookie(c, xcb_xfixes_destroy_region(c->c, r));
+		x_set_error_action_debug_abort(c, xcb_xfixes_destroy_region(c->c, r));
 	}
 }
 
@@ -557,121 +706,7 @@ void x_clear_picture_clip_region(struct x_connection *c, xcb_render_picture_t pi
 void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
 	assert(p != XCB_NONE);
 	auto cookie = xcb_render_free_picture(c->c, p);
-	set_debug_cant_fail_cookie(c, cookie);
-}
-
-enum {
-	XSyncBadCounter = 0,
-	XSyncBadAlarm = 1,
-	XSyncBadFence = 2,
-};
-
-/**
- * Convert a X11 error to string
- *
- * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
- *         for multiple calls to this function,
- */
-static const char *
-_x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
-	session_t *const ps = ps_g;
-
-	int o = 0;
-	const char *name = "Unknown";
-
-#define CASESTRRET(s)                                                                    \
-	case s: name = #s; break
-
-#define CASESTRRET2(s)                                                                   \
-	case XCB_##s: name = #s; break
-
-	// TODO(yshui) separate error code out from session_t
-	o = error_code - ps->xfixes_error;
-	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
-
-	o = error_code - ps->damage_error;
-	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
-
-	o = error_code - ps->render_error;
-	switch (o) {
-		CASESTRRET2(RENDER_PICT_FORMAT);
-		CASESTRRET2(RENDER_PICTURE);
-		CASESTRRET2(RENDER_PICT_OP);
-		CASESTRRET2(RENDER_GLYPH_SET);
-		CASESTRRET2(RENDER_GLYPH);
-	}
-
-	if (ps->glx_exists) {
-		o = error_code - ps->glx_error;
-		switch (o) {
-			CASESTRRET2(GLX_BAD_CONTEXT);
-			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
-			CASESTRRET2(GLX_BAD_DRAWABLE);
-			CASESTRRET2(GLX_BAD_PIXMAP);
-			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
-			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
-			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
-			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
-			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
-			CASESTRRET2(GLX_BAD_FB_CONFIG);
-			CASESTRRET2(GLX_BAD_PBUFFER);
-			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
-			CASESTRRET2(GLX_BAD_WINDOW);
-			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
-		}
-	}
-
-	if (ps->xsync_exists) {
-		o = error_code - ps->xsync_error;
-		switch (o) {
-			CASESTRRET(XSyncBadCounter);
-			CASESTRRET(XSyncBadAlarm);
-			CASESTRRET(XSyncBadFence);
-		}
-	}
-
-	switch (error_code) {
-		CASESTRRET2(ACCESS);
-		CASESTRRET2(ALLOC);
-		CASESTRRET2(ATOM);
-		CASESTRRET2(COLORMAP);
-		CASESTRRET2(CURSOR);
-		CASESTRRET2(DRAWABLE);
-		CASESTRRET2(FONT);
-		CASESTRRET2(G_CONTEXT);
-		CASESTRRET2(ID_CHOICE);
-		CASESTRRET2(IMPLEMENTATION);
-		CASESTRRET2(LENGTH);
-		CASESTRRET2(MATCH);
-		CASESTRRET2(NAME);
-		CASESTRRET2(PIXMAP);
-		CASESTRRET2(REQUEST);
-		CASESTRRET2(VALUE);
-		CASESTRRET2(WINDOW);
-	}
-
-#undef CASESTRRET
-#undef CASESTRRET2
-
-	thread_local static char buffer[256];
-	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
-	         error_code, name, major, minor, serial);
-	return buffer;
-}
-
-/**
- * Log a X11 error
- */
-void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
-                 uint16_t minor, uint8_t error_code) {
-	if (unlikely(level >= log_get_level_tls())) {
-		log_printf(tls_logger, level, __func__, "%s",
-		           _x_strerror(serial, major, minor, error_code));
-	}
-}
-
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
-	x_log_error(LOG_LEVEL_DEBUG, serial, major, minor, error_code);
+	x_set_error_action_debug_abort(c, cookie);
 }
 
 /*
@@ -684,7 +719,8 @@ const char *x_strerror(xcb_generic_error_t *e) {
 	if (!e) {
 		return "No error";
 	}
-	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+	return x_error_code_to_string(e->full_sequence, e->major_code, e->minor_code,
+	                              e->error_code);
 }
 
 /**
@@ -776,7 +812,7 @@ err:
 
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {
 	auto cookie = xcb_present_notify_msc(c->c, window, 0, msc, 1, 0);
-	set_cant_fail_cookie(c, cookie);
+	x_set_error_action_abort(c, cookie);
 }
 
 /**
@@ -864,25 +900,43 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 	};
 }
 
-void x_update_monitors(struct x_connection *c, struct x_monitors *m) {
-	x_free_monitor_info(m);
+struct x_update_monitors_request {
+	struct x_async_request_base base;
+	struct x_monitors *monitors;
+};
 
-	xcb_randr_get_monitors_reply_t *r = xcb_randr_get_monitors_reply(
-	    c->c, xcb_randr_get_monitors(c->c, c->screen_info->root, true), NULL);
-	if (!r) {
+static void x_handle_update_monitors_reply(struct x_connection * /*c*/,
+                                           struct x_async_request_base *req_base,
+                                           xcb_raw_generic_event_t *reply_or_error) {
+	auto m = ((struct x_update_monitors_request *)req_base)->monitors;
+	free(req_base);
+
+	if (reply_or_error->response_type == 0) {
+		log_warn("Failed to get monitor information using RandR: %s",
+		         x_strerror((xcb_generic_error_t *)reply_or_error));
 		return;
 	}
 
-	m->count = xcb_randr_get_monitors_monitors_length(r);
+	x_free_monitor_info(m);
+
+	auto reply = (xcb_randr_get_monitors_reply_t *)reply_or_error;
+
+	m->count = xcb_randr_get_monitors_monitors_length(reply);
 	m->regions = ccalloc(m->count, region_t);
 	xcb_randr_monitor_info_iterator_t monitor_info_it =
-	    xcb_randr_get_monitors_monitors_iterator(r);
+	    xcb_randr_get_monitors_monitors_iterator(reply);
 	for (int i = 0; monitor_info_it.rem; xcb_randr_monitor_info_next(&monitor_info_it)) {
 		xcb_randr_monitor_info_t *mi = monitor_info_it.data;
 		pixman_region32_init_rect(&m->regions[i++], mi->x, mi->y, mi->width, mi->height);
 	}
+}
 
-	free(r);
+void x_update_monitors_async(struct x_connection *c, struct x_monitors *m) {
+	auto req = ccalloc(1, struct x_update_monitors_request);
+	req->base.callback = x_handle_update_monitors_reply;
+	req->base.sequence = xcb_randr_get_monitors(c->c, c->screen_info->root, 1).sequence;
+	req->monitors = m;
+	x_await_request(c, &req->base);
 }
 
 void x_free_monitor_info(struct x_monitors *m) {
@@ -894,4 +948,168 @@ void x_free_monitor_info(struct x_monitors *m) {
 		m->regions = NULL;
 	}
 	m->count = 0;
+}
+
+static uint32_t x_get_full_sequence(struct x_connection *c, uint16_t sequence) {
+	auto last_sequence_low = c->last_sequence & 0xffff;
+	// sequence < last_sequence16 means the lower 16 bits overflowed, which should
+	// carry to the higher 16 bits
+	auto sequence_high = c->last_sequence & 0xffff0000;
+	if (sequence < last_sequence_low) {
+		sequence_high += 0x10000;
+	}
+	return sequence_high | sequence;
+}
+
+static int64_t x_compare_sequence(struct x_connection *c, uint32_t a, uint32_t b) {
+	bool a_overflown = a < c->last_sequence, b_overflown = b < c->last_sequence;
+	if (a_overflown == b_overflown) {
+		return (int64_t)a - (int64_t)b;
+	}
+	return a_overflown ? 1 : -1;
+}
+
+static xcb_raw_generic_event_t *
+x_poll_for_event_impl(struct x_connection *c, struct x_async_request_base **out_req) {
+	struct x_async_request_base *first_pending_request = NULL;
+	if (!list_is_empty(&c->pending_x_requests)) {
+		first_pending_request = list_entry(c->pending_x_requests.next,
+		                                   struct x_async_request_base, siblings);
+	}
+
+	bool on_hold_is_reply;
+	if (c->message_on_hold == NULL) {
+		// Nothing on hold, we need to read new information from the X connection.
+		// We must only read from the X connection once in this function to keep
+		// things consistent. The only way to do  that is reading the connection
+		// with `xcb_poll_for_reply`, and then check for events with
+		// `xcb_poll_for_queued_event`, because there is no
+		// `xcb_poll_for_queued_reply`. Unless we are not waiting for any replies,
+		// in which case a simple `xcb_poll_for_event` is enough.
+		if (first_pending_request != NULL) {
+			xcb_generic_error_t *err = NULL;
+			on_hold_is_reply =
+			    xcb_poll_for_reply(c->c, first_pending_request->sequence,
+			                       (void **)&c->message_on_hold, &err) == 1;
+			if (err != NULL) {
+				c->message_on_hold = (xcb_raw_generic_event_t *)err;
+			}
+			if (!on_hold_is_reply) {
+				// We didn't get a reply, but did we get an event?
+				c->message_on_hold =
+				    (xcb_raw_generic_event_t *)xcb_poll_for_queued_event(c->c);
+			}
+		} else {
+			c->message_on_hold =
+			    (xcb_raw_generic_event_t *)xcb_poll_for_event(c->c);
+			on_hold_is_reply = false;
+		}
+	} else if (first_pending_request != NULL) {
+		// response_type 0 is error, 1 is reply.
+		on_hold_is_reply = c->message_on_hold->response_type < 2 &&
+		                   x_get_full_sequence(c, c->message_on_hold->sequence) ==
+		                       first_pending_request->sequence;
+	} else {
+		on_hold_is_reply = false;
+	}
+	if (c->message_on_hold == NULL) {
+		// Didn't get any new information from the X connection, nothing to
+		// return.
+		return NULL;
+	}
+
+	// From this point, no more reading from the X connection is allowed.
+	xcb_generic_event_t *next_event = NULL;
+	if (on_hold_is_reply) {
+		next_event = xcb_poll_for_queued_event(c->c);
+		assert(next_event == NULL || next_event->response_type != 1);
+	} else {
+		next_event = (xcb_generic_event_t *)c->message_on_hold;
+	}
+
+	// `next_event == c->message_on_hold` iff `on_hold_is_reply` is false.
+
+	bool should_return_event = false;
+	if (first_pending_request == NULL) {
+		// Here `on_hold_is_reply` must be false, therefore `next_event ==
+		// c->message_on_hold` must be true, therefore `next_event` cannot be
+		// NULL.
+		should_return_event = true;
+	} else if (next_event != NULL) {
+		auto ordering = x_compare_sequence(c, next_event->full_sequence,
+		                                   first_pending_request->sequence);
+		// If next_event is a true event, it might share a sequence number with a
+		// reply. But if it's an error (i.e. response_type == 0), its sequence
+		// number must be different from any reply.
+		assert(next_event->response_type != 0 || ordering != 0);
+		should_return_event = ordering < 0;
+	}
+
+	if (should_return_event) {
+		x_discard_pending_errors(c, next_event->full_sequence);
+		c->last_sequence = next_event->full_sequence;
+		if (!on_hold_is_reply) {
+			c->message_on_hold = NULL;
+		}
+		return (xcb_raw_generic_event_t *)next_event;
+	}
+
+	// We should return the reply to the first pending request.
+	xcb_raw_generic_event_t *ret = NULL;
+	if (!on_hold_is_reply) {
+		xcb_generic_error_t *err = NULL;
+		// This is a very special case. Because we have already received an event
+		// with a greater or equal sequence number than the reply, we _know_ the
+		// reply must also have already arrived. We can safely call
+		// `xcb_poll_for_reply` here because we know it will not read from the X
+		// connection again.
+		BUG_ON(xcb_poll_for_reply(c->c, first_pending_request->sequence,
+		                          (void **)&ret, &err) == 0);
+		if (err != NULL) {
+			ret = (xcb_raw_generic_event_t *)err;
+		}
+	} else {
+		ret = c->message_on_hold;
+		c->message_on_hold = (xcb_raw_generic_event_t *)next_event;
+	}
+
+	x_discard_pending_errors(c, first_pending_request->sequence + 1);
+	c->last_sequence = first_pending_request->sequence;
+	*out_req = first_pending_request;
+	list_remove(&first_pending_request->siblings);
+	return ret;
+}
+
+xcb_generic_event_t *x_poll_for_event(struct x_connection *c) {
+	xcb_raw_generic_event_t *ret = NULL;
+	while (true) {
+		struct x_async_request_base *req = NULL;
+		ret = x_poll_for_event_impl(c, &req);
+		if (ret == NULL) {
+			break;
+		}
+
+		if (req != NULL) {
+			req->callback(c, req, ret);
+		} else if (ret->response_type == 0) {
+			x_handle_error(c, (xcb_generic_error_t *)ret);
+		} else {
+			break;
+		}
+		free(ret);
+	}
+	return (xcb_generic_event_t *)ret;
+}
+
+void x_cancel_request(struct x_connection *c, struct x_async_request_base *req) {
+	list_remove(&req->siblings);
+	if (c->message_on_hold == NULL) {
+		return;
+	}
+	if (c->message_on_hold->response_type >= 2 ||
+	    x_get_full_sequence(c, c->message_on_hold->sequence) != req->sequence) {
+		return;
+	}
+	free(c->message_on_hold);
+	c->message_on_hold = NULL;
 }

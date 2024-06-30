@@ -9,26 +9,15 @@
 #include <picom/types.h>
 
 #include "region.h"
-
-struct layer_key {
-	/// Window generation, (see `struct wm::generation` for explanation of what a
-	/// generation is)
-	uint64_t generation;
-	/// Window ID
-	xcb_window_t window;
-	uint32_t pad;        // explicit padding because this will be used as hash table
-	                     // key
-};
-
-static_assert(sizeof(struct layer_key) == 16, "layer_key has implicit padding");
+#include "wm/wm.h"
 
 /// A layer to be rendered in a render layout
 struct layer {
 	/// Window that will be rendered in this layer
-	struct layer_key key;
+	wm_treeid key;
 	/// The window, this is only valid for the current layout. Once
 	/// a frame has passed, windows could have been freed.
-	struct managed_win *win;
+	struct win *win;
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
 	/// Window rectangle in screen coordinates, before it's scaled.

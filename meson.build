@@ -34,6 +34,10 @@ if get_option('sanitize')
 	if cc.has_argument('-fno-sanitize=unsigned-integer-overflow')
 		add_global_arguments('-fno-sanitize=unsigned-integer-overflow', language: 'c')
 	endif
+	if cc.has_argument('-fno-sanitize=unsigned-shift-base')
+		# uthash does a lot of this
+		add_global_arguments('-fno-sanitize=unsigned-shift-base', language: 'c')
+	endif
 endif
 
 if get_option('llvm_coverage')

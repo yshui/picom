@@ -182,7 +182,7 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 }
 
 static bool
-renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct managed_win *w) {
+renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct win *w) {
 	ivec2 size = {.width = w->widthb, .height = w->heightb};
 	bool succeeded = false;
 	auto image = backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_MASK, size);
@@ -346,8 +346,8 @@ out:
 	return shadow_image;
 }
 
-static bool renderer_bind_shadow(struct renderer *r, struct backend_base *backend,
-                                 struct managed_win *w) {
+static bool
+renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct win *w) {
 	if (backend->ops.quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
 		xcb_pixmap_t shadow = XCB_NONE;
 		xcb_render_picture_t pict = XCB_NONE;
@@ -398,7 +398,7 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 			assert(layer->number_of_commands > 0);
 			layer_end = cmd + layer->number_of_commands;
 			log_trace("Prepare commands for layer %#010x @ %#010x (%s)",
-			          layer->win->base.id, layer->win->client_win,
+			          win_id(layer->win), win_client_id(layer->win, false),
 			          layer->win->name);
 		}
 
@@ -494,8 +494,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
 		// concurrent with our CPU tasks to save time.
-		set_cant_fail_cookie(backend->c,
-		                     xcb_sync_trigger_fence(backend->c->c, xsync_fence));
+		x_set_error_action_abort(
+		    backend->c, xcb_sync_trigger_fence(backend->c->c, xsync_fence));
 	}
 	// TODO(yshui) In some cases we can render directly into the back buffer, and
 	// don't need the intermediate back_image. Several conditions need to be met: no
@@ -522,8 +522,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 				layer += 1;
 				layer_end += layer->number_of_commands;
 				log_trace("Layer for window %#010x @ %#010x (%s)",
-				          layer->win->base.id, layer->win->client_win,
-				          layer->win->name);
+				          win_id(layer->win),
+				          win_client_id(layer->win, false), layer->win->name);
 			}
 			log_backend_command(TRACE, *i);
 		}
@@ -539,7 +539,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 	auto buffer_age =
 	    (use_damage || monitor_repaint) ? backend->ops.buffer_age(backend) : 0;
-	if (buffer_age > 0 && global_debug_options.consistent_buffer_age) {
+	if (buffer_age > 0 && global_debug_options.consistent_buffer_age &&
+	    buffer_age < r->max_buffer_age) {
 		int past_frame =
 		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;
 		region_t region;
@@ -567,13 +568,13 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 
 	if (xsync_fence != XCB_NONE) {
-		set_cant_fail_cookie(
+		x_set_error_action_abort(
 		    backend->c, xcb_sync_await_fence(backend->c->c, 1, &xsync_fence));
 		// Making sure the wait is completed by receiving a response from the X
 		// server
 		xcb_aux_sync(backend->c->c);
-		set_cant_fail_cookie(backend->c,
-		                     xcb_sync_reset_fence(backend->c->c, xsync_fence));
+		x_set_error_action_abort(
+		    backend->c, xcb_sync_reset_fence(backend->c->c, xsync_fence));
 	}
 
 	if (backend->ops.prepare) {
