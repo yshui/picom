@@ -422,72 +422,72 @@ TEST_CASE(tree_manipulation) {
 
 	wm_tree_add_window(&tree, wm_tree_new_window(&tree, 1));
 	auto root = wm_tree_find(&tree, 1);
-	assert(root != NULL);
-	assert(root->parent == NULL);
+	TEST_NOTEQUAL(root, NULL);
+	TEST_EQUAL(root->parent, NULL);
 
 	tree.root = root;
 
 	auto change = wm_tree_dequeue_change(&tree);
-	assert(change.type == WM_TREE_CHANGE_NONE);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_NONE);
 
 	auto node2 = wm_tree_new_window(&tree, 2);
 	wm_tree_add_window(&tree, node2);
 	wm_tree_attach(&tree, node2, root);
-	assert(node2 != NULL);
-	assert(node2 == wm_tree_find(&tree, 2));
-	assert(node2->parent == root);
+	TEST_NOTEQUAL(node2, NULL);
+	TEST_EQUAL(node2, wm_tree_find(&tree, 2));
+	TEST_EQUAL(node2->parent, root);
 
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.toplevel.x == 2);
-	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_NEW);
-	assert(wm_treeid_eq(node2->id, change.toplevel));
+	TEST_EQUAL(change.toplevel.x, 2);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_TOPLEVEL_NEW);
+	TEST_TRUE(wm_treeid_eq(node2->id, change.toplevel));
 
 	auto node3 = wm_tree_new_window(&tree, 3);
 	wm_tree_add_window(&tree, node3);
 	wm_tree_attach(&tree, node3, root);
 
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.toplevel.x == 3);
-	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_NEW);
+	TEST_EQUAL(change.toplevel.x, 3);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_TOPLEVEL_NEW);
 
 	auto zombie = wm_tree_detach(&tree, node2);
 	wm_tree_attach(&tree, node2, node3);
-	assert(node2->parent == node3);
-	assert(node3->children.next == &node2->siblings);
+	TEST_EQUAL(node2->parent, node3);
+	TEST_EQUAL(node3->children.next, &node2->siblings);
 
 	// node2 is now a child of node3, so it's no longer a toplevel
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.toplevel.x == 2);
-	assert(change.type == WM_TREE_CHANGE_TOPLEVEL_KILLED);
+	TEST_EQUAL(change.toplevel.x, 2);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_TOPLEVEL_KILLED);
 	TEST_EQUAL(change.killed, zombie);
 	wm_tree_reap_zombie(change.killed);
 
 	wm_tree_set_wm_state(&tree, node2, true);
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.toplevel.x == 3);
-	assert(change.type == WM_TREE_CHANGE_CLIENT);
-	assert(wm_treeid_eq(change.client.old, WM_TREEID_NONE));
-	assert(change.client.new_.x == 2);
+	TEST_EQUAL(change.toplevel.x, 3);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_CLIENT);
+	TEST_TRUE(wm_treeid_eq(change.client.old, WM_TREEID_NONE));
+	TEST_EQUAL(change.client.new_.x, 2);
 
 	auto node4 = wm_tree_new_window(&tree, 4);
 	wm_tree_add_window(&tree, node4);
 	wm_tree_attach(&tree, node4, node3);
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.type == WM_TREE_CHANGE_NONE);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_NONE);
 
 	wm_tree_set_wm_state(&tree, node4, true);
 	change = wm_tree_dequeue_change(&tree);
 	// node3 already has node2 as its client window, so the new one should be ignored.
-	assert(change.type == WM_TREE_CHANGE_NONE);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_NONE);
 
 	TEST_EQUAL(wm_tree_detach(&tree, node2), NULL);
 	HASH_DEL(tree.nodes, node2);
 	free(node2);
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.toplevel.x == 3);
-	assert(change.type == WM_TREE_CHANGE_CLIENT);
-	assert(change.client.old.x == 2);
-	assert(change.client.new_.x == 4);
+	TEST_EQUAL(change.toplevel.x, 3);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_CLIENT);
+	TEST_EQUAL(change.client.old.x, 2);
+	TEST_EQUAL(change.client.new_.x, 4);
 
 	// Test window ID reuse
 	TEST_EQUAL(wm_tree_detach(&tree, node4), NULL);
@@ -499,10 +499,10 @@ TEST_CASE(tree_manipulation) {
 	wm_tree_set_wm_state(&tree, node4, true);
 
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.toplevel.x == 3);
-	assert(change.type == WM_TREE_CHANGE_CLIENT);
-	assert(change.client.old.x == 4);
-	assert(change.client.new_.x == 4);
+	TEST_EQUAL(change.toplevel.x, 3);
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_CLIENT);
+	TEST_EQUAL(change.client.old.x, 4);
+	TEST_EQUAL(change.client.new_.x, 4);
 
 	auto node5 = wm_tree_new_window(&tree, 5);
 	wm_tree_add_window(&tree, node5);
@@ -511,7 +511,7 @@ TEST_CASE(tree_manipulation) {
 	HASH_DEL(tree.nodes, node5);
 	free(node5);
 	change = wm_tree_dequeue_change(&tree);
-	assert(change.type == WM_TREE_CHANGE_NONE);        // Changes cancelled out
+	TEST_EQUAL(change.type, WM_TREE_CHANGE_NONE);        // Changes cancelled out
 
 	wm_tree_clear(&tree);
 }
