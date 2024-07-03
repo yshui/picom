@@ -388,6 +388,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	auto w = wm_ref_deref(cursor);
 	if (!w) {
+		log_debug("Window %#010x is unmanaged.", ce->window);
 		return;
 	}
 

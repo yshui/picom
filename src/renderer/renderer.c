@@ -210,8 +210,9 @@ err:
 	return succeeded;
 }
 
-image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
-                                       image_handle mask, int corner_radius, ivec2 mask_size) {
+image_handle
+renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
+                          image_handle mask, unsigned int corner_radius, ivec2 mask_size) {
 	image_handle normalized_mask_image = NULL, shadow_image = NULL,
 	             shadow_color_pixel = NULL;
 	bool succeeded = false;
@@ -366,7 +367,7 @@ renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct wi
 			return false;
 		}
 		w->shadow_image = renderer_shadow_from_mask(
-		    r, backend, w->mask_image, w->corner_radius,
+		    r, backend, w->mask_image, win_options(w).corner_radius,
 		    (ivec2){.width = w->widthb, .height = w->heightb});
 	}
 	if (!w->shadow_image) {

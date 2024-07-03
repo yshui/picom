@@ -23,7 +23,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	auto mode = win_calc_mode_raw(layer->win);
 	int border_width = w->g.border_width;
 	double dim = 0;
-	if (w->dim) {
+	if (layer->options.dim) {
 		dim = inactive_dim;
 		if (!inactive_dim_fixed) {
 			dim *= layer->opacity;
@@ -48,7 +48,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 			                         frame_region);
 		}
 	}
-	if (w->corner_radius > 0) {
+	if (layer->options.corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
@@ -61,15 +61,16 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd->blit = (struct backend_blit_args){
 	    .border_width = border_width,
 	    .target_mask = &cmd->target_mask,
-	    .corner_radius = w->corner_radius,
+	    .corner_radius = layer->options.corner_radius,
 	    .opacity = layer->opacity,
 	    .dim = dim,
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
-	    .shader = w->fg_shader ? w->fg_shader->backend_shader : NULL,
-	    .color_inverted = w->invert_color,
+	    .shader = layer->options.shader->backend_shader,
+	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
-	    .max_brightness = max_brightness};
+	    .max_brightness = max_brightness,
+	};
 
 	if (w->frame_opacity == 1 || w->frame_opacity == 0) {
 		return 1;
@@ -97,7 +98,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
                    const struct win_option *wintype_options,
                    const struct x_monitors *monitors, const struct backend_command *end) {
 	auto w = layer->win;
-	if (!w->shadow) {
+	if (!layer->options.shadow) {
 		return 0;
 	}
 
@@ -143,8 +144,8 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		}
 	}
 	log_region(TRACE, &cmd->target_mask);
-	if (w->corner_radius > 0) {
-		cmd->source_mask.corner_radius = w->corner_radius;
+	if (layer->options.corner_radius > 0) {
+		cmd->source_mask.corner_radius = layer->options.corner_radius;
 		cmd->source_mask.inverted = true;
 		cmd->source_mask.origin =
 		    ivec2_sub(layer->window.origin, layer->shadow.origin);
@@ -156,7 +157,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	cmd->blit = (struct backend_blit_args){
 	    .opacity = layer->shadow_opacity,
 	    .max_brightness = 1,
-	    .source_mask = w->corner_radius > 0 ? &cmd->source_mask : NULL,
+	    .source_mask = layer->options.corner_radius > 0 ? &cmd->source_mask : NULL,
 	    .scale = layer->shadow_scale,
 	    .effective_size = layer->shadow.size,
 	    .target_mask = &cmd->target_mask,
@@ -170,7 +171,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
                  const region_t *frame_region, bool force_blend, bool blur_frame) {
 	auto w = layer->win;
 	auto mode = win_calc_mode_raw(w);
-	if (!w->blur_background || layer->blur_opacity == 0) {
+	if (!layer->options.blur_background || layer->blur_opacity == 0) {
 		return 0;
 	}
 	if (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0) {
@@ -189,15 +190,15 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 
 	cmd->op = BACKEND_COMMAND_BLUR;
 	cmd->origin = (ivec2){};
-	if (w->corner_radius > 0) {
+	if (layer->options.corner_radius > 0) {
 		cmd->source_mask.origin = layer->window.origin;
-		cmd->source_mask.corner_radius = w->corner_radius;
+		cmd->source_mask.corner_radius = layer->options.corner_radius;
 		cmd->source_mask.inverted = false;
 	}
 	cmd->blur = (struct backend_blur_args){
 	    .opacity = layer->blur_opacity,
 	    .target_mask = &cmd->target_mask,
-	    .source_mask = w->corner_radius > 0 ? &cmd->source_mask : NULL,
+	    .source_mask = layer->options.corner_radius > 0 ? &cmd->source_mask : NULL,
 	};
 	return 1;
 }
@@ -217,7 +218,7 @@ command_builder_apply_transparent_clipping(struct layout *layout, region_t *scra
 	auto layer_start = end - layer->number_of_commands;
 	for (auto i = end; i != begin; i--) {
 		if (i == layer_start) {
-			if (layer->win->transparent_clipping) {
+			if (layer->options.transparent_clipping) {
 				auto win = layer->win;
 				auto mode = win_calc_mode_raw(layer->win);
 				region_t tmp;
@@ -263,7 +264,7 @@ command_builder_apply_shadow_clipping(struct layout *layout, region_t *scratch_r
 		if (i == layer_end) {
 			layer += 1;
 			layer_end += layer->number_of_commands;
-			clip_shadow_above = layer->win->clip_shadow_above;
+			clip_shadow_above = layer->options.clip_shadow_above;
 		}
 
 		if (i->op == BACKEND_COMMAND_BLUR) {
@@ -370,13 +371,13 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 	unsigned ncmds = 1;
 	dynarr_foreach(layout->layers, layer) {
 		auto mode = win_calc_mode_raw(layer->win);
-		if (layer->win->blur_background && layer->blur_opacity > 0 &&
+		if (layer->options.blur_background && layer->blur_opacity > 0 &&
 		    (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0 ||
 		     (blur_frame && mode == WMODE_FRAME_TRANS))) {
 			// Needs blur
 			ncmds += 1;
 		}
-		if (layer->win->shadow) {
+		if (layer->options.shadow) {
 			ncmds += 1;
 		}
 		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0) {

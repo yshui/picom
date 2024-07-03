@@ -10,6 +10,7 @@
 
 #include <ctype.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
@@ -135,6 +136,67 @@ struct included_config_file {
 	char *path;
 	struct list_node siblings;
 };
+
+struct window_maybe_options {
+	/// Radius of rounded window corners, -1 means not set.
+	int corner_radius;
+
+	/// Window opacity, NaN means not set.
+	double opacity;
+
+	/// Name of the custom fragment shader for this window. NULL means not set.
+	const struct shader_info *shader;
+
+	/// Whether transparent clipping is excluded by the rules.
+	enum tristate transparent_clipping;
+	/// Whether a window has shadow.
+	enum tristate shadow;
+	/// Whether to invert window color.
+	enum tristate invert_color;
+	/// Whether to blur window background.
+	enum tristate blur_background;
+	/// Whether the window is to be dimmed.
+	enum tristate dim;
+	/// Whether this window should fade.
+	enum tristate fade;
+	/// Do not paint shadow over this window.
+	enum tristate clip_shadow_above;
+	/// Whether the window is to be considered focused.
+	enum tristate focused;
+	/// Whether the window is painted.
+	enum tristate paint;
+	/// Whether this window should be considered for unredirect-if-possible.
+	enum tristate unredir_ignore;
+};
+
+/// Like `window_maybe_options`, but all fields are guaranteed to be set.
+struct window_options {
+	double opacity;
+	const struct shader_info *shader;
+	unsigned int corner_radius;
+	bool transparent_clipping;
+	bool shadow;
+	bool invert_color;
+	bool blur_background;
+	bool dim;
+	bool fade;
+	bool clip_shadow_above;
+	bool focused;
+	bool paint;
+	bool unredir_ignore;
+
+	char padding[2];
+};
+
+static inline bool
+win_options_eq(const struct window_options *a, const struct window_options *b) {
+	return memcmp(a, b, offsetof(struct window_options, padding)) == 0;
+}
+
+static_assert(offsetof(struct window_options, padding) == 30, "window_options has "
+                                                              "implicit padding");
+
+extern struct shader_info null_shader;
 
 /// Structure representing all options.
 typedef struct options {

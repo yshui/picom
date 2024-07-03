@@ -114,30 +114,24 @@ static inline struct wm_ref *win_get_leader(session_t *ps, struct win *w) {
  * Update focused state of a window.
  */
 static void win_update_focused(session_t *ps, struct win *w) {
-	if (w->focused_force != UNSET) {
-		w->focused = w->focused_force;
-	} else {
-		bool is_wmwin = win_is_wmwin(w);
-		w->focused = win_is_focused_raw(w);
+	bool is_wmwin = win_is_wmwin(w);
+	w->options.focused = win_is_focused_raw(w) ? TRI_TRUE : TRI_FALSE;
 
-		// Use wintype_focus, and treat WM windows and override-redirected
-		// windows specially
-		if (ps->o.wintype_option[w->window_type].focus ||
-		    (ps->o.mark_wmwin_focused && is_wmwin) ||
-		    (ps->o.mark_ovredir_focused &&
-		     wm_ref_client_of(w->tree_ref) == NULL && !is_wmwin) ||
-		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
-		     c2_match(ps->c2_state, w, ps->o.focus_blacklist, NULL))) {
-			w->focused = true;
-		}
+	// Use wintype_focus, and treat WM windows and override-redirected
+	// windows specially
+	if (ps->o.wintype_option[w->window_type].focus ||
+	    (ps->o.mark_wmwin_focused && is_wmwin) ||
+	    (ps->o.mark_ovredir_focused && wm_ref_client_of(w->tree_ref) == NULL && !is_wmwin) ||
+	    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+	     c2_match(ps->c2_state, w, ps->o.focus_blacklist, NULL))) {
+		w->options.focused = TRI_TRUE;
+	}
 
-		// If window grouping detection is enabled, mark the window active if
-		// its group is
-		auto active_leader = wm_active_leader(ps->wm);
-		if (ps->o.track_leader && active_leader &&
-		    win_get_leader(ps, w) == active_leader) {
-			w->focused = true;
-		}
+	// If window grouping detection is enabled, mark the window active if
+	// its group is
+	auto active_leader = wm_active_leader(ps->wm);
+	if (ps->o.track_leader && active_leader && win_get_leader(ps, w) == active_leader) {
+		w->options.focused = TRI_TRUE;
 	}
 }
 
@@ -323,7 +317,6 @@ static inline void win_release_pixmap(backend_t *base, struct win *w) {
 static inline void win_release_shadow(backend_t *base, struct win *w) {
 	log_debug("Releasing shadow of window %#010x (%s)", win_id(w), w->name);
 	if (w->shadow_image) {
-		assert(w->shadow);
 		xcb_pixmap_t pixmap = XCB_NONE;
 		pixmap = base->ops.release_image(base, w->shadow_image);
 		w->shadow_image = NULL;
@@ -527,6 +520,14 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
+	auto old_options = win_options(w);
+	region_t extents;
+	pixman_region32_init(&extents);
+	// Save old window extents. If window goes from having a shadow to not
+	// having a shadow, we need to add the old, having-shadow extents to
+	// damage.
+	win_extents(w, &extents);
+
 	// Factor change flags could be set by previous stages, so must be handled
 	// last
 	if (win_check_flags_all(w, WIN_FLAGS_FACTOR_CHANGED)) {
@@ -539,6 +540,19 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 		add_damage_from_win(ps, w);
 		win_clear_flags(w, WIN_FLAGS_DAMAGED);
 	}
+
+	auto new_options = win_options(w);
+	if (win_options_eq(&old_options, &new_options)) {
+		pixman_region32_fini(&extents);
+		return;
+	}
+
+	add_damage_from_win(ps, w);        // Only for legacy backends
+	if (new_options.shadow != old_options.shadow && !new_options.shadow) {
+		add_damage(ps, &extents);
+		win_release_shadow(ps->backend_data, w);
+	}
+	pixman_region32_fini(&extents);
 }
 
 void win_process_image_flags(session_t *ps, struct win *w) {
@@ -801,8 +815,8 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w) {
 	// Try obeying opacity property and window type opacity firstly
 	if (w->has_opacity_prop) {
 		opacity = ((double)w->opacity_prop) / OPAQUE;
-	} else if (w->opacity_is_set) {
-		opacity = w->opacity_set;
+	} else if (!safe_isnan(w->options.opacity)) {
+		opacity = w->options.opacity;
 	} else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity)) {
 		opacity = ps->o.wintype_option[w->window_type].opacity;
 	} else {
@@ -810,14 +824,14 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w) {
 		// focused
 		if (win_is_focused_raw(w)) {
 			opacity = ps->o.active_opacity;
-		} else if (!w->focused) {
+		} else if (!win_options(w).focused) {
 			// Respect inactive_opacity in some cases
 			opacity = ps->o.inactive_opacity;
 		}
 	}
 
 	// respect inactive override
-	if (ps->o.inactive_opacity_override && !w->focused) {
+	if (ps->o.inactive_opacity_override && !win_options(w).focused) {
 		opacity = ps->o.inactive_opacity;
 	}
 
@@ -852,16 +866,17 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 /**
  * Determine whether a window is to be dimmed.
  */
-bool win_should_dim(session_t *ps, const struct win *w) {
+static void win_update_dim(session_t *ps, struct win *w) {
 	// Make sure we do nothing if the window is unmapped / being destroyed
 	if (w->state == WSTATE_UNMAPPED) {
-		return false;
+		return;
 	}
 
-	if (ps->o.inactive_dim > 0 && !(w->focused)) {
-		return true;
+	if (ps->o.inactive_dim > 0 && !win_options(w).focused) {
+		w->options.dim = TRI_TRUE;
+	} else {
+		w->options.dim = TRI_FALSE;
 	}
-	return false;
 }
 
 /**
@@ -882,82 +897,30 @@ void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms, stru
 	free_winprop(&prop);
 }
 
-static void win_set_shadow(session_t *ps, struct win *w, bool shadow_new) {
-	if (w->shadow == shadow_new) {
-		return;
-	}
-
-	log_debug("Updating shadow property of window %#010x (%s) to %d", win_id(w),
-	          w->name, shadow_new);
-
-	// We don't handle property updates of non-visible windows until they are
-	// mapped.
-	assert(w->state == WSTATE_MAPPED);
-
-	// Keep a copy of window extent before the shadow change. Will be used for
-	// calculation of damaged region
-	region_t extents;
-	pixman_region32_init(&extents);
-	win_extents(w, &extents);
-
-	if (ps->redirected) {
-		// Add damage for shadow change
-
-		// Window extents need update on shadow state change
-		// Shadow geometry currently doesn't change on shadow state change
-		// calc_shadow_geometry(ps, w);
-		if (shadow_new) {
-			// Mark the new extents as damaged if the shadow is added
-			assert(!w->shadow_image);
-			pixman_region32_clear(&extents);
-			win_extents(w, &extents);
-			add_damage_from_win(ps, w);
-		} else {
-			// Mark the old extents as damaged if the shadow is
-			// removed
-			add_damage(ps, &extents);
-			win_release_shadow(ps->backend_data, w);
-		}
-
-		// Only set pending_updates if we are redirected. Otherwise change
-		// of a shadow won't have influence on whether we should redirect.
-		ps->pending_updates = true;
-	}
-
-	w->shadow = shadow_new;
-
-	pixman_region32_fini(&extents);
-}
-
 /**
  * Determine if a window should have shadow, and update things depending
  * on shadow state.
  */
 static void win_determine_shadow(session_t *ps, struct win *w) {
 	log_debug("Determining shadow of window %#010x (%s)", win_id(w), w->name);
-	bool shadow_new = w->shadow;
+	w->options.shadow = TRI_UNKNOWN;
 
-	if (w->shadow_force != UNSET) {
-		shadow_new = w->shadow_force;
-	} else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		shadow_new = true;
-		if (!ps->o.wintype_option[w->window_type].shadow) {
-			log_debug("Shadow disabled by wintypes");
-			shadow_new = false;
-		} else if (c2_match(ps->c2_state, w, ps->o.shadow_blacklist, NULL)) {
-			log_debug("Shadow disabled by shadow-exclude");
-			shadow_new = false;
-		} else if (ps->o.shadow_ignore_shaped && w->bounding_shaped &&
-		           !w->rounded_corners) {
-			log_debug("Shadow disabled by shadow-ignore-shaped");
-			shadow_new = false;
-		} else if (w->prop_shadow == 0) {
-			log_debug("Shadow disabled by shadow property");
-			shadow_new = false;
-		}
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
+		return;
 	}
-
-	win_set_shadow(ps, w, shadow_new);
+	if (!ps->o.wintype_option[w->window_type].shadow) {
+		log_debug("Shadow disabled by wintypes");
+		w->options.shadow = TRI_FALSE;
+	} else if (c2_match(ps->c2_state, w, ps->o.shadow_blacklist, NULL)) {
+		log_debug("Shadow disabled by shadow-exclude");
+		w->options.shadow = TRI_FALSE;
+	} else if (ps->o.shadow_ignore_shaped && w->bounding_shaped && !w->rounded_corners) {
+		log_debug("Shadow disabled by shadow-ignore-shaped");
+		w->options.shadow = TRI_FALSE;
+	} else if (w->prop_shadow == 0) {
+		log_debug("Shadow disabled by shadow property");
+		w->options.shadow = TRI_FALSE;
+	}
 }
 
 /**
@@ -994,99 +957,21 @@ bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms
 static void win_determine_clip_shadow_above(session_t *ps, struct win *w) {
 	bool should_crop = (ps->o.wintype_option[w->window_type].clip_shadow_above ||
 	                    c2_match(ps->c2_state, w, ps->o.shadow_clip_list, NULL));
-	w->clip_shadow_above = should_crop;
-}
-
-static void win_set_invert_color(session_t *ps, struct win *w, bool invert_color_new) {
-	if (w->invert_color == invert_color_new) {
-		return;
-	}
-
-	w->invert_color = invert_color_new;
-
-	add_damage_from_win(ps, w);
+	w->options.clip_shadow_above = should_crop ? TRI_TRUE : TRI_UNKNOWN;
 }
 
 /**
  * Determine if a window should have color inverted.
  */
 static void win_determine_invert_color(session_t *ps, struct win *w) {
-	bool invert_color_new = w->invert_color;
-
-	if (UNSET != w->invert_color_force) {
-		invert_color_new = w->invert_color_force;
-	} else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		invert_color_new = c2_match(ps->c2_state, w, ps->o.invert_color_list, NULL);
-	}
-
-	win_set_invert_color(ps, w, invert_color_new);
-}
-
-/**
- * Set w->invert_color_force of a window.
- */
-void win_set_invert_color_force(session_t *ps, struct win *w, switch_t val) {
-	if (val != w->invert_color_force) {
-		w->invert_color_force = val;
-		win_determine_invert_color(ps, w);
-		queue_redraw(ps);
-	}
-}
-
-/**
- * Set w->fade_force of a window.
- *
- * Doesn't affect fading already in progress
- */
-void win_set_fade_force(struct win *w, switch_t val) {
-	w->fade_force = val;
-}
-
-/**
- * Set w->focused_force of a window.
- */
-void win_set_focused_force(session_t *ps, struct win *w, switch_t val) {
-	if (val != w->focused_force) {
-		w->focused_force = val;
-		win_on_factor_change(ps, w);
-		queue_redraw(ps);
-	}
-}
-
-/**
- * Set w->shadow_force of a window.
- */
-void win_set_shadow_force(session_t *ps, struct win *w, switch_t val) {
-	if (val != w->shadow_force) {
-		w->shadow_force = val;
-		win_determine_shadow(ps, w);
-		queue_redraw(ps);
-	}
-}
-
-static void win_set_blur_background(session_t *ps, struct win *w, bool blur_background_new) {
-	if (w->blur_background == blur_background_new) {
+	w->options.invert_color = TRI_UNKNOWN;
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
 	}
 
-	w->blur_background = blur_background_new;
-
-	// This damage might not be absolutely necessary (e.g. when the window is
-	// opaque), but blur_background changes should be rare, so this should be
-	// fine.
-	add_damage_from_win(ps, w);
-}
-
-static void win_set_fg_shader(session_t *ps, struct win *w, struct shader_info *shader_new) {
-	if (w->fg_shader == shader_new) {
-		return;
+	if (c2_match(ps->c2_state, w, ps->o.invert_color_list, NULL)) {
+		w->options.invert_color = TRI_TRUE;
 	}
-
-	w->fg_shader = shader_new;
-
-	// A different shader might change how the window is drawn, these changes
-	// should be rare however, so this should be fine.
-	add_damage_from_win(ps, w);
 }
 
 /**
@@ -1094,6 +979,7 @@ static void win_set_fg_shader(session_t *ps, struct win *w, struct shader_info *
  */
 static void win_determine_blur_background(session_t *ps, struct win *w) {
 	log_debug("Determining blur-background of window %#010x (%s)", win_id(w), w->name);
+	w->options.blur_background = TRI_UNKNOWN;
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
 	}
@@ -1102,15 +988,12 @@ static void win_determine_blur_background(session_t *ps, struct win *w) {
 	if (blur_background_new) {
 		if (!ps->o.wintype_option[w->window_type].blur_background) {
 			log_debug("Blur background disabled by wintypes");
-			blur_background_new = false;
+			w->options.blur_background = TRI_FALSE;
 		} else if (c2_match(ps->c2_state, w, ps->o.blur_background_blacklist, NULL)) {
-			log_debug("Blur background disabled by "
-			          "blur-background-exclude");
-			blur_background_new = false;
+			log_debug("Blur background disabled by blur-background-exclude");
+			w->options.blur_background = TRI_FALSE;
 		}
 	}
-
-	win_set_blur_background(ps, w, blur_background_new);
 }
 
 /**
@@ -1118,27 +1001,28 @@ static void win_determine_blur_background(session_t *ps, struct win *w) {
  */
 static void win_determine_rounded_corners(session_t *ps, struct win *w) {
 	void *radius_override = NULL;
-	if (c2_match(ps->c2_state, w, ps->o.corner_radius_rules, &radius_override)) {
-		log_debug("Matched corner rule! %d", w->corner_radius);
+	bool blacklisted = c2_match(ps->c2_state, w, ps->o.rounded_corners_blacklist, NULL);
+	if (blacklisted) {
+		w->options.corner_radius = 0;
+		return;
 	}
 
-	if (ps->o.corner_radius == 0 && !radius_override) {
-		w->corner_radius = 0;
-		return;
+	bool matched = c2_match(ps->c2_state, w, ps->o.corner_radius_rules, &radius_override);
+	if (matched) {
+		log_debug("Window %#010x (%s) matched corner rule! %d", win_id(w),
+		          w->name, (int)(long)radius_override);
 	}
 
 	// Don't round full screen windows & excluded windows,
 	// unless we find a corner override in corner_radius_rules
-	if (!radius_override &&
-	    ((w && w->is_fullscreen) ||
-	     c2_match(ps->c2_state, w, ps->o.rounded_corners_blacklist, NULL))) {
-		w->corner_radius = 0;
+	if (!matched && w && w->is_fullscreen) {
+		w->options.corner_radius = 0;
 		log_debug("Not rounding corners for window %#010x", win_id(w));
 	} else {
-		if (radius_override) {
-			w->corner_radius = (int)(long)radius_override;
+		if (matched) {
+			w->options.corner_radius = (int)(long)radius_override;
 		} else {
-			w->corner_radius = ps->o.corner_radius;
+			w->options.corner_radius = -1;
 		}
 
 		log_debug("Rounding corners for window %#010x", win_id(w));
@@ -1156,18 +1040,13 @@ static void win_determine_fg_shader(session_t *ps, struct win *w) {
 		return;
 	}
 
-	auto shader_new = ps->o.window_shader_fg;
 	void *val = NULL;
+	w->options.shader = NULL;
 	if (c2_match(ps->c2_state, w, ps->o.window_shader_fg_rules, &val)) {
-		shader_new = val;
+		struct shader_info *shader = NULL;
+		HASH_FIND_STR(ps->shaders, val, shader);
+		w->options.shader = shader;
 	}
-
-	struct shader_info *shader = NULL;
-	if (shader_new) {
-		HASH_FIND_STR(ps->shaders, shader_new, shader);
-	}
-
-	win_set_fg_shader(ps, w, shader);
 }
 
 /**
@@ -1178,16 +1057,13 @@ void win_update_opacity_rule(session_t *ps, struct win *w) {
 		return;
 	}
 
-	double opacity = 1.0;
-	bool is_set = false;
+	double opacity = NAN;
 	void *val = NULL;
 	if (c2_match(ps->c2_state, w, ps->o.opacity_rules, &val)) {
 		opacity = ((double)(long)val) / 100.0;
-		is_set = true;
 	}
 
-	w->opacity_set = opacity;
-	w->opacity_is_set = is_set;
+	w->options.opacity = opacity;
 }
 
 /**
@@ -1210,28 +1086,35 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
 	win_determine_fg_shader(ps, w);
+	win_update_dim(ps, w);
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		w->paint_excluded = c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL);
+		w->options.paint = c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL)
+		                       ? TRI_FALSE
+		                       : TRI_UNKNOWN;
 	}
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		w->unredir_if_possible_excluded =
-		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL);
+		w->options.unredir_ignore =
+		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL)
+		        ? TRI_TRUE
+		        : TRI_UNKNOWN;
 	}
 
-	w->fade_excluded = c2_match(ps->c2_state, w, ps->o.fade_blacklist, NULL);
+	w->options.fade =
+	    c2_match(ps->c2_state, w, ps->o.fade_blacklist, NULL) ? TRI_FALSE : TRI_UNKNOWN;
 
-	w->transparent_clipping =
-	    ps->o.transparent_clipping &&
-	    !c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL);
+	w->options.transparent_clipping =
+	    c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL)
+	        ? TRI_FALSE
+	        : TRI_UNKNOWN;
 
 	w->reg_ignore_valid = false;
 	if (ps->debug_window != XCB_NONE &&
 	    (win_id(w) == ps->debug_window ||
 	     (win_client_id(w, /*fallback_to_self=*/false) == ps->debug_window))) {
-		w->paint_excluded = true;
+		w->options.paint = TRI_FALSE;
 	}
 }
 
@@ -1378,12 +1261,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	                                 // property/attributes/etc
 	                                 // change
 
-	    // Runtime variables, updated by dbus
-	    .fade_force = UNSET,
-	    .shadow_force = UNSET,
-	    .focused_force = UNSET,
-	    .invert_color_force = UNSET,
-
 	    .mode = WMODE_TRANS,
 	    .leader = XCB_NONE,
 	    .cache_leader = NULL,
@@ -1480,6 +1357,10 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	new->pictfmt = x_get_pictform_for_visual(&ps->c, new->a.visual);
 	new->client_pictfmt = NULL;
 	new->tree_ref = cursor;
+	new->options = WIN_MAYBE_OPTIONS_DEFAULT;
+	new->options_override = WIN_MAYBE_OPTIONS_DEFAULT;
+	new->options_default = &ps->window_options_default;
+	new->options.focused = TRI_FALSE;
 
 	// Set all the stale flags on this new window, so it's properties will get
 	// updated when it's mapped
@@ -1691,9 +1572,12 @@ void win_set_focused(session_t *ps, struct win *w) {
  */
 void win_extents(const struct win *w, region_t *res) {
 	pixman_region32_clear(res);
-	pixman_region32_union_rect(res, res, w->g.x, w->g.y, (uint)w->widthb, (uint)w->heightb);
+	if (w->state != WSTATE_MAPPED) {
+		return;
+	}
 
-	if (w->shadow) {
+	pixman_region32_union_rect(res, res, w->g.x, w->g.y, (uint)w->widthb, (uint)w->heightb);
+	if (win_options(w).shadow) {
 		assert(w->shadow_width >= 0 && w->shadow_height >= 0);
 		pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx,
 		                           w->g.y + w->shadow_dy, (uint)w->shadow_width,

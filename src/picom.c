@@ -751,15 +751,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 
-		if (win_should_dim(ps, w) != w->dim) {
-			w->dim = win_should_dim(ps, w);
-			add_damage_from_win(ps, w);
-		}
-
-		if (w->fg_shader && (w->fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED)) {
-			add_damage_from_win(ps, w);
-			*animation = true;
-		}
 		if (w->running_animation != NULL) {
 			*animation = true;
 		}
@@ -807,6 +798,11 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		const bool was_painted = w->to_paint;
 		const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
 		const double blur_opacity = win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
+		auto window_options = win_options(w);
+		if (window_options.shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
+			add_damage_from_win(ps, w);
+			*animation = true;
+		}
 
 		// Destroy reg_ignore if some window above us invalidated it
 		if (!reg_ignore_valid) {
@@ -837,13 +833,14 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			log_trace("|- is positioned outside of the screen");
 			to_paint = false;
 		} else if (unlikely(window_opacity * MAX_ALPHA < 1 &&
-		                    (!w->blur_background || blur_opacity * MAX_ALPHA < 1))) {
+		                    (!window_options.blur_background ||
+		                     blur_opacity * MAX_ALPHA < 1))) {
 			// For consistency, even a window has 0 opacity, we would still
 			// blur its background. (unless it's background is not blurred, or
 			// the blur opacity is 0)
 			log_trace("|- has 0 opacity");
 			to_paint = false;
-		} else if (w->paint_excluded) {
+		} else if (!window_options.paint) {
 			log_trace("|- is excluded from painting");
 			to_paint = false;
 		} else if (unlikely((w->flags & WIN_FLAGS_PIXMAP_ERROR) != 0)) {
@@ -878,7 +875,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// we add the window region to the ignored region
 		// Otherwise last_reg_ignore shouldn't change
 		if ((w->mode != WMODE_TRANS && !ps->o.force_win_blend) ||
-		    w->transparent_clipping) {
+		    window_options.transparent_clipping) {
 			// w->mode == WMODE_SOLID or WMODE_FRAME_TRANS
 			region_t *tmp = rc_region_new();
 			if (w->mode == WMODE_SOLID) {
@@ -903,7 +900,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// is not correctly set.
 		if (ps->o.unredir_if_possible && is_highest) {
 			if (w->mode == WMODE_SOLID && !ps->o.force_win_blend &&
-			    w->is_fullscreen && !w->unredir_if_possible_excluded) {
+			    w->is_fullscreen && !window_options.unredir_ignore) {
 				unredir_possible = true;
 			}
 		}
@@ -911,7 +908,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// Unredirect screen if some window is requesting compositor bypass, even
 		// if that window is not on the top.
 		if (ps->o.unredir_if_possible && win_is_bypassing_compositor(ps, w) &&
-		    !w->unredir_if_possible_excluded) {
+		    !window_options.unredir_ignore) {
 			// Here we deviate from EWMH a bit. EWMH says we must not
 			// unredirect the screen if the window requesting bypassing would
 			// look different after unredirecting. Instead we always follow
@@ -1543,7 +1540,7 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 	auto w = win_maybe_allocate(ps, toplevel,
 	                            (xcb_get_window_attributes_reply_t *)reply_or_error);
 	if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		win_map_start(ps, w);
+		win_set_flags(w, WIN_FLAGS_MAPPED);
 		ps->pending_updates = true;
 	}
 }
@@ -1990,6 +1987,23 @@ static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) 
 	return load_shader_source(data, c2_list_get_data(cond));
 }
 
+static struct window_options win_options_from_config(const struct options *opts) {
+	return (struct window_options){
+	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
+	    .shadow = opts->shadow_enable,
+	    .corner_radius = (unsigned)opts->corner_radius,
+	    .transparent_clipping = opts->transparent_clipping,
+	    .dim = opts->inactive_dim > 0,
+	    .fade = opts->fading_enable,
+	    .shader = &null_shader,
+	    .focused = false,
+	    .invert_color = false,
+	    .paint = true,
+	    .clip_shadow_above = false,
+	    .unredir_ignore = false,
+	};
+}
+
 /**
  * Initialize a session.
  *
@@ -2172,6 +2186,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		          "invalid options.");
 		return NULL;
 	}
+
+	ps->window_options_default = win_options_from_config(&ps->o);
 
 	if (ps->o.window_shader_fg) {
 		log_debug("Default window shader: \"%s\"", ps->o.window_shader_fg);

@@ -240,7 +240,7 @@ uint32_t make_rounded_window_shape(xcb_render_trapezoid_t traps[], uint32_t max_
 }
 
 void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int fullwid,
-            int fullhei, double opacity, bool argb, bool neg, int cr,
+            int fullhei, double opacity, bool argb, bool neg, unsigned int cr,
             xcb_render_picture_t pict, glx_texture_t *ptex, const region_t *reg_paint,
             const glx_prog_main_t *pprogram, clip_t *clip) {
 	switch (ps->o.legacy_backend) {
@@ -266,7 +266,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 				xcb_render_trapezoid_t traps[4 * max_ntraps + 3];
 
 				uint32_t n = make_rounded_window_shape(
-				    traps, max_ntraps, cr, fullwid, fullhei);
+				    traps, max_ntraps, (int)cr, fullwid, fullhei);
 
 				xcb_render_trapezoids(
 				    ps->c.c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
@@ -351,12 +351,16 @@ paint_region(session_t *ps, const struct win *w, int x, int y, int wid, int hei,
 	const int dy = (w ? w->g.y : 0) + y;
 	const int fullwid = w ? w->widthb : 0;
 	const int fullhei = w ? w->heightb : 0;
+	struct window_options w_opts = {};
+	if (w) {
+		w_opts = win_options(w);
+	}
 	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
-	const bool neg = (w && w->invert_color);
+	const bool neg = (w && w_opts.invert_color);
 
 	render(ps, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg,
-	       w ? w->corner_radius : 0, pict,
-	       (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
+	       w_opts.corner_radius, pict, (w ? w->paint.ptex : ps->root_tile_paint.ptex),
+	       reg_paint,
 #ifdef CONFIG_OPENGL
 	       w ? &ps->glx_prog_win : NULL
 #else
@@ -392,7 +396,8 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 /**
  * Paint a window itself and dim it if asked.
  */
-void paint_one(session_t *ps, struct win *w, const region_t *reg_paint) {
+void paint_one(session_t *ps, struct win *w, const struct window_options *w_opts,
+               const region_t *reg_paint) {
 	// Fetch Pixmap
 	if (!w->paint.pixmap) {
 		w->paint.pixmap = x_new_id(&ps->c);
@@ -442,7 +447,7 @@ void paint_one(session_t *ps, struct win *w, const region_t *reg_paint) {
 	xcb_render_picture_t pict = w->paint.pict;
 
 	// Invert window color, if required
-	if (bkend_use_xrender(ps) && w->invert_color) {
+	if (bkend_use_xrender(ps) && w_opts->invert_color) {
 		xcb_render_picture_t newpict = x_create_picture_with_pictfmt(
 		    &ps->c, wid, hei, w->pictfmt->id, w->pictfmt->depth, 0, NULL);
 		if (newpict) {
@@ -556,7 +561,7 @@ void paint_one(session_t *ps, struct win *w, const region_t *reg_paint) {
 	}
 
 	// Dimming the window if needed
-	if (w->dim) {
+	if (w_opts->dim) {
 		double dim_opacity = ps->o.inactive_dim;
 		if (!ps->o.inactive_dim_fixed) {
 			dim_opacity *= window_opacity;
@@ -761,7 +766,8 @@ shadow_picture_err:
 /**
  * Paint the shadow of a window.
  */
-static inline void win_paint_shadow(session_t *ps, struct win *w, region_t *reg_paint) {
+static inline void win_paint_shadow(session_t *ps, struct win *w,
+                                    const struct window_options *w_opts, region_t *reg_paint) {
 	// Bind shadow pixmap to GLX texture if needed
 	paint_bind_tex(ps, &w->shadow_paint, 0, 0, false, 32, 0, false);
 
@@ -771,15 +777,16 @@ static inline void win_paint_shadow(session_t *ps, struct win *w, region_t *reg_
 	}
 
 	xcb_render_picture_t td = XCB_NONE;
-	bool should_clip =
-	    (w->corner_radius > 0) && (!ps->o.wintype_option[w->window_type].full_shadow);
+	bool should_clip = (w_opts->corner_radius > 0) &&
+	                   (!ps->o.wintype_option[w->window_type].full_shadow);
 	if (should_clip) {
 		if (ps->o.legacy_backend == BKEND_XRENDER ||
 		    ps->o.legacy_backend == BKEND_XR_GLX_HYBRID) {
-			uint32_t max_ntraps = to_u32_checked(w->corner_radius);
+			uint32_t max_ntraps = to_u32_checked(w_opts->corner_radius);
 			xcb_render_trapezoid_t traps[4 * max_ntraps + 3];
-			uint32_t n = make_rounded_window_shape(
-			    traps, max_ntraps, w->corner_radius, w->widthb, w->heightb);
+			uint32_t n = make_rounded_window_shape(traps, max_ntraps,
+			                                       (int)w_opts->corner_radius,
+			                                       w->widthb, w->heightb);
 
 			td = x_create_picture_with_standard(
 			    &ps->c, w->widthb, w->heightb, XCB_PICT_STANDARD_ARGB_32, 0, 0);
@@ -896,13 +903,13 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
  * Blur the background of a window.
  */
 static inline void
-win_blur_background(session_t *ps, struct win *w, xcb_render_picture_t tgt_buffer,
-                    const region_t *reg_paint) {
+win_blur_background(session_t *ps, struct win *w, const struct window_options *w_opts,
+                    xcb_render_picture_t tgt_buffer, const region_t *reg_paint) {
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
 	auto const wid = to_u16_checked(w->widthb);
 	auto const hei = to_u16_checked(w->heightb);
-	const int cr = w ? w->corner_radius : 0;
+	const int cr = w_opts ? (int)w_opts->corner_radius : 0;
 	const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
 
 	double factor_center = 1.0;
@@ -1089,8 +1096,9 @@ void paint_all(session_t *ps, struct win *t) {
 		region_t bshape_no_corners =
 		    win_get_bounding_shape_global_without_corners_by_val(w);
 		region_t bshape_corners = win_get_bounding_shape_global_by_val(w);
+		auto const w_opts = win_options(w);
 		// Painting shadow
-		if (w->shadow) {
+		if (w_opts.shadow) {
 			// Lazy shadow building
 			if (!w->shadow_paint.pixmap) {
 				if (!win_build_shadow(ps, w, 1)) {
@@ -1140,13 +1148,13 @@ void paint_all(session_t *ps, struct win *t) {
 			// Detect if the region is empty before painting
 			if (pixman_region32_not_empty(&reg_tmp)) {
 				set_tgt_clip(ps, &reg_tmp);
-				win_paint_shadow(ps, w, &reg_tmp);
+				win_paint_shadow(ps, w, &w_opts, &reg_tmp);
 			}
 		}
 
 		// Only clip shadows above visible windows
 		if (win_animatable_get(w, WIN_SCRIPT_OPACITY) * MAX_ALPHA >= 1) {
-			if (w->clip_shadow_above) {
+			if (w_opts.clip_shadow_above) {
 				// Add window bounds to shadow-clip region
 				pixman_region32_union(&reg_shadow_clip, &reg_shadow_clip,
 				                      &bshape_corners);
@@ -1172,7 +1180,7 @@ void paint_all(session_t *ps, struct win *t) {
 
 #ifdef CONFIG_OPENGL
 			// If rounded corners backup the region first
-			if (w->corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
+			if (w_opts.corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
 				const int16_t x = w->g.x;
 				const int16_t y = w->g.y;
 				auto const wid = to_u16_checked(w->widthb);
@@ -1182,26 +1190,27 @@ void paint_all(session_t *ps, struct win *t) {
 #endif
 
 			// Blur window background
-			if (w->blur_background &&
+			if (w_opts.blur_background &&
 			    (w->mode == WMODE_TRANS ||
 			     (ps->o.blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
 			     ps->o.force_win_blend)) {
-				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
+				win_blur_background(ps, w, &w_opts, ps->tgt_buffer.pict,
+				                    &reg_tmp);
 			}
 
 			// Painting the window
-			paint_one(ps, w, &reg_tmp);
+			paint_one(ps, w, &w_opts, &reg_tmp);
 
 #ifdef CONFIG_OPENGL
 			// Rounded corners for XRender is implemented inside render()
 			// Round window corners
-			if (w->corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
+			if (w_opts.corner_radius > 0 && ps->o.legacy_backend == BKEND_GLX) {
 				auto const wid = to_u16_checked(w->widthb);
 				auto const hei = to_u16_checked(w->heightb);
-				glx_round_corners_dst(ps, w, w->glx_texture_bg, w->g.x,
-				                      w->g.y, wid, hei,
-				                      (float)ps->psglx->z - 0.5F,
-				                      (float)w->corner_radius, &reg_tmp);
+				glx_round_corners_dst(
+				    ps, w, w->glx_texture_bg, w->g.x, w->g.y, wid, hei,
+				    (float)ps->psglx->z - 0.5F,
+				    (float)w_opts.corner_radius, &reg_tmp);
 			}
 #endif
 		}

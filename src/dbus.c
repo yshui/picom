@@ -20,6 +20,7 @@
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
+#include "picom.h"
 #include "utils/misc.h"
 #include "utils/str.h"
 #include "wm/defs.h"
@@ -652,6 +653,14 @@ static DBusHandlerResult cdbus_process_repaint(session_t *ps, DBusMessage *msg a
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+static inline cdbus_enum_t tristate_to_switch(enum tristate val) {
+	switch (val) {
+	case TRI_FALSE: return OFF;
+	case TRI_TRUE: return ON;
+	default: return UNSET;
+	}
+}
+
 /**
  * Process a win_get D-Bus request.
  */
@@ -703,6 +712,8 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
+	auto w_opts = win_options(w);
+
 	append(id, wid, win_id(w));
 	append(client_win, wid, win_client_id(w, /*fallback_to_self=*/true));
 	append(map_state, boolean, w->a.map_state);
@@ -712,16 +723,20 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append(right_width, int32, w->frame_extents.right);
 	append(top_width, int32, w->frame_extents.top);
 	append(bottom_width, int32, w->frame_extents.bottom);
+	append(fade_force, enum, tristate_to_switch(w->options_override.fade));
+	append(shadow_force, enum, tristate_to_switch(w->options_override.shadow));
+	append(focused_force, enum, tristate_to_switch(w->options_override.focused));
+	append(invert_color_force, enum, tristate_to_switch(w->options_override.invert_color));
+	append(opacity_is_set, boolean, !safe_isnan(w->options.opacity));
+	append(shadow, boolean, w_opts.shadow);
+	append(fade, boolean, w_opts.fade);
+	append(blur_background, boolean, w_opts.blur_background);
 
 	append_win_property(mode, enum);
 	append_win_property(opacity, double);
 	append_win_property(ever_damaged, boolean);
 	append_win_property(window_type, enum);
 	append_win_property(leader, wid);
-	append_win_property(fade_force, enum);
-	append_win_property(shadow_force, enum);
-	append_win_property(focused_force, enum);
-	append_win_property(invert_color_force, enum);
 	append_win_property(name, string);
 	append_win_property(class_instance, string);
 	append_win_property(class_general, string);
@@ -729,12 +744,8 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append_win_property(opacity, double);
 	append_win_property(has_opacity_prop, boolean);
 	append_win_property(opacity_prop, uint32);
-	append_win_property(opacity_is_set, boolean);
 	append_win_property(opacity_set, double);
 	append_win_property(frame_opacity, double);
-	append_win_property(shadow, boolean);
-	append_win_property(invert_color, boolean);
-	append_win_property(blur_background, boolean);
 
 #undef append_win_property
 #undef append
@@ -778,18 +789,31 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
+	bool changed = false;
 	if (!strcmp("shadow_force", target)) {
-		win_set_shadow_force(ps, w, val);
+		w->options_override.shadow =
+		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
+		changed = true;
 	} else if (!strcmp("fade_force", target)) {
-		win_set_fade_force(w, val);
+		w->options_override.fade =
+		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
+		changed = true;
 	} else if (!strcmp("focused_force", target)) {
-		win_set_focused_force(ps, w, val);
+		w->options_override.focused =
+		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
+		changed = true;
 	} else if (!strcmp("invert_color_force", target)) {
-		win_set_invert_color_force(ps, w, val);
+		w->options_override.invert_color =
+		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
+		changed = true;
 	} else {
 		log_debug(CDBUS_ERROR_BADTGT_S, target);
 		dbus_set_error(err, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	if (changed) {
+		add_damage_from_win(ps, w);
+		queue_redraw(ps);
 	}
 
 	if (reply != NULL && !cdbus_append_boolean(reply, true)) {

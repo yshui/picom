@@ -82,7 +82,7 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 		}
 	}
 	if (wid == win_id(w) || wid == win_client_id(w, /*fallback_to_self=*/false)) {
-		w->focused = true;
+		w->options.focused = TRI_TRUE;
 	}
 
 	auto attributes_reply = XCB_AWAIT(xcb_get_window_attributes, c->c, win_id(w));

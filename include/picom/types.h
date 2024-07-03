@@ -28,6 +28,19 @@ typedef enum {
 
 enum tristate { TRI_FALSE = -1, TRI_UNKNOWN = 0, TRI_TRUE = 1 };
 
+/// Return value if it's not TRI_UNKNOWN, otherwise return fallback.
+static inline enum tristate tri_or(enum tristate value, enum tristate fallback) {
+	return value ?: fallback;
+}
+
+static inline bool tri_or_bool(enum tristate value, bool fallback) {
+	return value == TRI_UNKNOWN ? fallback : value == TRI_TRUE;
+}
+
+static inline enum tristate tri_from_bool(bool value) {
+	return value ? TRI_TRUE : TRI_FALSE;
+}
+
 /// A structure representing margins around a rectangle.
 typedef struct {
 	int top;
