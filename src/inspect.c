@@ -245,6 +245,8 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	                &match_state);
 	printf("Checking " BOLD("shadow-exclude") ":\n");
 	c2_list_foreach(options.shadow_blacklist, c2_match_once_and_log, &match_state);
+	printf("Checking " BOLD("inactive-dim-exclude") ":\n");
+	c2_list_foreach(options.inactive_dim_blacklist, c2_match_once_and_log, &match_state);
 	printf("Checking " BOLD("fade-exclude") ":\n");
 	c2_list_foreach(options.fade_blacklist, c2_match_once_and_log, &match_state);
 	printf("Checking " BOLD("clip-shadow-above") ":\n");

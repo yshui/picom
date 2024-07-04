@@ -846,9 +846,15 @@ bool win_should_dim(session_t *ps, const struct win *w) {
 		return false;
 	}
 
+	if (c2_match(ps->c2_state, w, ps->o.inactive_dim_blacklist, NULL)) {
+		log_debug("Dim disabled by inactive-dim-exclude");
+		return false;
+	}
+
 	if (ps->o.inactive_dim > 0 && !(w->focused)) {
 		return true;
 	}
+
 	return false;
 }
 

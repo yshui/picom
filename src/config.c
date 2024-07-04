@@ -702,6 +702,7 @@ bool parse_config(options_t *opt, const char *config_file) {
 	    .window_shader_fg = NULL,
 	    .window_shader_fg_rules = NULL,
 	    .inactive_dim = 0.0,
+	    .inactive_dim_blacklist = NULL,
 	    .inactive_dim_fixed = false,
 	    .invert_color_list = NULL,
 	    .opacity_rules = NULL,

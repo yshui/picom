@@ -818,6 +818,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
 	                       "transparent-clipping-exclude") ||
 	    !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->inactive_dim_blacklist, "inactive-dim-exclude") ||
 	    !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
 	    !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
 	    !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||

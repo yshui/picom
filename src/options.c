@@ -444,6 +444,7 @@ static const struct picom_option picom_options[] = {
 
     // Rules
     [263] = {"shadow-exclude"              , RULES(shadow_blacklist)              , "Exclude conditions for shadows."},
+    [273] = {"inactive-dim-exclude"        , RULES(inactive_dim_blacklist)        , "Exclude conditions for inactive dim."},
     [279] = {"focus-exclude"               , RULES(focus_blacklist)               , "Specify a list of conditions of windows that should always be considered focused."},
     [288] = {"invert-color-include"        , RULES(invert_color_list)             , "Specify a list of conditions of windows that should be painted with "
                                                                                     "inverted color."},
@@ -957,6 +958,7 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 	if (!(c2_list_postprocess(state, c->c, option->unredir_if_possible_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->paint_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->shadow_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->inactive_dim_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->shadow_clip_list) &&
 	      c2_list_postprocess(state, c->c, option->fade_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->blur_background_blacklist) &&
@@ -975,6 +977,7 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 void options_destroy(struct options *options) {
 	// Free blacklists
 	c2_list_free(&options->shadow_blacklist, NULL);
+	c2_list_free(&options->inactive_dim_blacklist, NULL);
 	c2_list_free(&options->shadow_clip_list, NULL);
 	c2_list_free(&options->fade_blacklist, NULL);
 	c2_list_free(&options->focus_blacklist, NULL);
