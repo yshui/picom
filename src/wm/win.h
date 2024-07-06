@@ -351,7 +351,7 @@ void unmap_win_finish(session_t *ps, struct win *w);
 /// Start the destroying of a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
 void win_destroy_start(session_t *ps, struct win *w);
-void win_map_start(struct win *w);
+void win_map_start(struct session *ps, struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
 void win_release_images(struct backend_base *backend, struct win *w);
@@ -468,6 +468,30 @@ bool win_check_flags_all(struct win *w, uint64_t flags);
 /// Mark properties as stale for a window
 void win_set_properties_stale(struct win *w, const xcb_atom_t *prop, int nprops);
 
+static inline struct win_geometry
+win_geometry_from_configure_notify(const xcb_configure_notify_event_t *ce) {
+	return (struct win_geometry){
+	    .x = ce->x,
+	    .y = ce->y,
+	    .width = ce->width,
+	    .height = ce->height,
+	    .border_width = ce->border_width,
+	};
+}
+static inline struct win_geometry
+win_geometry_from_get_geometry(const xcb_get_geometry_reply_t *g) {
+	return (struct win_geometry){
+	    .x = g->x,
+	    .y = g->y,
+	    .width = g->width,
+	    .height = g->height,
+	    .border_width = g->border_width,
+	};
+}
+/// Set the pending geometry of a window. And set appropriate flags when the geometry
+/// changes.
+/// Returns true if the geometry has changed, false otherwise.
+bool win_set_pending_geometry(struct win *w, struct win_geometry g);
 bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct win *w);
 /**
  * Retrieve frame extents from a window.

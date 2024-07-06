@@ -1538,7 +1538,7 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 	auto w = win_maybe_allocate(ps, toplevel,
 	                            (xcb_get_window_attributes_reply_t *)reply_or_error);
 	if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		win_map_start(w);
+		win_map_start(ps, w);
 		ps->pending_updates = true;
 	}
 }
