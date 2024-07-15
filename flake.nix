@@ -48,14 +48,19 @@
           (final: prev: {
             stdenv = prev.withCFlags "-fno-omit-frame-pointer" prev.stdenv;
           })
+          (final: prev: {
+            llvmPackages_18 = prev.llvmPackages_18 // {
+              stdenv = final.withCFlags "-fno-omit-frame-pointer" prev.llvmPackages_18.stdenv;
+            };
+          })
         ];
       };
 
       overlays = [overlay];
       mkDevShell = p: p.overrideAttrs (o: {
         nativeBuildInputs = o.nativeBuildInputs ++ (with pkgs; [
-          clang-tools_17
-          llvmPackages_17.clang-unwrapped.python
+          clang-tools_18
+          llvmPackages_18.clang-unwrapped.python
           python
         ]);
         hardeningDisable = ["fortify"];
@@ -72,15 +77,18 @@
         overlay
         overlays
         ;
-      defaultPackage = pkgs.picom;
-      devShells.default = mkDevShell defaultPackage;
+      packages = {
+        default = pkgs.picom;
+        llvm = profilePkgs.llvm_18;
+      };
+      devShells.default = mkDevShell packages.default;
       devShells.useClang = devShells.default.override {
-        inherit (pkgs.llvmPackages_17) stdenv;
+        inherit (pkgs.llvmPackages_18) stdenv;
       };
       # build picom and all dependencies with frame pointer, making profiling/debugging easier.
       # WARNING! many many rebuilds
       devShells.useClangProfile = (mkDevShell profilePkgs.picom).override {
-        stdenv = profilePkgs.withCFlags "-fno-omit-frame-pointer" profilePkgs.llvmPackages_17.stdenv;
+        stdenv = profilePkgs.withCFlags "-fno-omit-frame-pointer" profilePkgs.llvmPackages_18.stdenv;
       };
     });
 }
