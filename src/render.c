@@ -422,7 +422,7 @@ void paint_one(session_t *ps, struct win *w, const region_t *reg_paint) {
 	// Let glx_bind_pixmap() determine pixmap size, because if the user
 	// is resizing windows, the width and height we get may not be up-to-date,
 	// causing the jittering issue M4he reported in #7.
-	if (!paint_bind_tex(ps, &w->paint, 0, 0, false, 0, w->a.visual,
+	if (!paint_bind_tex(ps, &w->paint, 0, 0, true, 0, w->a.visual,
 	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
 		log_error("Failed to bind texture for window %#010x.", win_id(w));
 	}
@@ -763,7 +763,7 @@ shadow_picture_err:
  */
 static inline void win_paint_shadow(session_t *ps, struct win *w, region_t *reg_paint) {
 	// Bind shadow pixmap to GLX texture if needed
-	paint_bind_tex(ps, &w->shadow_paint, 0, 0, false, 32, 0, false);
+	paint_bind_tex(ps, &w->shadow_paint, 0, 0, true, 32, 0, false);
 
 	if (!paint_isvalid(ps, &w->shadow_paint)) {
 		log_error("Window %#010x is missing shadow data.", win_id(w));
@@ -1287,8 +1287,8 @@ void paint_all(session_t *ps, struct win *t) {
 		}
 		glXWaitX();
 		assert(ps->tgt_buffer.pixmap);
-		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
-		               false, ps->c.screen_info->root_depth,
+		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height, true,
+		               ps->c.screen_info->root_depth,
 		               ps->c.screen_info->root_visual, !ps->o.glx_no_rebind_pixmap);
 		if (ps->o.vsync_use_glfinish) {
 			glFinish();

@@ -797,10 +797,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 
 		glTexParameteri(ptex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(ptex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		if (repeat) {
-			glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		} else {
+		if (!repeat) {
 			glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		}
