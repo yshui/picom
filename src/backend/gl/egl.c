@@ -165,15 +165,13 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	// clang-format off
 	if (eglChooseConfig(gd->display,
 	                    (EGLint[]){
-	                             EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-	                             EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-	                             EGL_RED_SIZE, visual_info.red_size,
-	                             EGL_GREEN_SIZE, visual_info.green_size,
-	                             EGL_BLUE_SIZE, visual_info.blue_size,
-	                             EGL_ALPHA_SIZE, visual_info.alpha_size,
-	                             EGL_STENCIL_SIZE, 1,
-	                             EGL_CONFIG_CAVEAT, EGL_NONE,
-	                             EGL_NONE,
+	                            EGL_RED_SIZE, visual_info.red_size,
+	                            EGL_GREEN_SIZE, visual_info.green_size,
+	                            EGL_BLUE_SIZE, visual_info.blue_size,
+	                            EGL_ALPHA_SIZE, visual_info.alpha_size,
+	                            EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+	                            EGL_CONFIG_CAVEAT, EGL_NONE,
+	                            EGL_NONE,
 	                     }, &config, nconfigs, &nconfigs) != EGL_TRUE) {
 		log_error("Failed to choose EGL config for the root window.");
 		goto end;
