@@ -1290,8 +1290,6 @@ bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct win *
  * @param w struct _win of the parent window
  */
 void win_on_client_update(session_t *ps, struct win *w) {
-	auto client_win = wm_ref_client_of(w->tree_ref);
-
 	// If the window isn't mapped yet, stop here, as the function will be
 	// called in map_win()
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
@@ -1300,7 +1298,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 
 	win_update_wintype(&ps->c, ps->atoms, w);
 
-	xcb_window_t client_win_id = client_win ? wm_ref_win_id(client_win) : XCB_NONE;
+	xcb_window_t client_win_id = win_client_id(w, /*fallback_to_self=*/true);
 	// Get frame widths. The window is in damaged area already.
 	win_update_frame_extents(&ps->c, ps->atoms, w, client_win_id, ps->o.frame_opacity);
 
