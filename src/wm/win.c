@@ -108,9 +108,11 @@ static inline struct wm_ref *win_get_leader(session_t *ps, struct win *w) {
 /**
  * Update focused state of a window.
  */
-static void win_update_focused(session_t *ps, struct win *w) {
+static bool win_is_focused(session_t *ps, struct win *w) {
 	bool is_wmwin = win_is_wmwin(w);
-	w->options.focused = win_is_focused_raw(w) ? TRI_TRUE : TRI_FALSE;
+	if (win_is_focused_raw(w)) {
+		return true;
+	}
 
 	// Use wintype_focus, and treat WM windows and override-redirected
 	// windows specially
@@ -119,15 +121,16 @@ static void win_update_focused(session_t *ps, struct win *w) {
 	    (ps->o.mark_ovredir_focused && wm_ref_client_of(w->tree_ref) == NULL && !is_wmwin) ||
 	    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
 	     c2_match(ps->c2_state, w, ps->o.focus_blacklist, NULL))) {
-		w->options.focused = TRI_TRUE;
+		return true;
 	}
 
 	// If window grouping detection is enabled, mark the window active if
 	// its group is
 	auto active_leader = wm_active_leader(ps->wm);
 	if (ps->o.track_leader && active_leader && win_get_leader(ps, w) == active_leader) {
-		w->options.focused = TRI_TRUE;
+		return true;
 	}
+	return false;
 }
 
 struct group_callback_data {
@@ -809,7 +812,7 @@ winmode_t win_calc_mode(const struct win *w) {
  *
  * @return target opacity
  */
-static double win_calc_opacity_target(session_t *ps, const struct win *w) {
+static double win_calc_opacity_target(session_t *ps, const struct win *w, bool focused) {
 	double opacity = 1;
 
 	if (w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYED) {
@@ -828,14 +831,14 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w) {
 		// focused
 		if (win_is_focused_raw(w)) {
 			opacity = ps->o.active_opacity;
-		} else if (!win_options(w).focused) {
+		} else if (!focused) {
 			// Respect inactive_opacity in some cases
 			opacity = ps->o.inactive_opacity;
 		}
 	}
 
 	// respect inactive override
-	if (ps->o.inactive_opacity_override && !win_options(w).focused) {
+	if (ps->o.inactive_opacity_override && !focused) {
 		opacity = ps->o.inactive_opacity;
 	}
 
@@ -870,13 +873,13 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 /**
  * Determine whether a window is to be dimmed.
  */
-static void win_update_dim(session_t *ps, struct win *w) {
+static void win_update_dim(session_t *ps, struct win *w, bool focused) {
 	// Make sure we do nothing if the window is unmapped / being destroyed
 	if (w->state == WSTATE_UNMAPPED) {
 		return;
 	}
 
-	if (ps->o.inactive_dim > 0 && !win_options(w).focused) {
+	if (ps->o.inactive_dim > 0 && !focused) {
 		w->options.dim = TRI_TRUE;
 	} else {
 		w->options.dim = TRI_FALSE;
@@ -1081,7 +1084,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	c2_window_state_update(ps->c2_state, &w->c2_state, ps->c.c, wid, win_id(w));
 	// Focus and is_fullscreen needs to be updated first, as other rules might depend
 	// on the focused state of the window
-	win_update_focused(ps, w);
+	bool focused = win_is_focused(ps, w);
 	win_update_is_fullscreen(ps, w);
 
 	win_determine_shadow(ps, w);
@@ -1090,11 +1093,11 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
 	win_determine_fg_shader(ps, w);
-	win_update_dim(ps, w);
+	win_update_dim(ps, w, focused);
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
-	w->opacity = win_calc_opacity_target(ps, w);
+	w->opacity = win_calc_opacity_target(ps, w, focused);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		w->options.paint = c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL)
 		                       ? TRI_FALSE
@@ -1365,7 +1368,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	new->options = WIN_MAYBE_OPTIONS_DEFAULT;
 	new->options_override = WIN_MAYBE_OPTIONS_DEFAULT;
 	new->options_default = &ps->window_options_default;
-	new->options.focused = TRI_FALSE;
 
 	// Set all the stale flags on this new window, so it's properties will get
 	// updated when it's mapped

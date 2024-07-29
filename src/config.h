@@ -8,10 +8,8 @@
 /// Common functions and definitions for configuration parsing
 /// Used for command line arguments and config files
 
-#include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdlib.h>
 #include <string.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 #include <xcb/xcb.h>
@@ -161,8 +159,6 @@ struct window_maybe_options {
 	enum tristate fade;
 	/// Do not paint shadow over this window.
 	enum tristate clip_shadow_above;
-	/// Whether the window is to be considered focused.
-	enum tristate focused;
 	/// Whether the window is painted.
 	enum tristate paint;
 	/// Whether this window should be considered for unredirect-if-possible.
@@ -181,7 +177,6 @@ struct window_options {
 	bool dim;
 	bool fade;
 	bool clip_shadow_above;
-	bool focused;
 	bool paint;
 	bool unredir_ignore;
 
@@ -193,7 +188,7 @@ win_options_eq(const struct window_options *a, const struct window_options *b) {
 	return memcmp(a, b, offsetof(struct window_options, padding)) == 0;
 }
 
-static_assert(offsetof(struct window_options, padding) == 30, "window_options has "
+static_assert(offsetof(struct window_options, padding) == 29, "window_options has "
                                                               "implicit padding");
 
 extern struct shader_info null_shader;

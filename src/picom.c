@@ -1996,7 +1996,6 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .dim = opts->inactive_dim > 0,
 	    .fade = opts->fading_enable,
 	    .shader = &null_shader,
-	    .focused = false,
 	    .invert_color = false,
 	    .paint = true,
 	    .clip_shadow_above = false,

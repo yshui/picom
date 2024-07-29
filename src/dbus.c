@@ -725,7 +725,6 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append(bottom_width, int32, w->frame_extents.bottom);
 	append(fade_force, enum, tristate_to_switch(w->options_override.fade));
 	append(shadow_force, enum, tristate_to_switch(w->options_override.shadow));
-	append(focused_force, enum, tristate_to_switch(w->options_override.focused));
 	append(invert_color_force, enum, tristate_to_switch(w->options_override.invert_color));
 	append(opacity_is_set, boolean, !safe_isnan(w->options.opacity));
 	append(shadow, boolean, w_opts.shadow);
@@ -796,10 +795,6 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 		changed = true;
 	} else if (!strcmp("fade_force", target)) {
 		w->options_override.fade =
-		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
-		changed = true;
-	} else if (!strcmp("focused_force", target)) {
-		w->options_override.focused =
 		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
 		changed = true;
 	} else if (!strcmp("invert_color_force", target)) {
