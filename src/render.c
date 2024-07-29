@@ -561,8 +561,8 @@ void paint_one(session_t *ps, struct win *w, const struct window_options *w_opts
 	}
 
 	// Dimming the window if needed
-	if (w_opts->dim) {
-		double dim_opacity = ps->o.inactive_dim;
+	if (w_opts->dim > 0) {
+		double dim_opacity = w_opts->dim;
 		if (!ps->o.inactive_dim_fixed) {
 			dim_opacity *= window_opacity;
 		}

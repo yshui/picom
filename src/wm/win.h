@@ -305,7 +305,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
     .fade = TRI_UNKNOWN,
     .invert_color = TRI_UNKNOWN,
     .paint = TRI_UNKNOWN,
-    .dim = TRI_UNKNOWN,
+    .dim = NAN,
     .opacity = NAN,
     .shader = NULL,
     .corner_radius = -1,
@@ -322,11 +322,11 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .blur_background = tri_or(upper.blur_background, lower.blur_background),
 	    .clip_shadow_above = tri_or(upper.clip_shadow_above, lower.clip_shadow_above),
 	    .shadow = tri_or(upper.shadow, lower.shadow),
-	    .dim = tri_or(upper.dim, lower.dim),
 	    .fade = tri_or(upper.fade, lower.fade),
 	    .invert_color = tri_or(upper.invert_color, lower.invert_color),
 	    .paint = tri_or(upper.paint, lower.paint),
 	    .opacity = !safe_isnan(upper.opacity) ? upper.opacity : lower.opacity,
+	    .dim = !safe_isnan(upper.dim) ? upper.dim : lower.dim,
 	    .shader = upper.shader ? upper.shader : lower.shader,
 	    .corner_radius = upper.corner_radius >= 0 ? upper.corner_radius : lower.corner_radius,
 	};
@@ -343,11 +343,11 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .shadow = tri_or_bool(maybe.shadow, def.shadow),
 	    .corner_radius = maybe.corner_radius >= 0 ? (unsigned int)maybe.corner_radius
 	                                              : def.corner_radius,
-	    .dim = tri_or_bool(maybe.dim, def.dim),
 	    .fade = tri_or_bool(maybe.fade, def.fade),
 	    .invert_color = tri_or_bool(maybe.invert_color, def.invert_color),
 	    .paint = tri_or_bool(maybe.paint, def.paint),
 	    .opacity = !safe_isnan(maybe.opacity) ? maybe.opacity : def.opacity,
+	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
 	    .shader = maybe.shader ? maybe.shader : def.shader,
 	};
 }

@@ -486,11 +486,10 @@ void renderer_ensure_images_ready(struct renderer *r, struct backend_base *backe
 /// @return true if a frame is rendered, false if this frame is skipped.
 bool renderer_render(struct renderer *r, struct backend_base *backend,
                      image_handle root_image, struct layout_manager *lm,
-                     struct command_builder *cb, void *blur_context,
-                     uint64_t render_start_us, xcb_sync_fence_t xsync_fence,
-                     bool use_damage, bool monitor_repaint, bool force_blend,
-                     bool blur_frame, bool inactive_dim_fixed, double max_brightness,
-                     double inactive_dim, const struct x_monitors *monitors,
+                     struct command_builder *cb, void *blur_context, uint64_t render_start_us,
+                     xcb_sync_fence_t xsync_fence, bool use_damage, bool monitor_repaint,
+                     bool force_blend, bool blur_frame, bool inactive_dim_fixed,
+                     double max_brightness, const struct x_monitors *monitors,
                      const struct win_option *wintype_options, uint64_t *after_damage_us) {
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
@@ -512,7 +511,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	renderer_ensure_images_ready(r, backend, monitor_repaint);
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
-	                      max_brightness, inactive_dim, monitors, wintype_options);
+	                      max_brightness, monitors, wintype_options);
 	if (log_get_level_tls() <= LOG_LEVEL_TRACE) {
 		auto layer = layout->layers - 1;
 		auto layer_end = &layout->commands[layout->first_layer_start];

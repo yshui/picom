@@ -17,17 +17,14 @@
 static inline unsigned
 commands_for_window_body(struct layer *layer, struct backend_command *cmd,
                          const region_t *frame_region, bool inactive_dim_fixed,
-                         double inactive_dim, double max_brightness) {
+                         double max_brightness) {
 	auto w = layer->win;
 	scoped_region_t crop = region_from_box(layer->crop);
 	auto mode = win_calc_mode_raw(layer->win);
 	int border_width = w->g.border_width;
-	double dim = 0;
-	if (layer->options.dim) {
-		dim = inactive_dim;
-		if (!inactive_dim_fixed) {
-			dim *= layer->opacity;
-		}
+	double dim = layer->options.dim;
+	if (!inactive_dim_fixed) {
+		dim *= layer->opacity;
 	}
 	if (border_width == 0) {
 		// Some WM has borders implemented as WM frames
@@ -363,9 +360,9 @@ void command_builder_free(struct command_builder *cb) {
 
 // TODO(yshui) reduce the number of parameters by storing the final effective parameter
 // value in `struct managed_win`.
-void command_builder_build(struct command_builder *cb, struct layout *layout, bool force_blend,
-                           bool blur_frame, bool inactive_dim_fixed, double max_brightness,
-                           double inactive_dim, const struct x_monitors *monitors,
+void command_builder_build(struct command_builder *cb, struct layout *layout,
+                           bool force_blend, bool blur_frame, bool inactive_dim_fixed,
+                           double max_brightness, const struct x_monitors *monitors,
                            const struct win_option *wintype_options) {
 
 	unsigned ncmds = 1;
@@ -398,8 +395,8 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 		                          layer->window.origin.y);
 
 		// Add window body
-		cmd -= commands_for_window_body(layer, cmd, &frame_region, inactive_dim_fixed,
-		                                inactive_dim, max_brightness);
+		cmd -= commands_for_window_body(layer, cmd, &frame_region,
+		                                inactive_dim_fixed, max_brightness);
 
 		// Add shadow
 		cmd -= command_for_shadow(layer, cmd, wintype_options, monitors, last + 1);

@@ -880,9 +880,9 @@ static void win_update_dim(session_t *ps, struct win *w, bool focused) {
 	}
 
 	if (ps->o.inactive_dim > 0 && !focused) {
-		w->options.dim = TRI_TRUE;
+		w->options.dim = ps->o.inactive_dim;
 	} else {
-		w->options.dim = TRI_FALSE;
+		w->options.dim = 0;
 	}
 }
 
@@ -1022,7 +1022,7 @@ static void win_determine_rounded_corners(session_t *ps, struct win *w) {
 
 	// Don't round full screen windows & excluded windows,
 	// unless we find a corner override in corner_radius_rules
-	if (!matched && w && w->is_fullscreen) {
+	if (!matched && w->is_fullscreen) {
 		w->options.corner_radius = 0;
 		log_debug("Not rounding corners for window %#010x", win_id(w));
 	} else {

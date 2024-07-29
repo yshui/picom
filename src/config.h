@@ -142,6 +142,9 @@ struct window_maybe_options {
 	/// Window opacity, NaN means not set.
 	double opacity;
 
+	/// Window dim level, NaN means not set.
+	double dim;
+
 	/// Name of the custom fragment shader for this window. NULL means not set.
 	const struct shader_info *shader;
 
@@ -153,8 +156,6 @@ struct window_maybe_options {
 	enum tristate invert_color;
 	/// Whether to blur window background.
 	enum tristate blur_background;
-	/// Whether the window is to be dimmed.
-	enum tristate dim;
 	/// Whether this window should fade.
 	enum tristate fade;
 	/// Do not paint shadow over this window.
@@ -168,13 +169,13 @@ struct window_maybe_options {
 /// Like `window_maybe_options`, but all fields are guaranteed to be set.
 struct window_options {
 	double opacity;
+	double dim;
 	const struct shader_info *shader;
 	unsigned int corner_radius;
 	bool transparent_clipping;
 	bool shadow;
 	bool invert_color;
 	bool blur_background;
-	bool dim;
 	bool fade;
 	bool clip_shadow_above;
 	bool paint;
@@ -188,7 +189,7 @@ win_options_eq(const struct window_options *a, const struct window_options *b) {
 	return memcmp(a, b, offsetof(struct window_options, padding)) == 0;
 }
 
-static_assert(offsetof(struct window_options, padding) == 29, "window_options has "
+static_assert(offsetof(struct window_options, padding) == 36, "window_options has "
                                                               "implicit padding");
 
 extern struct shader_info null_shader;
