@@ -254,11 +254,6 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 		goto end;
 	}
 
-	if (glXGetConfig(ps->c.dpy, pvis, GLX_STENCIL_SIZE, &value) || !value) {
-		log_error("Root visual lacks stencil buffer.");
-		goto end;
-	}
-
 	if (glXGetConfig(ps->c.dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
 		log_error("Root visual is not a double buffered GL visual.");
 		goto end;
