@@ -335,9 +335,10 @@ static void win_update_properties(session_t *ps, struct win *w) {
 		}
 	}
 
-	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
-	    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR) ||
-	    win_fetch_and_unset_property_stale(w, XCB_ATOM_WM_HINTS)) {
+	if (ps->o.track_leader &&
+	    (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
+	     win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR) ||
+	     win_fetch_and_unset_property_stale(w, XCB_ATOM_WM_HINTS))) {
 		auto client_win = win_client_id(w, /*fallback_to_self=*/true);
 		auto new_leader = win_get_leader_property(&ps->c, ps->atoms, client_win,
 		                                          ps->o.detect_transient,
