@@ -7,3 +7,4 @@
 #include "common.h"
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev);
+void ev_update_focused(struct session *ps);

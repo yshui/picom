@@ -1590,6 +1590,7 @@ static void handle_new_windows(session_t *ps) {
 				          wm_ref_win_id(wm_change.toplevel),
 				          wm_change.client.new_.x);
 			}
+			ev_update_focused(ps);
 			break;
 		case WM_TREE_CHANGE_TOPLEVEL_RESTACKED: invalidate_reg_ignore(ps); break;
 		default: unreachable();

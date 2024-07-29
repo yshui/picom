@@ -224,6 +224,8 @@ typedef struct session {
 	struct render_statistics render_stats;
 
 	// === Operation related ===
+	/// Whether there is a pending quest to get the focused window
+	bool pending_focus_check;
 	/// Flags related to the root window
 	uint64_t root_flags;
 	/// Program options.
