@@ -235,8 +235,9 @@ typedef struct {
 static struct {
 	const char *name;
 	bool is_string;
+	bool deprecated;
 } C2_PREDEFS[] = {
-    [C2_L_PID]         = { "id", false, },
+    [C2_L_PID]         = { "id", false, true },
     [C2_L_PX]          = { "x", false, },
     [C2_L_PY]          = { "y", false, },
     [C2_L_PX2]         = { "x2", false, },
@@ -253,9 +254,9 @@ static struct {
     [C2_L_PWMWIN]      = { "wmwin", false, },
     [C2_L_PBSHAPED]    = { "bounding_shaped", false, },
     [C2_L_PROUNDED]    = { "rounded_corners", false, },
-    [C2_L_PCLIENT]     = { "client", false, },
+    [C2_L_PCLIENT]     = { "client", false, true },
     [C2_L_PWINDOWTYPE] = { "window_type", true, },
-    [C2_L_PLEADER]     = { "leader", false, },
+    [C2_L_PLEADER]     = { "leader", false, true },
     [C2_L_PNAME]       = { "name", true, },
     [C2_L_PCLASSG]     = { "class_g", true, },
     [C2_L_PCLASSI]     = { "class_i", true, },
@@ -730,6 +731,13 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 				typeof(pele->l->ptntype) predef_type =
 				    C2_PREDEFS[pele->l->predef].is_string ? C2_L_PTSTRING
 				                                          : C2_L_PTINT;
+				if (C2_PREDEFS[pele->l->predef].deprecated) {
+					log_warn("Predefined target \"%s\" is "
+					         "deprecated. Matching against it will "
+					         "always fail. Offending pattern is "
+					         "\"%s\"",
+					         pele->l->tgt, pattern);
+				}
 				if (pele->l->op == C2_L_OEXISTS) {
 					pele->l->ptntype = predef_type;
 				} else if (pele->l->ptntype != predef_type) {
@@ -1580,15 +1588,15 @@ static inline bool c2_int_op(const c2_l_t *leaf, int64_t target) {
 }
 
 static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
-	auto const client_win = win_client_id(w, /*fallback_to_self=*/true);
-	const xcb_window_t wid = (leaf->target_on_client ? client_win : win_id(w));
-
 	// Get the value
 	if (leaf->predef != C2_L_PUNDEFINED) {
 		// A predefined target
 		int64_t predef_target = 0;
+		if (C2_PREDEFS[leaf->predef].deprecated) {
+			return false;
+		}
+
 		switch (leaf->predef) {
-		case C2_L_PID: predef_target = wid; break;
 		case C2_L_PX: predef_target = w->g.x; break;
 		case C2_L_PY: predef_target = w->g.y; break;
 		case C2_L_PX2: predef_target = w->g.x + w->widthb; break;
@@ -1604,8 +1612,6 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
 		case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
 		case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
-		case C2_L_PCLIENT: predef_target = client_win; break;
-		case C2_L_PLEADER: predef_target = w->leader; break;
 		case C2_L_POVREDIR:
 			// When user wants to check override-redirect, they almost always
 			// want to check the client window, not the frame window. We
@@ -1630,7 +1636,7 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 	assert(!values->needs_update);
 	if (!values->valid) {
 		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
-		            client_win, w->name);
+		            wm_ref_win_id(w->tree_ref), w->name);
 		return false;
 	}
 

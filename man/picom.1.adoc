@@ -301,7 +301,7 @@ With greater-than/less-than operators it looks like:
 
 _NEGATION_ (optional) is one or more exclamation marks;
 
-_TARGET_ is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+_TARGET_ is either a predefined target name, or the name of a window property to match. Supported predefined targets are `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*, note this has no relation to *--corner-radius*), `window_type` (window type in string), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
 
 _CLIENT/FRAME_ is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 
