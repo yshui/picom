@@ -167,10 +167,6 @@ struct win {
 	// Client window related members
 	/// Type of the window.
 	wintype_t window_type;
-	/// Leader window ID of the window.
-	xcb_window_t leader;
-	/// Cached topmost window ID of the leader window.
-	struct wm_ref *cache_leader;
 
 	// Blacklist related members
 	/// Name of the window.
@@ -189,6 +185,8 @@ struct win {
 	bool is_fullscreen;
 	/// Whether the window is the active window.
 	bool is_focused;
+	/// Whether the window group this window belongs to is focused.
+	bool is_group_focused;
 
 	// Opacity-related members
 	/// The final window opacity if no animation is running
@@ -434,11 +432,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
  * Release a destroyed window that is no longer needed.
  */
 void win_destroy_finish(session_t *ps, struct win *w);
-
-/**
- * Check if a window is focused, without using any focus rules or forced focus settings
- */
-bool attr_pure win_is_focused_raw(const struct win *w);
 
 /// Return whether the group a window belongs to is really focused.
 ///

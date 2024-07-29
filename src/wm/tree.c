@@ -284,6 +284,7 @@ struct wm_tree_node *wm_tree_new_window(struct wm_tree *tree, xcb_window_t id) {
 	node->id.x = id;
 	node->id.gen = tree->gen++;
 	node->has_wm_state = false;
+	node->leader = id;
 	list_init_head(&node->children);
 	return node;
 }

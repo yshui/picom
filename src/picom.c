@@ -1608,6 +1608,7 @@ static void refresh_windows(session_t *ps) {
 		}
 		win_process_primary_flags(ps, w);
 	}
+	wm_refresh_leaders(ps->wm);
 	wm_stack_foreach(ps->wm, cursor) {
 		auto w = wm_ref_deref(cursor);
 		if (w == NULL) {

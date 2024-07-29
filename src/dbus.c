@@ -596,7 +596,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 
 #define append(tgt, type, expr)                                                          \
 	if (!strcmp(#tgt, target)) {                                                     \
-		if (!cdbus_append_##type(reply, expr)) {                                 \
+		if (!cdbus_append_##type(reply, (expr))) {                               \
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;                          \
 		}                                                                        \
 		return DBUS_HANDLER_RESULT_HANDLED;                                      \
@@ -606,9 +606,10 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 	append(Mapped, bool_variant, w->state == WSTATE_MAPPED);
 	append(Id, wid_variant, win_id(w));
 	append(Type, string_variant, WINTYPES[w->window_type].name);
-	append(RawFocused, bool_variant, win_is_focused_raw(w));
+	append(RawFocused, bool_variant,
+	       w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused);
 	append(ClientWin, wid_variant, win_client_id(w, /*fallback_to_self=*/true));
-	append_win_property(Leader, leader, wid_variant);
+	append(Leader, wid_variant, wm_ref_win_id(wm_ref_leader(w->tree_ref)));
 	append_win_property(Name, name, string_variant);
 
 	if (!strcmp("Next", target)) {
@@ -696,7 +697,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 
 #define append(tgt, type, expr)                                                          \
 	if (strcmp(#tgt, target) == 0) {                                                 \
-		if (!cdbus_append_##type(reply, expr)) {                                 \
+		if (!cdbus_append_##type(reply, (expr))) {                               \
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;                          \
 		}                                                                        \
 		return DBUS_HANDLER_RESULT_HANDLED;                                      \
@@ -718,7 +719,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append(client_win, wid, win_client_id(w, /*fallback_to_self=*/true));
 	append(map_state, boolean, w->a.map_state);
 	append(wmwin, boolean, win_is_wmwin(w));
-	append(focused_raw, boolean, win_is_focused_raw(w));
+	append(focused_raw, boolean, w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused);
 	append(left_width, int32, w->frame_extents.left);
 	append(right_width, int32, w->frame_extents.right);
 	append(top_width, int32, w->frame_extents.top);
@@ -730,12 +731,12 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append(shadow, boolean, w_opts.shadow);
 	append(fade, boolean, w_opts.fade);
 	append(blur_background, boolean, w_opts.blur_background);
+	append(leader, wid, wm_ref_win_id(wm_ref_leader(w->tree_ref)));
 
 	append_win_property(mode, enum);
 	append_win_property(opacity, double);
 	append_win_property(ever_damaged, boolean);
 	append_win_property(window_type, enum);
-	append_win_property(leader, wid);
 	append_win_property(name, string);
 	append_win_property(class_instance, string);
 	append_win_property(class_general, string);
@@ -847,9 +848,10 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		}
 	} else if (!strcmp("focused", target)) {
 		// Find focused window
-		auto active_win = wm_active_win(ps->wm);
-		if (active_win && active_win->state != WSTATE_UNMAPPED) {
-			wid = win_id(active_win);
+		auto focused_win = wm_focused_win(ps->wm);
+		auto w = wm_ref_deref(focused_win);
+		if (focused_win && w && w->state == WSTATE_MAPPED) {
+			wid = wm_ref_win_id(focused_win);
 		}
 	} else {
 		log_debug(CDBUS_ERROR_BADTGT_S, target);

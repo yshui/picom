@@ -37,7 +37,6 @@
 #include "win.h"
 
 #define OPAQUE (0xffffffff)
-static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
 static const double ROUNDED_PERCENT = 0.05;
 
@@ -96,24 +95,14 @@ win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t
 		return ret;                                                              \
 	}
 
-static struct wm_ref *win_get_leader_raw(session_t *ps, struct win *w, int recursions);
-
-/// Get the leader of a window.
-///
-/// This function updates w->cache_leader if necessary.
-static inline struct wm_ref *win_get_leader(session_t *ps, struct win *w) {
-	return win_get_leader_raw(ps, w, 0);
-}
-
 /**
  * Update focused state of a window.
  */
 static bool win_is_focused(session_t *ps, struct win *w) {
 	bool is_wmwin = win_is_wmwin(w);
-	if (win_is_focused_raw(w)) {
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && (w->is_focused || w->is_group_focused)) {
 		return true;
 	}
-
 	// Use wintype_focus, and treat WM windows and override-redirected
 	// windows specially
 	if (ps->o.wintype_option[w->window_type].focus ||
@@ -123,13 +112,6 @@ static bool win_is_focused(session_t *ps, struct win *w) {
 	     c2_match(ps->c2_state, w, ps->o.focus_blacklist, NULL))) {
 		return true;
 	}
-
-	// If window grouping detection is enabled, mark the window active if
-	// its group is
-	auto active_leader = wm_active_leader(ps->wm);
-	if (ps->o.track_leader && active_leader && win_get_leader(ps, w) == active_leader) {
-		return true;
-	}
 	return false;
 }
 
@@ -137,90 +119,6 @@ struct group_callback_data {
 	struct session *ps;
 	xcb_window_t leader;
 };
-
-/**
- * Run win_on_factor_change() on all windows with the same leader window.
- *
- * @param leader leader window ID
- */
-static inline void group_on_factor_change(session_t *ps, struct wm_ref *leader) {
-	if (!leader) {
-		return;
-	}
-
-	wm_stack_foreach(ps->wm, cursor) {
-		if (wm_ref_is_zombie(cursor)) {
-			continue;
-		}
-		auto w = wm_ref_deref(cursor);
-		if (w == NULL) {
-			continue;
-		}
-		if (leader == win_get_leader(ps, w)) {
-			win_on_factor_change(ps, w);
-		}
-	}
-}
-
-static inline bool win_is_group_focused_inner(session_t *ps, struct wm_ref *leader) {
-	if (!leader) {
-		return false;
-	}
-
-	wm_stack_foreach(ps->wm, cursor) {
-		if (wm_ref_is_zombie(cursor)) {
-			continue;
-		}
-		auto w = wm_ref_deref(cursor);
-		if (w == NULL) {
-			continue;
-		}
-		if (leader == win_get_leader(ps, w) && win_is_focused_raw(w)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool win_is_group_focused(session_t *ps, struct win *w) {
-	if (w->state != WSTATE_MAPPED) {
-		return false;
-	}
-
-	auto leader = win_get_leader(ps, w);
-	return win_is_group_focused_inner(ps, leader);
-}
-
-/**
- * Set leader of a window.
- */
-static inline void win_set_leader(session_t *ps, struct win *w, xcb_window_t nleader) {
-	auto cache_leader_old = win_get_leader(ps, w);
-
-	w->leader = nleader;
-
-	// Forcefully do this to deal with the case when a child window
-	// gets mapped before parent, or when the window is a waypoint
-	wm_stack_foreach(ps->wm, cursor) {
-		if (wm_ref_is_zombie(cursor)) {
-			continue;
-		}
-		auto i = wm_ref_deref(cursor);
-		if (i != NULL) {
-			i->cache_leader = NULL;
-		}
-	}
-
-	// Update the old and new window group and active_leader if the
-	// window could affect their state.
-	auto cache_leader = win_get_leader(ps, w);
-	if (win_is_focused_raw(w) && cache_leader_old != cache_leader) {
-		wm_set_active_leader(ps->wm, cache_leader);
-
-		group_on_factor_change(ps, cache_leader_old);
-		group_on_factor_change(ps, cache_leader);
-	}
-}
 
 /**
  * Get a rectangular region a window occupies, excluding shadow.
@@ -444,10 +342,7 @@ static void win_update_properties(session_t *ps, struct win *w) {
 		auto new_leader = win_get_leader_property(&ps->c, ps->atoms, client_win,
 		                                          ps->o.detect_transient,
 		                                          ps->o.detect_client_leader);
-		if (w->leader != new_leader) {
-			win_set_leader(ps, w, new_leader);
-			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
-		}
+		wm_ref_set_leader(ps->wm, w->tree_ref, new_leader);
 	}
 
 	win_clear_all_properties_stale(w);
@@ -541,7 +436,36 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 /// global states (e.g. active window group) are consistent because they will be used in
 /// the processing of secondary flags.
 void win_process_secondary_flags(session_t *ps, struct win *w) {
-	if (w->flags == 0 || w->state != WSTATE_MAPPED) {
+	if (w->state != WSTATE_MAPPED) {
+		return;
+	}
+
+	// Handle window focus change. Set appropriate flags if focused states of
+	// this window changed in the wm tree.
+	bool new_focused = wm_focused_win(ps->wm) == w->tree_ref;
+	bool new_group_focused = wm_focused_leader(ps->wm) == wm_ref_leader(w->tree_ref);
+	if (new_focused != w->is_focused) {
+		log_debug("Window %#010x (%s) focus state changed from %d to %d",
+		          win_id(w), w->name, w->is_focused, new_focused);
+		w->is_focused = new_focused;
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		// Send D-Bus signal
+		if (ps->o.dbus) {
+			if (new_focused) {
+				cdbus_ev_win_focusin(session_get_cdbus(ps), w);
+			} else {
+				cdbus_ev_win_focusout(session_get_cdbus(ps), w);
+			}
+		}
+	}
+	if (new_group_focused != w->is_group_focused) {
+		log_debug("Window %#010x (%s) group focus state changed from %d to %d",
+		          win_id(w), w->name, w->is_group_focused, new_group_focused);
+		w->is_group_focused = new_group_focused;
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+	}
+
+	if (w->flags == 0) {
 		return;
 	}
 
@@ -829,7 +753,7 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w, bool f
 	} else {
 		// Respect active_opacity only when the window is physically
 		// focused
-		if (win_is_focused_raw(w)) {
+		if (w->is_focused) {
 			opacity = ps->o.active_opacity;
 		} else if (!focused) {
 			// Respect inactive_opacity in some cases
@@ -1198,9 +1122,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 		auto new_leader = win_get_leader_property(&ps->c, ps->atoms, client_win_id,
 		                                          ps->o.detect_transient,
 		                                          ps->o.detect_client_leader);
-		if (w->leader != new_leader) {
-			win_set_leader(ps, w, new_leader);
-		}
+		wm_ref_set_leader(ps->wm, w->tree_ref, new_leader);
 	}
 
 	// Get window name and class if we are tracking them
@@ -1270,8 +1192,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	                                 // change
 
 	    .mode = WMODE_TRANS,
-	    .leader = XCB_NONE,
-	    .cache_leader = NULL,
 	    .window_type = WINTYPE_UNKNOWN,
 	    .opacity_prop = OPAQUE,
 	    .opacity_set = 1,
@@ -1432,46 +1352,6 @@ win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t
 }
 
 /**
- * Internal function of win_get_leader().
- */
-static struct wm_ref *win_get_leader_raw(session_t *ps, struct win *w, int recursions) {
-	// Rebuild the cache if needed
-	auto client_win = wm_ref_client_of(w->tree_ref);
-	if (w->cache_leader == NULL && (client_win != NULL || w->leader)) {
-		// Leader defaults to client window, or to the window itself if
-		// it doesn't have a client window
-		w->cache_leader = wm_find(ps->wm, w->leader);
-		if (w->cache_leader == wm_root_ref(ps->wm)) {
-			log_warn("Window manager set the leader of window %#010x to "
-			         "root, a broken window manager.",
-			         win_id(w));
-			w->cache_leader = NULL;
-		}
-		if (!w->cache_leader) {
-			w->cache_leader = client_win ?: w->tree_ref;
-		}
-
-		// If the leader of this window isn't itself, look for its
-		// ancestors
-		if (w->cache_leader && w->cache_leader != client_win &&
-		    w->cache_leader != w->tree_ref) {
-			auto parent = wm_ref_toplevel_of(ps->wm, w->cache_leader);
-			auto wp = parent ? wm_ref_deref(parent) : NULL;
-			if (wp) {
-				// Dead loop?
-				if (recursions > WIN_GET_LEADER_MAX_RECURSION) {
-					return XCB_NONE;
-				}
-
-				w->cache_leader = win_get_leader_raw(ps, wp, recursions + 1);
-			}
-		}
-	}
-
-	return w->cache_leader;
-}
-
-/**
  * Retrieve the <code>WM_CLASS</code> of a window and update its
  * <code>win</code> structure.
  */
@@ -1504,71 +1384,6 @@ bool win_update_class(struct x_connection *c, struct atom *atoms, struct win *w)
 	          win_id(w), client_win, w->class_instance, w->class_general);
 
 	return true;
-}
-
-/**
- * Handle window focus change.
- */
-static void win_on_focus_change(session_t *ps, struct win *w) {
-	// If window grouping detection is enabled
-	if (ps->o.track_leader) {
-		auto leader = win_get_leader(ps, w);
-
-		// If the window gets focused, replace the old active_leader
-		auto active_leader = wm_active_leader(ps->wm);
-		if (win_is_focused_raw(w) && leader != active_leader) {
-			auto active_leader_old = active_leader;
-
-			wm_set_active_leader(ps->wm, leader);
-
-			group_on_factor_change(ps, active_leader_old);
-			group_on_factor_change(ps, leader);
-		}
-		// If the group get unfocused, remove it from active_leader
-		else if (!win_is_focused_raw(w) && leader && leader == active_leader &&
-		         !win_is_group_focused_inner(ps, leader)) {
-			wm_set_active_leader(ps->wm, XCB_NONE);
-			group_on_factor_change(ps, leader);
-		}
-	}
-
-	// Update everything related to conditions
-	win_on_factor_change(ps, w);
-
-	// Send D-Bus signal
-	if (ps->o.dbus) {
-		if (win_is_focused_raw(w)) {
-			cdbus_ev_win_focusin(session_get_cdbus(ps), w);
-		} else {
-			cdbus_ev_win_focusout(session_get_cdbus(ps), w);
-		}
-	}
-}
-
-/**
- * Set real focused state of a window.
- */
-void win_set_focused(session_t *ps, struct win *w) {
-	// Unmapped windows will have their focused state reset on map
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
-		return;
-	}
-
-	auto old_active_win = wm_active_win(ps->wm);
-	if (w->is_focused) {
-		assert(old_active_win == w);
-		return;
-	}
-
-	wm_set_active_win(ps->wm, w);
-	w->is_focused = true;
-
-	if (old_active_win) {
-		assert(old_active_win->is_focused);
-		old_active_win->is_focused = false;
-		win_on_focus_change(ps, old_active_win);
-	}
-	win_on_focus_change(ps, w);
 }
 
 /**
@@ -1731,17 +1546,6 @@ void win_destroy_finish(session_t *ps, struct win *w) {
 	// Unmapping might preserve the shadow image, so free it here
 	win_release_shadow(ps->backend_data, w);
 	win_release_mask(ps->backend_data, w);
-
-	if (w == wm_active_win(ps->wm)) {
-		// Usually, the window cannot be the focused at
-		// destruction. FocusOut should be generated before the
-		// window is destroyed. We do this check just to be
-		// completely sure we don't have dangling references.
-		log_debug("window %#010x (%s) is destroyed while being "
-		          "focused",
-		          win_id(w), w->name);
-		wm_set_active_win(ps->wm, NULL);
-	}
 
 	free_win_res(ps, w);
 
@@ -2270,12 +2074,4 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w) {
 
 	free_winprop(&prop);
 	return ret;
-}
-
-/**
- * Check if a window is focused, without using any focus rules or forced focus
- * settings
- */
-bool win_is_focused_raw(const struct win *w) {
-	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused;
 }

@@ -32,15 +32,31 @@ struct wm_tree {
 struct wm_tree_node {
 	UT_hash_handle hh;
 
-	struct wm_tree_node *parent;
-	struct win *win;
-
 	struct list_node siblings;
 	struct list_node children;
 
 	wm_treeid id;
+
+	struct win *win;
+	struct wm_tree_node *parent;
+
 	/// The client window. Only a toplevel can have a client window.
 	struct wm_tree_node *client_window;
+
+	/// The leader of the window group.
+	/// `leader` is the immediate leader of the window, while `leader_final` is the
+	/// "final" leader, i.e. the last leader if you follow the leader chain.
+	/// `leader` is a direct property coming from the X server, while `leader_final`
+	/// is calculated. `leader_final` is calculated by `wm_refresh_leaders` if `struct
+	/// wm::need_leader_refresh` is true.
+	///
+	/// Note we cannot store pointer to tree node for `leader`. Because leader update
+	/// and window destruction are not atomic, e.g. when a window is destroyed, some
+	/// window's leader may still point to the destroyed window. This also means X
+	/// leader is inherently racy w.r.t. window ID reuse. Leader tracking really is
+	/// just best effort.
+	struct wm_tree_node *leader_final;
+	xcb_window_t leader;
 
 	bool has_wm_state : 1;
 	/// Whether this window exists only on our side. A zombie window is a toplevel
@@ -48,6 +64,7 @@ struct wm_tree_node {
 	/// server side, but is kept on our side for things like animations. A zombie
 	/// window cannot be found in the wm_tree hash table.
 	bool is_zombie : 1;
+	bool visited : 1;
 };
 
 /// Describe a change of a toplevel's client window.

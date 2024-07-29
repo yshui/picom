@@ -1608,7 +1608,10 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 		case C2_L_PBDW: predef_target = w->g.border_width; break;
 		case C2_L_PFULLSCREEN: predef_target = w->is_fullscreen; break;
 		case C2_L_PARGB: predef_target = win_has_alpha(w); break;
-		case C2_L_PFOCUSED: predef_target = win_is_focused_raw(w); break;
+		case C2_L_PFOCUSED:
+			predef_target =
+			    w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused;
+			break;
 		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
 		case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
 		case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
