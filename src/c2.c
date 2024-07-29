@@ -102,7 +102,10 @@ struct c2_property_value {
 
 /// Initializer for c2_ptr_t.
 #define C2_PTR_INIT                                                                      \
-	{ .isbranch = false, .l = NULL, }
+	{                                                                                \
+	    .isbranch = false,                                                           \
+	    .l = NULL,                                                                   \
+	}
 
 static const c2_ptr_t C2_PTR_NULL = C2_PTR_INIT;
 
@@ -124,7 +127,7 @@ struct _c2_b {
 
 /// Initializer for c2_b_t.
 #define C2_B_INIT                                                                        \
-	{ .neg = false, .op = C2_B_OUNDEFINED, .opr1 = C2_PTR_INIT, .opr2 = C2_PTR_INIT, }
+	{.neg = false, .op = C2_B_OUNDEFINED, .opr1 = C2_PTR_INIT, .opr2 = C2_PTR_INIT}
 
 /// Structure for leaf element in a window condition
 struct _c2_l {
@@ -197,10 +200,18 @@ struct _c2_l {
 /// Initializer for c2_l_t.
 #define C2_L_INIT                                                                        \
 	{                                                                                \
-		.neg = false, .op = C2_L_OEXISTS, .match = C2_L_MEXACT,                  \
-		.match_ignorecase = false, .tgt = NULL, .tgtatom = 0,                    \
-		.target_on_client = false, .predef = C2_L_PUNDEFINED, .index = 0,        \
-		.ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,                \
+	    .neg = false,                                                                \
+	    .op = C2_L_OEXISTS,                                                          \
+	    .match = C2_L_MEXACT,                                                        \
+	    .match_ignorecase = false,                                                   \
+	    .tgt = NULL,                                                                 \
+	    .tgtatom = 0,                                                                \
+	    .target_on_client = false,                                                   \
+	    .predef = C2_L_PUNDEFINED,                                                   \
+	    .index = 0,                                                                  \
+	    .ptntype = C2_L_PTUNDEFINED,                                                 \
+	    .ptnstr = NULL,                                                              \
+	    .ptnint = 0,                                                                 \
 	}
 
 static const c2_l_t leaf_def = C2_L_INIT;
@@ -211,10 +222,6 @@ struct _c2_lptr {
 	void *data;
 	struct _c2_lptr *next;
 };
-
-/// Initializer for c2_lptr_t.
-#define C2_LPTR_INIT                                                                     \
-	{ .ptr = C2_PTR_INIT, .data = NULL, .next = NULL, }
 
 /// Structure representing a predefined target.
 typedef struct {
@@ -387,11 +394,12 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 
 	// Insert to pcondlst
 	{
-		static const c2_lptr_t lptr_def = C2_LPTR_INIT;
 		auto plptr = cmalloc(c2_lptr_t);
-		memcpy(plptr, &lptr_def, sizeof(c2_lptr_t));
-		plptr->ptr = result;
-		plptr->data = data;
+		*plptr = (c2_lptr_t){
+		    .ptr = result,
+		    .data = data,
+		    .next = NULL,
+		};
 		if (pcondlst) {
 			plptr->next = *pcondlst;
 			*pcondlst = plptr;
