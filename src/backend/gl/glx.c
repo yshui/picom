@@ -66,20 +66,14 @@ bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
 	// clang-format off
 	GLXFBConfig *cfg =
 	    glXChooseFBConfig(c->dpy, c->screen, (int[]){
-	                          GLX_RENDER_TYPE, GLX_RGBA_BIT,
-	                          GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
-	                          GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
-	                          GLX_X_RENDERABLE, true,
-	                          GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, (GLint)GLX_DONT_CARE,
-	                          GLX_BUFFER_SIZE, m.red_size + m.green_size +
-	                                           m.blue_size + m.alpha_size,
 	                          GLX_RED_SIZE, m.red_size,
-	                          GLX_BLUE_SIZE, m.blue_size,
 	                          GLX_GREEN_SIZE, m.green_size,
+	                          GLX_BLUE_SIZE, m.blue_size,
 	                          GLX_ALPHA_SIZE, m.alpha_size,
-	                          GLX_STENCIL_SIZE, 0,
-	                          GLX_DEPTH_SIZE, 0,
-	                          0
+	                          GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
+	                          GLX_X_RENDERABLE, True,
+	                          GLX_CONFIG_CAVEAT, GLX_NONE,
+	                          None,
 	                      }, &ncfg);
 	// clang-format on
 
