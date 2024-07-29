@@ -89,9 +89,10 @@ struct win_geometry {
 };
 
 /// These are changes of window state that might trigger an animation. We separate them
-/// out and delay their application so determine which animation to run is easier.
+/// out and delay their application so determining which animation to run is easier.
 struct win_state_change {
 	winstate_t state;
+	double opacity;
 };
 
 struct win {

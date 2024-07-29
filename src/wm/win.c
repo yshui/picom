@@ -65,11 +65,6 @@ static const double ROUNDED_PERCENT = 0.05;
 // dependencies have changed. The c2 rules are kind of already calculated this way, we
 // should unify the rest of the computed states. This would simplify the code as well.
 
-/**
- * Reread opacity property of a window.
- */
-static void win_update_opacity_prop(struct x_connection *c, struct atom *atoms,
-                                    struct win *w, bool detect_client_opacity);
 static void
 win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms, struct win *w);
 static bool win_update_prop_shadow(struct x_connection *c, struct atom *atoms, struct win *w);
@@ -355,6 +350,32 @@ static bool win_fetch_and_unset_property_stale(struct win *w, xcb_atom_t prop);
 /// stale flags.
 static void win_clear_all_properties_stale(struct win *w);
 
+/**
+ * Reread opacity property of a window.
+ */
+bool win_update_opacity_prop(struct x_connection *c, struct atom *atoms, struct win *w,
+                             bool detect_client_opacity) {
+	bool old_has_opacity_prop = w->has_opacity_prop;
+	// get frame opacity first
+	w->has_opacity_prop =
+	    wid_get_opacity_prop(c, atoms, win_id(w), OPAQUE, &w->opacity_prop);
+
+	if (w->has_opacity_prop) {
+		// opacity found
+		return old_has_opacity_prop != w->has_opacity_prop;
+	}
+
+	auto client_win = wm_ref_client_of(w->tree_ref);
+	if (!detect_client_opacity || client_win == NULL) {
+		return old_has_opacity_prop != w->has_opacity_prop;
+	}
+
+	// get client opacity
+	w->has_opacity_prop = wid_get_opacity_prop(c, atoms, wm_ref_win_id(client_win),
+	                                           OPAQUE, &w->opacity_prop);
+	return old_has_opacity_prop != w->has_opacity_prop;
+}
+
 // TODO(yshui) make WIN_FLAGS_FACTOR_CHANGED more fine-grained, or find a better
 // alternative
 //             way to do all this.
@@ -371,8 +392,9 @@ static void win_update_properties(session_t *ps, struct win *w) {
 		}
 	}
 
-	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
-		win_update_opacity_prop(&ps->c, ps->atoms, w, ps->o.detect_client_opacity);
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY) &&
+	    win_update_opacity_prop(&ps->c, ps->atoms, w, ps->o.detect_client_opacity)) {
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
@@ -725,24 +747,6 @@ wid_get_prop_wintype(struct x_connection *c, struct atom *atoms, xcb_window_t wi
 	return WINTYPE_UNKNOWN;
 }
 
-static bool wid_get_opacity_prop(struct x_connection *c, struct atom *atoms,
-                                 xcb_window_t wid, opacity_t def, opacity_t *out) {
-	bool ret = false;
-	*out = def;
-
-	winprop_t prop =
-	    x_get_prop(c, wid, atoms->a_NET_WM_WINDOW_OPACITY, 1L, XCB_ATOM_CARDINAL, 32);
-
-	if (prop.nitems) {
-		*out = *prop.c32;
-		ret = true;
-	}
-
-	free_winprop(&prop);
-
-	return ret;
-}
-
 // XXX should distinguish between frame has alpha and window body has alpha
 bool win_has_alpha(const struct win *w) {
 	return w->pictfmt && w->pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
@@ -1090,6 +1094,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
+	w->opacity = win_calc_opacity_target(ps, w);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		w->options.paint = c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL)
 		                       ? TRI_FALSE
@@ -1653,30 +1658,6 @@ void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape
 }
 
 /**
- * Reread opacity property of a window.
- */
-void win_update_opacity_prop(struct x_connection *c, struct atom *atoms, struct win *w,
-                             bool detect_client_opacity) {
-	// get frame opacity first
-	w->has_opacity_prop =
-	    wid_get_opacity_prop(c, atoms, win_id(w), OPAQUE, &w->opacity_prop);
-
-	if (w->has_opacity_prop) {
-		// opacity found
-		return;
-	}
-
-	auto client_win = wm_ref_client_of(w->tree_ref);
-	if (!detect_client_opacity || client_win == NULL) {
-		return;
-	}
-
-	// get client opacity
-	w->has_opacity_prop = wid_get_opacity_prop(c, atoms, wm_ref_win_id(client_win),
-	                                           OPAQUE, &w->opacity_prop);
-}
-
-/**
  * Retrieve frame extents from a window.
  */
 void win_update_frame_extents(struct x_connection *c, struct atom *atoms, struct win *w,
@@ -1815,6 +1796,7 @@ void win_destroy_start(session_t *ps, struct win *w) {
 
 	// Update state flags of a managed window
 	w->state = WSTATE_DESTROYED;
+	w->opacity = 0.0f;
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->in_openclose = true;
 }
@@ -1840,6 +1822,7 @@ void unmap_win_start(struct win *w) {
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPED;
+	w->opacity = 0.0f;
 }
 
 struct win_script_context win_script_context_prepare(struct session *ps, struct win *w) {
@@ -1854,8 +1837,8 @@ struct win_script_context win_script_context_prepare(struct session *ps, struct 
 	    .y = w->g.y,
 	    .width = w->widthb,
 	    .height = w->heightb,
-	    .opacity = win_calc_opacity_target(ps, w),
-	    .opacity_before = w->opacity,
+	    .opacity = w->opacity,
+	    .opacity_before = w->previous.opacity,
 	    .monitor_x = monitor.x1,
 	    .monitor_y = monitor.y1,
 	    .monitor_width = monitor.x2 - monitor.x1,
@@ -1907,15 +1890,15 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		// This window won't be rendered, so we don't need to run the animations.
 		bool state_changed = w->previous.state != w->state;
 		w->previous.state = w->state;
-		w->opacity = win_calc_opacity_target(ps, w);
+		w->previous.opacity = w->opacity;
 		return state_changed || (w->running_animation != NULL);
 	}
 
 	auto win_ctx = win_script_context_prepare(ps, w);
-	w->opacity = win_ctx.opacity;
+	w->previous.opacity = w->opacity;
 	if (w->previous.state == w->state && win_ctx.opacity_before == win_ctx.opacity) {
-		// No state changes, if there's a animation running, we just continue it.
 	advance_animation:
+		// No state changes, if there's a animation running, we just continue it.
 		if (w->running_animation == NULL) {
 			return false;
 		}
@@ -2159,7 +2142,8 @@ void win_map_start(struct session *ps, struct win *w) {
 	w->mode = win_calc_mode(w);
 
 	w->state = WSTATE_MAPPED;
-	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_CLIENT_STALE);
+	win_set_flags(
+	    w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_CLIENT_STALE | WIN_FLAGS_FACTOR_CHANGED);
 
 	auto req = ccalloc(1, struct win_get_geometry_request);
 	req->base = (struct x_async_request_base){

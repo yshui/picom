@@ -408,6 +408,24 @@ bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t 
 	return true;
 }
 
+bool wid_get_opacity_prop(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
+                          opacity_t def, opacity_t *out) {
+	bool ret = false;
+	*out = def;
+
+	winprop_t prop =
+	    x_get_prop(c, wid, atoms->a_NET_WM_WINDOW_OPACITY, 1L, XCB_ATOM_CARDINAL, 32);
+
+	if (prop.nitems) {
+		*out = *prop.c32;
+		ret = true;
+	}
+
+	free_winprop(&prop);
+
+	return ret;
+}
+
 // A cache of pict formats. We assume they don't change during the lifetime
 // of this program
 static thread_local xcb_render_query_pict_formats_reply_t *g_pictfmts = NULL;
