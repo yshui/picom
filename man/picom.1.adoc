@@ -4,7 +4,9 @@ Yuxuan Shui
 :mansource:  picom
 :manversion: {picom-version}
 :manmanual:  User Commands
-:source-highlighter: rouge
+:source-highlighter: highlight.js
+:highlightjs-languages: glsl
+:toc: right
 
 NAME
 ----
