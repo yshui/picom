@@ -1,0 +1,53 @@
+
+name: GitHub Pages
+
+on:
+  push:
+  pull_request:
+
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Install asciidoctor
+        run: sudo apt install -y asciidoctor
+
+      - name: Build
+        run: |
+          asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom.1.adoc -D _site
+          asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom-inspect.1.adoc -D _site
+          asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom-trans.1.adoc -D _site
+          cp _site/picom.1.html _site/index.html
+
+      - name: Upload
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    if: github.ref == 'refs/heads/page_test'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
