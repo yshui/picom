@@ -1,9 +1,10 @@
-picom(1)
-========
-:doctype:     manpage
-:man source:  picom
-:man version: {picom-version}
-:man manual:  User Commands
+= picom(1)
+Yuxuan Shui
+:doctype:    manpage
+:mansource:  picom
+:manversion: {picom-version}
+:manmanual:  User Commands
+:source-highlighter: rouge
 
 NAME
 ----
@@ -11,7 +12,7 @@ picom - a compositor for X11
 
 SYNOPSIS
 --------
-*picom* ['OPTIONS']
+*picom* [_OPTIONS_]
 
 DESCRIPTION
 -----------
@@ -22,37 +23,37 @@ OPTIONS
 *-h*, *--help*::
 	Get the usage text embedded in program code, which may be more up-to-date than this man page.
 
-*-r*, *--shadow-radius*='RADIUS'::
+*-r*, *--shadow-radius*=_RADIUS_::
 	The blur radius for shadows, in pixels. (defaults to 12)
 
-*-o*, *--shadow-opacity*='OPACITY'::
+*-o*, *--shadow-opacity*=_OPACITY_::
 	The opacity of shadows. (0.0 - 1.0, defaults to 0.75)
 
-*-l*, *--shadow-offset-x*='OFFSET'::
+*-l*, *--shadow-offset-x*=_OFFSET_::
 	The left offset for shadows, in pixels. (defaults to -15)
 
-*-t*, *--shadow-offset-y*='OFFSET'::
+*-t*, *--shadow-offset-y*=_OFFSET_::
 	The top offset for shadows, in pixels. (defaults to -15)
 
-*-I*, *--fade-in-step*='OPACITY_STEP'::
+*-I*, *--fade-in-step*=_OPACITY_STEP_::
 	Opacity change between steps while fading in. (0.01 - 1.0, defaults to 0.028)
 
-*-O*, *--fade-out-step*='OPACITY_STEP'::
+*-O*, *--fade-out-step*=_OPACITY_STEP_::
 	Opacity change between steps while fading out. (0.01 - 1.0, defaults to 0.03)
 
-*-D*, *--fade-delta*='MILLISECONDS'::
+*-D*, *--fade-delta*=_MILLISECONDS_::
 	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
 
 *-c*, *--shadow*::
-	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow, unless explicitly requested using the wintypes option.
+	Enabled client-side shadows on windows. Note desktop windows (windows with __NET_WM_WINDOW_TYPE_DESKTOP_) never get shadow, unless explicitly requested using the wintypes option.
 
 *-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 
-*-i*, *--inactive-opacity*='OPACITY'::
+*-i*, *--inactive-opacity*=_OPACITY_::
 	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
 
-*-e*, *--frame-opacity*='OPACITY'::
+*-e*, *--frame-opacity*=_OPACITY_::
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
 
 *-b*, *--daemon*::
@@ -70,53 +71,53 @@ OPTIONS
 *--show-all-xerrors*::
 	Show all X errors (for debugging).
 
-*--config* 'PATH'::
+*--config* _PATH_::
 	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where picom looks for a configuration file by default. Use `/dev/null` to avoid loading configuration file.
 
-*--write-pid-path* 'PATH'::
+*--write-pid-path* _PATH_::
 	Write process ID to a file. it is recommended to use an absolute path.
 
-*--plugins* 'PATH'::
+*--plugins* _PATH_::
 	Specify plugins to load. Plugins will first be searched in current working directory (unless specified in the config file, in which case this step is skipped), then in `$XDG_CONFIG_HOME/picom/plugins`, then in `$XDG_CONFIG_DIRS/picom/plugins`. If all of the above fail, the plugin name is passed directly to the dynamic loader. Can be specified multiple times to load more than one plugins.
 
-*--shadow-color* 'STRING'::
-	Color of shadow, as a hex string ('#000000')
+*--shadow-color* _STRING_::
+	Color of shadow, as a hex string (e.g. _#000000_)
 
-*--shadow-red* 'VALUE'::
+*--shadow-red* _VALUE_::
 	Red color value of shadow (0.0 - 1.0, defaults to 0).
 
-*--shadow-green* 'VALUE'::
+*--shadow-green* _VALUE_::
 	Green color value of shadow (0.0 - 1.0, defaults to 0).
 
-*--shadow-blue* 'VALUE'::
+*--shadow-blue* _VALUE_::
 	Blue color value of shadow (0.0 - 1.0, defaults to 0).
 
 *--inactive-opacity-override*::
-	Let inactive opacity set by *-i* override the '_NET_WM_WINDOW_OPACITY' values of windows.
+	Let inactive opacity set by *-i* override the __NET_WM_WINDOW_OPACITY_ values of windows.
 
-*--active-opacity* 'OPACITY'::
+*--active-opacity* _OPACITY_::
 	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
 
-*--inactive-dim* 'VALUE'::
+*--inactive-dim* _VALUE_::
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
 
-*--corner-radius* 'VALUE'::
+*--corner-radius* _VALUE_::
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
-*--corner-radius-rules* 'RADIUS':'CONDITION'::
+*--corner-radius-rules* _RADIUS_:_CONDITION_::
 	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*.
 
-*--rounded-corners-exclude* 'CONDITION'::
+*--rounded-corners-exclude* _CONDITION_::
 	Exclude conditions for rounded corners.
 
 *--no-frame-pacing*::
 	Disable vsync-aware frame pacing. By default, the compositor tries to make sure it only renders once per vblank interval, and also the render happens as late as possible to minimize the latency from updates to the screen. However this can sometimes cause stuttering, or even lowered frame rate. This option can be used to disable frame pacing.
 
 *--mark-wmwin-focused*::
-	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
+	Try to detect WM windows (a non-override-redirect window with no child that has _WM_STATE_) and mark them as active.
 
 *--mark-ovredir-focused*::
-	Mark override-redirect windows that doesn't have a child window with 'WM_STATE' focused.
+	Mark override-redirect windows that doesn't have a child window with _WM_STATE_ focused.
 
 *--no-fading-openclose*::
 	Do not fade on window open/close.
@@ -131,49 +132,49 @@ OPTIONS
 	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
 
 *--detect-client-opacity*::
-	Detect '_NET_WM_WINDOW_OPACITY' on client windows, useful for window managers not passing '_NET_WM_WINDOW_OPACITY' of client windows to frame windows.
+	Detect _pass:[_]NET_WM_WINDOW_OPACITY_ on client windows, useful for window managers not passing _pass:[_]NET_WM_WINDOW_OPACITY_ of client windows to frame windows.
 
 *--vsync*, *--no-vsync*::
 	Enable/disable VSync.
 
 *--use-ewmh-active-win*::
-	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
+	Use EWMH __NET_ACTIVE_WINDOW_ to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
 
 *--unredir-if-possible*::
 	Unredirect all windows in some cases. Known to cause flickering when redirecting/unredirecting windows. Currently, unredirecting is triggered by following conditions:
 	    * If the top level window is taking up the entire screen. In multi-monitor setup, this means ALL monitors.
 	    * If there is no window.
 	    * If a window is fullscreen according to its WM hints. (can be disabled with *--no-ewmh-fullscreen*).
-	    * If a window requests to bypass the compositor ('_NET_WM_BYPASS_COMPOSITOR').
+	    * If a window requests to bypass the compositor (__NET_WM_BYPASS_COMPOSITOR_).
 	Windows are also unredirected unconditionally when monitors are powered off, regardless if *--unredir-if-possible* is set.
 
 
-*--unredir-if-possible-delay* 'MILLISECONDS'::
+*--unredir-if-possible-delay* _MILLISECONDS_::
 	Delay before unredirecting the window, in milliseconds. Defaults to 0.
 
-*--unredir-if-possible-exclude* 'CONDITION'::
+*--unredir-if-possible-exclude* _CONDITION_::
 	Conditions of windows that shouldn't be considered full-screen for unredirecting screen.
 
-*--shadow-exclude* 'CONDITION'::
+*--shadow-exclude* _CONDITION_::
 	Specify a list of conditions of windows that should have no shadow.
 
-*--clip-shadow-above* 'CONDITION'::
+*--clip-shadow-above* _CONDITION_::
 	Specify a list of conditions of windows that should have no shadow painted over, such as a dock window.
 
-*--fade-exclude* 'CONDITION'::
+*--fade-exclude* _CONDITION_::
 	Specify a list of conditions of windows that should not be faded.
 
-*--focus-exclude* 'CONDITION'::
+*--focus-exclude* _CONDITION_::
 	Specify a list of conditions of windows that should always be considered focused.
 
 *--inactive-dim-fixed*::
 	Use fixed inactive dim value, instead of adjusting according to window opacity.
 
 *--detect-transient*::
-	Use 'WM_TRANSIENT_FOR' to group windows, and consider windows in the same group focused at the same time.
+	Use _WM_TRANSIENT_FOR_ to group windows, and consider windows in the same group focused at the same time.
 
 *--detect-client-leader*::
-	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. This usually means windows from the same application will be considered focused or unfocused at the same time.'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
+	Use _WM_CLIENT_LEADER_ to group windows, and consider windows in the same group focused at the same time. This usually means windows from the same application will be considered focused or unfocused at the same time._WM_TRANSIENT_FOR_ has higher priority if *--detect-transient* is enabled, too.
 
 *--blur-method*, *--blur-size*, *--blur-deviation*, *--blur-strength*::
 	Parameters for background blurring, see the *BLUR* section for more information.
@@ -187,16 +188,16 @@ OPTIONS
 *--blur-background-fixed*::
 	Use fixed blur strength rather than adjusting according to window opacity.
 
-*--blur-kern* 'MATRIX'::
+*--blur-kern* _MATRIX_::
 	Specify the blur convolution kernel, with the following format:
 +
 ----
 WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...
 ----
 +
-In other words, the matrix is formatted as a list of comma separated numbers. The first two numbers must be integers, which specify the width and height of the matrix. They must be odd numbers. Then, the following 'width * height - 1' numbers specifies the numbers in the matrix, row by row, excluding the center element.
+In other words, the matrix is formatted as a list of comma separated numbers. The first two numbers must be integers, which specify the width and height of the matrix. They must be odd numbers. Then, the following `width * height - 1` numbers specifies the numbers in the matrix, row by row, excluding the center element.
 +
-The elements are finite floating point numbers. The decimal pointer has to be '.' (a period), scientific notation is not supported.
+The elements are finite floating point numbers. The decimal pointer has to be _._ (a period), scientific notation is not supported.
 +
 The element in the center will either be 1.0 or varying based on opacity, depending on whether you have *--blur-background-fixed*. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
 +
@@ -208,22 +209,22 @@ A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 +
 May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Gaussian kernels are generated with sigma = 0.84089642 . If you find yourself needing to generate custom blur kernels, you might want to try the new blur configuration (See *BLUR*).
 
-*--blur-background-exclude* 'CONDITION'::
+*--blur-background-exclude* _CONDITION_::
 	Exclude conditions for background blur.
 
-*--resize-damage* 'INTEGER'::
-	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use `--resize-damage 1`, with a 5x5 one you use `--resize-damage 2`, and so on). May or may not work with *--glx-no-stencil*. Shrinking doesn't function correctly.
+*--resize-damage* _INTEGER_::
+	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use `--resize-damage 1`, with a 5x5 one you use `--resize-damage 2`, and so on). May or may not work with *--glx-no-stencil*. Only works with *--legacy-backends*. Shrinking doesn't function correctly.
 
-*--invert-color-include* 'CONDITION'::
+*--invert-color-include* _CONDITION_::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
 
-*--opacity-rule* 'OPACITY':'CONDITION'::
-	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. picom-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set '_NET_WM_WINDOW_OPACITY' on frame or client windows.
+*--opacity-rule* _OPACITY_:_CONDITION_::
+	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. picom-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set __NET_WM_WINDOW_OPACITY_ on frame or client windows.
 
 *--crop-shadow-to-monitor*::
 	Crop shadow of a window fully on a particular monitor to that monitor. This is currently implemented using the X RandR extension.
 
-*--backend* 'BACKEND'::
+*--backend* _BACKEND_::
 	Specify the backend to use: `xrender`, `glx`, or `xr_glx_hybrid`. `xrender` is the default one.
 +
 --
@@ -244,7 +245,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 
-*--glx-fshader-win* 'SHADER'::
+*--glx-fshader-win* _SHADER_::
 	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples. Only works with *--legacy-backends* enabled.
 
 *--force-win-blend*::
@@ -253,10 +254,10 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
 
-*--benchmark* 'CYCLES'::
+*--benchmark* _CYCLES_::
 	Benchmark mode. Repeatedly paint until reaching the specified cycles.
 
-*--benchmark-wid* 'WINDOW_ID'::
+*--benchmark-wid* _WINDOW_ID_::
 	Specify window ID to repaint in benchmark mode. If omitted or is 0, the whole screen is repainted.
 
 *--no-ewmh-fullscreen*::
@@ -268,14 +269,14 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--transparent-clipping*::
 	Make transparent windows clip other windows like non-transparent windows do, instead of blending on top of them.
 
-*--transparent-clipping-exclude* 'CONDITION'::
+*--transparent-clipping-exclude* _CONDITION_::
 	Specify a list of conditions of windows that should never have transparent clipping applied. Useful for screenshot tools, where you need to be able to see through transparent parts of the window.
 
-*--window-shader-fg* 'SHADER'::
+*--window-shader-fg* _SHADER_::
 	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section *SHADER INTERFACE* below for more details on the interface.
 
-*--window-shader-fg-rule* 'SHADER':'CONDITION'::
-	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of 'SHADER:CONDITION', e.g. "shader.frag:name = \'window\'". Leading and trailing whitespaces in 'SHADER' will be trimmed. If 'SHADER' is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled.
+*--window-shader-fg-rule* _SHADER_:_CONDITION_::
+	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled.
 
 *--dithered-present*
 	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
@@ -296,21 +297,21 @@ With greater-than/less-than operators it looks like:
 
 	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] <NEGATION> <OPERATOR> <PATTERN>
 
-'NEGATION' (optional) is one or more exclamation marks;
+_NEGATION_ (optional) is one or more exclamation marks;
 
-'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+_TARGET_ is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
 
-'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
+_CLIENT/FRAME_ is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 
-'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
+_INDEX_ (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
 
 'OP QUALIFIER' (optional), applicable only for equals operator, could be `?` (ignore-case).
 
 'MATCH TYPE' (optional), applicable only for equals operator, could be nothing (exact match), `*` (match anywhere), `^` (match from start), `%` (wildcard), or `~` (PCRE regular expression).
 
-'OPERATOR' is one of `=` (equals), `<`, `>`, `<=`, `=>`, or nothing (exists). Exists operator checks whether a property exists on a window (but for predefined targets, exists means != 0 then).
+_OPERATOR_ is one of `=` (equals), `<`, `>`, `<=`, `=>`, or nothing (exists). Exists operator checks whether a property exists on a window (but for predefined targets, exists means != 0 then).
 
-'PATTERN' is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences are supported in the string format.
+_PATTERN_ is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences are supported in the string format.
 
 Supported logical operators are `&&` (and) and `||` (or). `&&` has higher precedence than `||`, left-to-right associativity. Use parentheses to change precedence.
 
@@ -355,13 +356,13 @@ This is the old condition format we once used. Support of this format might be r
 
 	condition = TARGET:TYPE[FLAGS]:PATTERN
 
-'TARGET' is one of "n" (window name), "i" (window class instance), "g" (window general class), and "r" (window role).
+_TARGET_ is one of "n" (window name), "i" (window class instance), "g" (window general class), and "r" (window role).
 
-'TYPE' is one of "e" (exact match), "a" (match anywhere), "s" (match from start), "w" (wildcard), and "p" (PCRE regular expressions, if compiled with the support).
+_TYPE_ is one of "e" (exact match), "a" (match anywhere), "s" (match from start), "w" (wildcard), and "p" (PCRE regular expressions, if compiled with the support).
 
-'FLAGS' could be a series of flags. Currently the only defined flag is "i" (ignore case).
+_FLAGS_ could be a series of flags. Currently the only defined flag is "i" (ignore case).
 
-'PATTERN' is the actual pattern string.
+_PATTERN_ is the actual pattern string.
 
 SHADER INTERFACE
 ----------------
@@ -372,7 +373,7 @@ A custom shader is a GLSL fragment shader program, which can be used to override
 
 The interface between picom and a custom shader is dependent on which backend is being used. The xrender backend doesn't support shader at all. Here we descibe the interface provided by the glx backend.
 
-The shader must define a function, 'vec4 window_shader()', which would be the entry point of the shader. The returned 'vec4' will be used to set 'gl_FragColor'. A function, 'vec4 default_post_processing(vec4 c)', is provided for applying the default picom effects to input color 'c'.
+The shader must define a function, _vec4 window_shader()_, which would be the entry point of the shader. The returned _vec4_ will be used to set __gl_FragColor__. A function, _vec4 default_post_processing(vec4 c)_, is provided for applying the default picom effects to input color 'c'.
 
 The following uniform/input variables are made available to the shader:
 
@@ -437,7 +438,7 @@ wintypes:
 };
 ------------
 
-'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notification", "combo", and "dnd".
+_WINDOW_TYPE_ is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notification", "combo", and "dnd".
 
 Following per window-type options are available: ::
 
@@ -475,25 +476,25 @@ blur:
 };
 --------
 
-Available options of the 'blur' section are: ::
+Available options of the _blur_ section are: ::
 
   *method*:::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
-      'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel; 'dual_kawase' for dual-filter kawase blur.
-    Note: 'gaussian', 'box' and 'dual_kawase' blur methods are not supported by the legacy backends.
+      _none_ to disable blurring; _gaussian_ for gaussian blur; _box_ for box blur; _kernel_ for convolution blur with a custom kernel; _dual_kawase_ for dual-filter kawase blur.
+    Note: _gaussian_, _box_ and _dual_kawase_ blur methods are not supported by the legacy backends.
     (default: none)
 
   *size*:::
-    An integer. The size of the blur kernel, required by 'gaussian' and 'box' blur methods. For the 'kernel' method, the size is included in the kernel. Corresponds to the *--blur-size* command line option (default: 3).
+    An integer. The size of the blur kernel, required by _gaussian_ and _box_ blur methods. For the _kernel_ method, the size is included in the kernel. Corresponds to the *--blur-size* command line option (default: 3).
 
   *deviation*:::
-    A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option (default: 0.84089642).
+    A floating point number. The standard deviation for the _gaussian_ blur method. Corresponds to the *--blur-deviation* command line option (default: 0.84089642).
 
   *strength*:::
-    An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
+    An integer in the range 0-20. The strength of the _dual_kawase_ blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
 
   *kernel*:::
-    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.
+    A string. The kernel to use for the _kernel_ blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.
 
 SIGNALS
 -------
@@ -558,4 +559,4 @@ Homepage: <https://github.com/yshui/picom>
 
 SEE ALSO
 --------
-*xcompmgr*(1), link:picom-inspect.html[*picom-inspect*(1)], link:picom-trans.html[*picom-trans*(1)]
+*xcompmgr*(1), xref:picom-inspect.1.asciidoc[*picom-inspect*(1)], xref:picom-trans.1.asciidoc[*picom-trans*(1)]

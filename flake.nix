@@ -21,6 +21,10 @@
         picom = super.picom.overrideAttrs (oldAttrs: rec {
           version = "11";
           pname = "picom";
+          nativeBuildInputs = (removeFromList [ self.asciidoc ] oldAttrs.nativeBuildInputs) ++
+            [
+              self.asciidoctor
+            ];
           buildInputs =
             [
               self.pcre2

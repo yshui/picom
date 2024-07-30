@@ -55,6 +55,7 @@
 * `libconfig` is now a mandatory dependency, with a minimal supported version of 1.7.
 * `xcb-dpms` is not needed anymore.
 * `libXext` is not needed anymore.
+* man pages are now built with asciidoctor, instead of asciidoc.
 
 ## Behind the scene changes
 
