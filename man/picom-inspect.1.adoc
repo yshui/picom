@@ -37,4 +37,4 @@ Homepage: <https://github.com/yshui/picom>
 
 SEE ALSO
 --------
-*xcompmgr*(1), xref:picom.1.asciidoc[*picom*(1)]
+*xcompmgr*(1), xref:picom.1.adoc[*picom*(1)]

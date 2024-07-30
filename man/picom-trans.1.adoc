@@ -111,4 +111,4 @@ Please submit bug reports to <https://github.com/yshui/picom>.
 
 SEE ALSO
 --------
-xref:picom.1.asciidoc[*picom*(1)], *xprop*(1), *xwininfo*(1)
+xref:picom.1.adoc[*picom*(1)], *xprop*(1), *xwininfo*(1)
