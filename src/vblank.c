@@ -229,6 +229,7 @@ start_failed:
 	pthread_mutex_unlock(&args->start_mtx);
 
 cleanup:
+	log_deinit_tls();
 	if (dpy) {
 		glXMakeCurrent(dpy, None, NULL);
 		if (ctx) {

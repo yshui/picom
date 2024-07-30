@@ -346,7 +346,8 @@ static const struct script_output_info win_script_outputs[] = {
 /// state change.
 bool win_process_animation_and_state_change(struct session *ps, struct win *w, double delta_t);
 double win_animatable_get(const struct win *w, enum win_script_output output);
-void win_process_update_flags(session_t *ps, struct win *w);
+void win_process_primary_flags(session_t *ps, struct win *w);
+void win_process_secondary_flags(session_t *ps, struct win *w);
 void win_process_image_flags(session_t *ps, struct win *w);
 
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
@@ -426,6 +427,12 @@ void win_destroy_finish(session_t *ps, struct win *w);
  * Check if a window is focused, without using any focus rules or forced focus settings
  */
 bool attr_pure win_is_focused_raw(const struct win *w);
+
+/// Return whether the group a window belongs to is really focused.
+///
+/// @param leader leader window ID
+/// @return true if the window group is focused, false otherwise
+bool win_is_group_focused(session_t *ps, struct win *w);
 
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct win *w);

@@ -103,11 +103,9 @@ win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t
 
 static struct wm_ref *win_get_leader_raw(session_t *ps, struct win *w, int recursions);
 
-/**
- * Get the leader of a window.
- *
- * This function updates w->cache_leader if necessary.
- */
+/// Get the leader of a window.
+///
+/// This function updates w->cache_leader if necessary.
 static inline struct wm_ref *win_get_leader(session_t *ps, struct win *w) {
 	return win_get_leader_raw(ps, w, 0);
 }
@@ -172,13 +170,7 @@ static inline void group_on_factor_change(session_t *ps, struct wm_ref *leader) 
 	}
 }
 
-/**
- * Return whether a window group is really focused.
- *
- * @param leader leader window ID
- * @return true if the window group is focused, false otherwise
- */
-static inline bool group_is_focused(session_t *ps, struct wm_ref *leader) {
+static inline bool win_is_group_focused_inner(session_t *ps, struct wm_ref *leader) {
 	if (!leader) {
 		return false;
 	}
@@ -198,6 +190,15 @@ static inline bool group_is_focused(session_t *ps, struct wm_ref *leader) {
 	return false;
 }
 
+bool win_is_group_focused(session_t *ps, struct win *w) {
+	if (w->state != WSTATE_MAPPED) {
+		return false;
+	}
+
+	auto leader = win_get_leader(ps, w);
+	return win_is_group_focused_inner(ps, leader);
+}
+
 /**
  * Set leader of a window.
  */
@@ -214,7 +215,7 @@ static inline void win_set_leader(session_t *ps, struct win *w, xcb_window_t nle
 		}
 		auto i = wm_ref_deref(cursor);
 		if (i != NULL) {
-			i->cache_leader = XCB_NONE;
+			i->cache_leader = NULL;
 		}
 	}
 
@@ -434,8 +435,9 @@ static void win_update_properties(session_t *ps, struct win *w) {
 	win_clear_all_properties_stale(w);
 }
 
-/// Handle non-image flags. This phase might set IMAGES_STALE flags
-void win_process_update_flags(session_t *ps, struct win *w) {
+/// Handle primary flags. These flags are set as direct results of raw X11 window data
+/// changes.
+void win_process_primary_flags(session_t *ps, struct win *w) {
 	log_trace("Processing flags for window %#010x (%s), was rendered: %d, flags: "
 	          "%#" PRIx64,
 	          win_id(w), w->name, w->to_paint, w->flags);
@@ -451,7 +453,6 @@ void win_process_update_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
-	bool damaged = false;
 	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
 		win_on_client_update(ps, w);
 		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
@@ -490,12 +491,12 @@ void win_process_update_flags(session_t *ps, struct win *w) {
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
 			win_update_bounding_shape(&ps->c, w, ps->shape_exists,
 			                          ps->o.detect_rounded_corners);
-			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
 
 			// Window shape/size changed, invalidate the images we built
 			// log_trace("free out dated pict");
-			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_FACTOR_CHANGED);
+			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE |
+			                     WIN_FLAGS_FACTOR_CHANGED | WIN_FLAGS_DAMAGED);
 
 			win_release_mask(ps->backend_data, w);
 			win_release_shadow(ps->backend_data, w);
@@ -505,14 +506,25 @@ void win_process_update_flags(session_t *ps, struct win *w) {
 		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
-			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
+			win_set_flags(w, WIN_FLAGS_DAMAGED);
 		}
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
 		win_update_properties(ps, w);
 		win_clear_flags(w, WIN_FLAGS_PROPERTY_STALE);
+	}
+}
+
+/// Handle secondary flags. These flags are set during the processing of primary flags.
+/// Flags are separated into primaries and secondaries because processing of secondary
+/// flags must happen after primary flags of ALL windows are processed, to make sure some
+/// global states (e.g. active window group) are consistent because they will be used in
+/// the processing of secondary flags.
+void win_process_secondary_flags(session_t *ps, struct win *w) {
+	if (w->flags == 0 || w->state != WSTATE_MAPPED) {
+		return;
 	}
 
 	// Factor change flags could be set by previous stages, so must be handled
@@ -521,11 +533,11 @@ void win_process_update_flags(session_t *ps, struct win *w) {
 		win_on_factor_change(ps, w);
 		win_clear_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 	}
-
-	// Add damage, has to be done last so the window has the latest geometry
-	// information.
-	if (damaged) {
+	if (win_check_flags_all(w, WIN_FLAGS_DAMAGED)) {
+		// Add damage, has to be done last so the window has the latest geometry
+		// information.
 		add_damage_from_win(ps, w);
+		win_clear_flags(w, WIN_FLAGS_DAMAGED);
 	}
 }
 
@@ -1385,7 +1397,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 
 	    .mode = WMODE_TRANS,
 	    .leader = XCB_NONE,
-	    .cache_leader = XCB_NONE,
+	    .cache_leader = NULL,
 	    .window_type = WINTYPE_UNKNOWN,
 	    .opacity_prop = OPAQUE,
 	    .opacity_set = 1,
@@ -1637,7 +1649,7 @@ static void win_on_focus_change(session_t *ps, struct win *w) {
 		}
 		// If the group get unfocused, remove it from active_leader
 		else if (!win_is_focused_raw(w) && leader && leader == active_leader &&
-		         !group_is_focused(ps, leader)) {
+		         !win_is_group_focused_inner(ps, leader)) {
 			wm_set_active_leader(ps->wm, XCB_NONE);
 			group_on_factor_change(ps, leader);
 		}

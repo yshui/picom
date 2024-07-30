@@ -1595,6 +1595,7 @@ static void handle_new_windows(session_t *ps) {
 				          wm_ref_win_id(wm_change.toplevel),
 				          wm_change.client.new_.x);
 			}
+			ev_update_focused(ps);
 			break;
 		case WM_TREE_CHANGE_TOPLEVEL_RESTACKED: invalidate_reg_ignore(ps); break;
 		default: unreachable();
@@ -1605,9 +1606,17 @@ static void handle_new_windows(session_t *ps) {
 static void refresh_windows(session_t *ps) {
 	wm_stack_foreach(ps->wm, cursor) {
 		auto w = wm_ref_deref(cursor);
-		if (w != NULL) {
-			win_process_update_flags(ps, w);
+		if (w == NULL) {
+			continue;
 		}
+		win_process_primary_flags(ps, w);
+	}
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w == NULL) {
+			continue;
+		}
+		win_process_secondary_flags(ps, w);
 	}
 }
 
