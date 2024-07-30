@@ -529,6 +529,82 @@ void generate_fading_config(struct options *opt) {
 	dynarr_extend_from(opt->all_scripts, scripts, number_of_scripts);
 }
 
+static const struct {
+	const char *name;
+	ptrdiff_t offset;
+} all_window_options[] = {
+    {"fade", offsetof(struct window_maybe_options, fade)},
+    {"paint", offsetof(struct window_maybe_options, paint)},
+    {"shadow", offsetof(struct window_maybe_options, shadow)},
+    {"invert-color", offsetof(struct window_maybe_options, invert_color)},
+    {"blur-background", offsetof(struct window_maybe_options, blur_background)},
+    {"clip-shadow-above", offsetof(struct window_maybe_options, clip_shadow_above)},
+    {"transparent-clipping", offsetof(struct window_maybe_options, transparent_clipping)},
+};
+
+static c2_lptr_t *parse_rule(config_setting_t *setting) {
+	if (!config_setting_is_group(setting)) {
+		log_error("Invalid rule at line %d. It must be a group.",
+		          config_setting_source_line(setting));
+		return NULL;
+	}
+	int ival;
+	double fval;
+	const char *sval;
+	c2_lptr_t *rule = NULL;
+	if (config_setting_lookup_string(setting, "match", &sval)) {
+		rule = c2_parse(NULL, sval, NULL);
+		if (!rule) {
+			log_error("Failed to parse rule at line %d.",
+			          config_setting_source_line(setting));
+			return NULL;
+		}
+	} else {
+		// If no match condition is specified, it matches all windows
+		rule = c2_new_true();
+	}
+
+	auto wopts = cmalloc(struct window_maybe_options);
+	*wopts = (struct window_maybe_options){
+	    .opacity = NAN,
+	    .corner_radius = -1,
+	};
+	c2_list_set_data(rule, wopts);
+
+	for (size_t i = 0; i < ARR_SIZE(all_window_options); i++) {
+		if (config_setting_lookup_bool(setting, all_window_options[i].name, &ival)) {
+			void *ptr = (char *)wopts + all_window_options[i].offset;
+			*(enum tristate *)ptr = tri_from_bool(ival);
+		}
+	}
+	if (config_setting_lookup_float(setting, "opacity", &fval)) {
+		wopts->opacity = normalize_d(fval);
+	}
+	if (config_setting_lookup_float(setting, "dim", &fval)) {
+		wopts->dim = normalize_d(fval);
+	}
+	if (config_setting_lookup_int(setting, "corner-radius", &ival)) {
+		wopts->corner_radius = ival;
+	}
+	return rule;
+}
+
+static void parse_rules(config_setting_t *setting, c2_lptr_t **rules) {
+	if (!config_setting_is_list(setting)) {
+		log_error("Invalid value for \"rules\" at line %d. It must be a list.",
+		          config_setting_source_line(setting));
+		return;
+	}
+	const auto length = (unsigned int)config_setting_length(setting);
+	for (unsigned int i = 0; i < length; i++) {
+		auto sub = config_setting_get_elem(setting, i);
+		auto rule = parse_rule(sub);
+		if (rule != NULL) {
+			c2_condlist_insert(rules, rule);
+		}
+	}
+}
+
 static const char **
 resolve_include(config_t *cfg, const char *include_dir, const char *path, const char **err) {
 	char *result = locate_auxiliary_file("include", path, include_dir);
@@ -975,6 +1051,11 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	config_setting_t *animations = config_lookup(&cfg, "animations");
 	if (animations) {
 		parse_animations(opt->animations, animations, &opt->all_scripts);
+	}
+
+	config_setting_t *rules = config_lookup(&cfg, "rules");
+	if (rules) {
+		parse_rules(rules, &opt->rules);
 	}
 
 	opt->config_file_path = path;

@@ -954,6 +954,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 
 void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c,
                                   struct options *option) {
+	if (option->rules) {
+		if (!c2_list_postprocess(state, c->c, option->rules)) {
+			log_error("Post-processing of rules failed, some of your rules "
+			          "might not work");
+		}
+		return;
+	}
+
 	if (!(c2_list_postprocess(state, c->c, option->unredir_if_possible_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->paint_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->shadow_blacklist) &&
@@ -987,6 +995,7 @@ void options_destroy(struct options *options) {
 	c2_list_free(&options->corner_radius_rules, NULL);
 	c2_list_free(&options->window_shader_fg_rules, free);
 	c2_list_free(&options->transparent_clipping_blacklist, NULL);
+	c2_list_free(&options->rules, free);
 
 	free(options->config_file_path);
 	free(options->write_pid_path);

@@ -44,6 +44,7 @@ typedef struct _c2_l c2_l_t;
 /// Pointer to a condition tree.
 typedef struct {
 	bool isbranch : 1;
+	bool istrue : 1;
 	union {
 		c2_b_t *b;
 		c2_l_t *l;
@@ -101,13 +102,11 @@ struct c2_property_value {
 };
 
 /// Initializer for c2_ptr_t.
-#define C2_PTR_INIT                                                                      \
-	{                                                                                \
-	    .isbranch = false,                                                           \
-	    .l = NULL,                                                                   \
-	}
-
-static const c2_ptr_t C2_PTR_NULL = C2_PTR_INIT;
+static const c2_ptr_t C2_PTR_INIT = {
+    .isbranch = false,
+    .istrue = false,
+    .l = NULL,
+};
 
 /// Operator of a branch element.
 typedef enum {
@@ -200,24 +199,21 @@ struct _c2_l {
 
 static const unsigned int C2_L_INVALID_TARGET_ID = UINT_MAX;
 /// Initializer for c2_l_t.
-#define C2_L_INIT                                                                        \
-	{                                                                                \
-	    .neg = false,                                                                \
-	    .op = C2_L_OEXISTS,                                                          \
-	    .match = C2_L_MEXACT,                                                        \
-	    .match_ignorecase = false,                                                   \
-	    .tgt = NULL,                                                                 \
-	    .tgtatom = 0,                                                                \
-	    .target_on_client = false,                                                   \
-	    .predef = C2_L_PUNDEFINED,                                                   \
-	    .index = 0,                                                                  \
-	    .ptntype = C2_L_PTUNDEFINED,                                                 \
-	    .ptnstr = NULL,                                                              \
-	    .ptnint = 0,                                                                 \
-	    .target_id = C2_L_INVALID_TARGET_ID,                                         \
-	}
-
-static const c2_l_t leaf_def = C2_L_INIT;
+static const c2_l_t C2_L_INIT = {
+    .neg = false,
+    .op = C2_L_OEXISTS,
+    .match = C2_L_MEXACT,
+    .match_ignorecase = false,
+    .tgt = NULL,
+    .tgtatom = 0,
+    .target_on_client = false,
+    .predef = C2_L_PUNDEFINED,
+    .index = 0,
+    .ptntype = C2_L_PTUNDEFINED,
+    .ptnstr = NULL,
+    .ptnint = 0,
+    .target_id = C2_L_INVALID_TARGET_ID,
+};
 
 /// Linked list type of conditions.
 struct _c2_lptr {
@@ -301,7 +297,7 @@ static inline attr_unused bool c2_ptr_isempty(const c2_ptr_t p) {
  */
 static inline void c2_ptr_reset(c2_ptr_t *pp) {
 	if (pp) {
-		memcpy(pp, &C2_PTR_NULL, sizeof(c2_ptr_t));
+		*pp = C2_PTR_INIT;
 	}
 }
 
@@ -699,7 +695,7 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 			}
 			// Otherwise, combine the second and the incoming one
 			else {
-				eles[1] = c2h_comb_tree(ops[2], eles[1], C2_PTR_NULL);
+				eles[1] = c2h_comb_tree(ops[2], eles[1], C2_PTR_INIT);
 				assert(eles[1].isbranch);
 				pele = &eles[1].b->opr2;
 			}
@@ -813,7 +809,7 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 	presult->l = cmalloc(c2_l_t);
 
 	c2_l_t *const pleaf = presult->l;
-	memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
+	*pleaf = C2_L_INIT;
 
 	// Parse negation marks
 	while ('!' == pattern[offset]) {
@@ -1170,7 +1166,7 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
 	auto pleaf = cmalloc(c2_l_t);
 	presult->isbranch = false;
 	presult->l = pleaf;
-	memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
+	*pleaf = C2_L_INIT;
 	pleaf->op = C2_L_OEQ;
 	pleaf->ptntype = C2_L_PTSTRING;
 
@@ -1870,6 +1866,8 @@ static bool c2_match_once(struct c2_state *state, const struct win *w, const c2_
 
 		log_debug("(%#010x): branch: result = %d, pattern = %s", win_id(w),
 		          result, c2_condition_to_str2(cond));
+	} else if (cond.istrue) {
+		return true;
 	} else {
 		// A leaf
 		const c2_l_t *pleaf = cond.l;
@@ -1891,6 +1889,12 @@ static bool c2_match_once(struct c2_state *state, const struct win *w, const c2_
 	}
 
 	return result;
+}
+
+c2_lptr_t *c2_new_true(void) {
+	auto ret = ccalloc(1, c2_lptr_t);
+	ret->ptr = (c2_ptr_t){.istrue = true};
+	return ret;
 }
 
 /**
@@ -1947,6 +1951,12 @@ bool c2_list_foreach(const c2_lptr_t *condlist, c2_list_foreach_cb_t cb, void *d
 /// Return user data stored in a condition.
 void *c2_list_get_data(const c2_lptr_t *condlist) {
 	return condlist->data;
+}
+
+void *c2_list_set_data(c2_lptr_t *condlist, void *data) {
+	void *old = condlist->data;
+	condlist->data = data;
+	return old;
 }
 
 struct c2_state *c2_state_new(struct atom *atoms) {
@@ -2198,4 +2208,10 @@ bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
 	key.is_on_client = false;
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	return p != NULL;
+}
+
+void c2_condlist_insert(c2_lptr_t **pcondlst, c2_lptr_t *pnew) {
+	c2_lptr_t *pcur = *pcondlst;
+	pnew->next = pcur;
+	*pcondlst = pnew;
 }

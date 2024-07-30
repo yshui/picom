@@ -717,7 +717,9 @@ bool parse_config(options_t *opt, const char *config_file) {
 
 	    .track_leader = false,
 
-	    .rounded_corners_blacklist = NULL
+	    .rounded_corners_blacklist = NULL,
+
+	    .rules = NULL,
 	};
 	// clang-format on
 

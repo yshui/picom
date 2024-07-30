@@ -8,6 +8,7 @@
 /// Common functions and definitions for configuration parsing
 /// Used for command line arguments and config files
 
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -166,6 +167,9 @@ struct window_maybe_options {
 	enum tristate unredir_ignore;
 };
 
+// Make sure `window_options` has no implicit padding.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic error "-Wpadded"
 /// Like `window_maybe_options`, but all fields are guaranteed to be set.
 struct window_options {
 	double opacity;
@@ -181,16 +185,14 @@ struct window_options {
 	bool paint;
 	bool unredir_ignore;
 
-	char padding[2];
+	char padding[4];
 };
+#pragma GCC diagnostic pop
 
 static inline bool
 win_options_eq(const struct window_options *a, const struct window_options *b) {
 	return memcmp(a, b, offsetof(struct window_options, padding)) == 0;
 }
-
-static_assert(offsetof(struct window_options, padding) == 36, "window_options has "
-                                                              "implicit padding");
 
 extern struct shader_info null_shader;
 
@@ -399,6 +401,8 @@ typedef struct options {
 	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
 	/// Array of all the scripts used in `animations`. This is a dynarr.
 	struct script **all_scripts;
+
+	c2_lptr_t *rules;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

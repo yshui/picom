@@ -998,6 +998,24 @@ void win_update_opacity_rule(session_t *ps, struct win *w) {
 	w->options.opacity = opacity;
 }
 
+struct win_update_rule_params {
+	struct win *w;
+	struct session *ps;
+	struct window_maybe_options options;
+};
+
+static bool win_update_rule(const c2_lptr_t *rule, void *args) {
+	auto params = (struct win_update_rule_params *)args;
+	void *pdata = NULL;
+	if (!c2_match_one(params->ps->c2_state, params->w, rule, &pdata)) {
+		return false;
+	}
+
+	auto wopts_next = (struct window_maybe_options *)pdata;
+	params->options = win_maybe_options_fold(params->options, *wopts_next);
+	return false;
+}
+
 /**
  * Function to be called on window data changes.
  *
@@ -1009,39 +1027,60 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	c2_window_state_update(ps->c2_state, &w->c2_state, ps->c.c, wid, win_id(w));
 	// Focus and is_fullscreen needs to be updated first, as other rules might depend
 	// on the focused state of the window
-	bool focused = win_is_focused(ps, w);
 	win_update_is_fullscreen(ps, w);
 
-	win_determine_shadow(ps, w);
-	win_determine_clip_shadow_above(ps, w);
-	win_determine_invert_color(ps, w);
-	win_determine_blur_background(ps, w);
-	win_determine_rounded_corners(ps, w);
-	win_determine_fg_shader(ps, w);
-	win_update_dim(ps, w, focused);
+	if (ps->o.rules == NULL) {
+		bool focused = win_is_focused(ps, w);
+		// Universal rules take precedence over wintype_option and
+		// other exclusion/inclusion lists. And it also supersedes
+		// some of the "override" options.
+		win_determine_shadow(ps, w);
+		win_determine_clip_shadow_above(ps, w);
+		win_determine_invert_color(ps, w);
+		win_determine_blur_background(ps, w);
+		win_determine_rounded_corners(ps, w);
+		win_determine_fg_shader(ps, w);
+		win_update_opacity_rule(ps, w);
+		win_update_dim(ps, w, focused);
+		w->mode = win_calc_mode(w);
+		log_debug("Window mode changed to %d", w->mode);
+		win_update_opacity_rule(ps, w);
+		w->opacity = win_calc_opacity_target(ps, w, focused);
+		w->options.paint = TRI_UNKNOWN;
+		w->options.unredir_ignore = TRI_UNKNOWN;
+		w->options.fade = TRI_UNKNOWN;
+		w->options.transparent_clipping = TRI_UNKNOWN;
+		if (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+		    c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL)) {
+			w->options.paint = TRI_FALSE;
+		}
+		if (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL)) {
+			w->options.unredir_ignore = TRI_TRUE;
+		}
+		if (c2_match(ps->c2_state, w, ps->o.fade_blacklist, NULL)) {
+			w->options.fade = TRI_FALSE;
+		}
+		if (c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL)) {
+			w->options.transparent_clipping = TRI_FALSE;
+		}
+	} else {
+		struct win_update_rule_params params = {
+		    .w = w,
+		    .ps = ps,
+		    .options = WIN_MAYBE_OPTIONS_DEFAULT,
+		};
+		assert(w->state == WSTATE_MAPPED);
+		c2_list_foreach(ps->o.rules, win_update_rule, &params);
+		w->options = params.options;
+		if (safe_isnan(w->options.opacity) && w->has_opacity_prop) {
+			w->options.opacity = ((double)w->opacity_prop) / OPAQUE;
+		}
+		w->opacity = win_options(w).opacity;
+	}
+
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
-	win_update_opacity_rule(ps, w);
-	w->opacity = win_calc_opacity_target(ps, w, focused);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		w->options.paint = c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL)
-		                       ? TRI_FALSE
-		                       : TRI_UNKNOWN;
-	}
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		w->options.unredir_ignore =
-		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL)
-		        ? TRI_TRUE
-		        : TRI_UNKNOWN;
-	}
-
-	w->options.fade =
-	    c2_match(ps->c2_state, w, ps->o.fade_blacklist, NULL) ? TRI_FALSE : TRI_UNKNOWN;
-
-	w->options.transparent_clipping =
-	    c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL)
-	        ? TRI_FALSE
-	        : TRI_UNKNOWN;
 
 	w->reg_ignore_valid = false;
 	if (ps->debug_window != XCB_NONE &&
@@ -1132,7 +1171,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	win_update_role(&ps->c, ps->atoms, w);
 
 	// Update everything related to conditions
-	win_on_factor_change(ps, w);
+	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 
 	auto r = XCB_AWAIT(xcb_get_window_attributes, ps->c.c, client_win_id);
 	if (!r) {

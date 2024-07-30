@@ -2000,6 +2000,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .paint = true,
 	    .clip_shadow_above = false,
 	    .unredir_ignore = false,
+	    .opacity = 1,
 	};
 }
 
