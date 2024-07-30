@@ -380,14 +380,14 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		return;
 	}
 
-	add_damage_from_win(ps, w);
-
-	ps->pending_updates |=
-	    win_set_pending_geometry(w, win_geometry_from_configure_notify(ce));
-
-	// override_redirect flag cannot be changed after window creation, as far
-	// as I know, so there's no point to re-match windows here.
+	bool changed = win_set_pending_geometry(w, win_geometry_from_configure_notify(ce)) |
+	               (w->a.override_redirect != ce->override_redirect);
 	w->a.override_redirect = ce->override_redirect;
+
+	if (w->state == WSTATE_MAPPED) {
+		add_damage_from_win(ps, w);
+		ps->pending_updates |= changed;
+	}
 }
 
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
