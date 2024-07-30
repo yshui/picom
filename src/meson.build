@@ -103,8 +103,13 @@ subdir('renderer')
 subdir('transition')
 subdir('utils')
 
+dl_dep = []
+if not cc.has_function('dlopen')
+	dl_dep = [ cc.find_library('dl', required: true) ]
+endif
+
 picom = executable('picom', srcs, c_args: cflags,
-  dependencies: [ base_deps, deps, test_h_dep ],
+  dependencies: [ base_deps, deps, test_h_dep ] + dl_dep,
   install: true, include_directories: picom_inc,
   export_dynamic: true, gnu_symbol_visibility: 'hidden')
 
