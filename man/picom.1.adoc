@@ -53,7 +53,7 @@ OPTIONS
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 
 *-i*, *--inactive-opacity*=_OPACITY_::
-	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
+	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0). Using this option is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific opacity.
 
 *-e*, *--frame-opacity*=_OPACITY_::
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
@@ -95,31 +95,31 @@ OPTIONS
 	Blue color value of shadow (0.0 - 1.0, defaults to 0).
 
 *--inactive-opacity-override*::
-	Let inactive opacity set by *-i* override the __NET_WM_WINDOW_OPACITY_ values of windows.
+	Let inactive opacity set by *-i* override the __NET_WM_WINDOW_OPACITY_ values of windows. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific opacity.
 
 *--active-opacity* _OPACITY_::
-	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
+	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0). Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific opacity.
 
 *--inactive-dim* _VALUE_::
-	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
+	Dim inactive windows. (0.0 - 1.0, defaults to 0.0). Using this option is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific dim levels.
 
 *--corner-radius* _VALUE_::
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
 *--corner-radius-rules* _RADIUS_:_CONDITION_::
-	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*.
+	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific corner radius.
 
 *--rounded-corners-exclude* _CONDITION_::
-	Exclude conditions for rounded corners.
+	Exclude conditions for rounded corners. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific corner radius.
 
 *--no-frame-pacing*::
 	Disable vsync-aware frame pacing. By default, the compositor tries to make sure it only renders once per vblank interval, and also the render happens as late as possible to minimize the latency from updates to the screen. However this can sometimes cause stuttering, or even lowered frame rate. This option can be used to disable frame pacing.
 
 *--mark-wmwin-focused*::
-	Try to detect WM windows (a non-override-redirect window with no child that has _WM_STATE_) and mark them as active.
+	Try to detect WM windows (a non-override-redirect window with no child that has _WM_STATE_) and mark them as active. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific rules.
 
 *--mark-ovredir-focused*::
-	Mark override-redirect windows that doesn't have a child window with _WM_STATE_ focused.
+	Mark override-redirect windows that doesn't have a child window with _WM_STATE_ focused. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific rules.
 
 *--no-fading-openclose*::
 	Do not fade on window open/close.
@@ -128,7 +128,7 @@ OPTIONS
 	Do not fade destroyed ARGB windows with WM frame. Workaround of bugs in Openbox, Fluxbox, etc.
 
 *--shadow-ignore-shaped*::
-	Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control. Deprecated, use `--shadow-exclude 'bounding_shaped'` or `--shadow-exclude 'bounding_shaped && !rounded_corners'` instead.
+	Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control. Deprecated, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shadow.
 
 *--detect-rounded-corners*::
 	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
@@ -155,19 +155,19 @@ OPTIONS
 	Delay before unredirecting the window, in milliseconds. Defaults to 0.
 
 *--unredir-if-possible-exclude* _CONDITION_::
-	Conditions of windows that shouldn't be considered full-screen for unredirecting screen.
+	Conditions of windows that shouldn't be considered full-screen for unredirecting screen. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific unredirect.
 
 *--shadow-exclude* _CONDITION_::
-	Specify a list of conditions of windows that should have no shadow.
+	Specify a list of conditions of windows that should have no shadow. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shadow.
 
 *--clip-shadow-above* _CONDITION_::
-	Specify a list of conditions of windows that should have no shadow painted over, such as a dock window.
+	Specify a list of conditions of windows that should have no shadow painted over, such as a dock window. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shadow clipping.
 
 *--fade-exclude* _CONDITION_::
-	Specify a list of conditions of windows that should not be faded.
+	Specify a list of conditions of windows that should not be faded. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific fading.
 
 *--focus-exclude* _CONDITION_::
-	Specify a list of conditions of windows that should always be considered focused.
+	Specify a list of conditions of windows that should always be considered focused. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way for doing this.
 
 *--inactive-dim-fixed*::
 	Use fixed inactive dim value, instead of adjusting according to window opacity.
@@ -218,10 +218,10 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use `--resize-damage 1`, with a 5x5 one you use `--resize-damage 2`, and so on). May or may not work with *--glx-no-stencil*. Only works with *--legacy-backends*. Shrinking doesn't function correctly.
 
 *--invert-color-include* _CONDITION_::
-	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
+	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to do this.
 
 *--opacity-rule* _OPACITY_:_CONDITION_::
-	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. picom-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set __NET_WM_WINDOW_OPACITY_ on frame or client windows.
+	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name pass:[*]= "Firefox"`. picom-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set _pass:[_]NET_WM_WINDOW_OPACITY_ on frame or client windows. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific opacity.
 
 *--crop-shadow-to-monitor*::
 	Crop shadow of a window fully on a particular monitor to that monitor. This is currently implemented using the X RandR extension.
@@ -278,10 +278,86 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section *SHADER INTERFACE* below for more details on the interface.
 
 *--window-shader-fg-rule* _SHADER_:_CONDITION_::
-	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled.
+	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
 
 *--dithered-present*
 	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
+
+WINDOW RULES
+------------
+Window rules allow you to set window-specific options which can be used to change appearance of windows based on certain conditions. Note there are other options that also cover some of the functionality of window rules, but window rules are more flexible and powerful. If you are creating a fresh configuration file, it is recommended to use window rules instead of the other options.
+
+Following is a list of all the options that are superseded by window rules:
+
+*--shadow-ignore-shaped*, *--inactive-opacity*, *--active-opacity*, *--inactive-opacity-override*, *--inactive-dim*, *--mark-wmwin-focused*, *--mark-ovredir-focused*, *--invert-color-include*, *--shadow-exclude*, *--fade-exclude*, *--focus-exclude*, *--rounded-corners-exclude*, *--blur-background-exclude*, *--opacity-rule*, *--corner-radius-rules*, *--window-shader-fg-rule*, *--clip-shadow-above*. As well as the *wintypes* configuration file option.
+
+If window rules option is used, none of the above options will have any effect. And warning messages will be issued.
+
+If you are currently using some of these options and want to switch to window rules, see the xref:_migrating_old_rules[*Migrating old rules*] section for how to convert them.
+
+=== Syntax
+
+Window rules are only available in the configuration file. To set window rules, set the `rules` option in the configuration file to something like this:
+
+[listing]
+rules = (
+	{ match = "focused"; opacity = 1; },
+	{ match = "name = 'firefox'"; shadow = true; },
+	# ... and so on
+)
+
+
+`rules = ( ... )` sets the option to a list, which can contain multiple sub-items. For `rules`, each sub-item must be a group (i.e. `{ key = value; ... }`), representing a condition and a set of options to apply when the condition is met. These sub-items are matched in the order they appear in the configuration file, options are applied as the conditions are matched. If the same option is set multiple times, the last one will take effect.
+
+Within each sub-item, these keys are available: ::
+
+  match:::
+	The condition string to match windows with. See the xref:_format_of_conditions[*FORMAT OF CONDITIONS*] section below for the syntax of condition strings. If not specified, the rule will always match.
+
+  shadow:::
+	Whether to draw shadow under the matching window.
+
+  full-shadow:::
+	Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
+
+  fade:::
+	Whether to fade the matching window in/out when opening/closing it.
+
+  opacity:::
+	Opacity of the matching window. (0.0 - 1.0). If not explicitly set by a rule, the opacity value from the window properties (e.g. pass:[_]NET_WM_WINDOW_OPACITY) will be used.
+
+  dim:::
+	Dim level of the matching window. Larger value means more dimming. (0.0 - 1.0)
+
+  corner-radius:::
+	Corner radius of the matching window in number of pixels. 0 means no corner rounding.
+
+  blur-background:::
+	Whether to the background of the matching window should be blurred.
+
+  invert-color:::
+	Whether to invert the color of the matching window.
+
+  clip-shadow-above:::
+	Whether to prevent the matching window from being painted over by shadows.
+
+  unredir:::
+	Whether the matching window should cause the compositor to unredirect the screen, and whether it should trigger the screen to be redirected again if it is currently unredirected. This could be a boolean value, if _true_, the screen will be unredirected if the matching window meets certain conditions; if _false_, it will never cause the screen to be unredirected. If the screen is currently unredirected, and there is no other window that will trigger unredirection, both of these choices will cause the screen to be redirected again. To control that behavior as well, you can set `unredir` to either _preferred_, such windows will not cause the screen to be redirected in this situation, and will behave like `true` otherwise; or _passive_, which not only won't cause redirection in this case, but also won't actively cause the screen to be unredirected. The last possible value for this option is _forced_, any of the windows having their `unredir` set to `forced` will cause the screen to be unredirected unconditionally. The value of the _pass:[_]NET_WM_BYPASS_COMPOSITOR_ property on the window will be considered iff `unredir` is not explicitly set by any rule.
+
+  transparent-clipping:::
+	Whether to make the matching window clip other windows like opaque windows do, instead of blending on top of them. When applied to transparent windows, this means nothing will be painted under the transparent parts of the window, essentially cuts a hole in the screen.
+
+  shader:::
+	GLSL fragment shader path for rendering window contents. See section *SHADER INTERFACE* below for more details on the interface.
+
+=== Migrating old rules
+
+Most of the rule options should 1:1 map to the new window rules. Here is a list of the non-trivial ones and how to achieve the same effect with window rules.
+
+*Inactive dimming and opacity*:: This includes options *--inactive-opacity*, *--inactive-dim*, *--active-opacity*,
+*--inactive-opacity-override*, *--mark-wmwin-focused*, and *--mark-ovredir-focused*. When using the window rules, the compositor no longer have an "active window" concept, as it is easy to achieve with window rules. You can use `match = "focused || group_focused"` to match windows that would have been considered active with the old options. Then you can set the opacity and dim level for matched windows accordingly. *--mark-wmwin-focused* and *--mark-ovredir-focused* can be achieved by adding `|| wmmin` and `|| override_redirect` to the match string, respectively. *--inactive-opacity-override* can be achieved by setting `opacity-override = true`.
+
+*Active window*:: This includes option *--focus-exclude*. The *--focus-exclude* was only used to influence what windows are considered active, to apply inactive opacity and dimming. Since with window rules you no longer need the compositor to help you decide what is active and what is not (see above), the *--focus-exclude* option is no longer needed.
 
 FORMAT OF CONDITIONS
 --------------------
@@ -429,9 +505,9 @@ picom could read from a configuration file if libconfig support is compiled in. 
 
 When `@include` directive is used in the config file, picom will first search for the included file in the parent directory of `picom.conf`, then in `$XDG_CONFIG_HOME/picom/include/`, then in `$XDG_CONFIG_DIRS/picom/include`.
 
-picom uses general libconfig configuration file format. A sample configuration file is available as `picom.sample.conf` in the source tree. Most of commandline switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
+picom uses general libconfig configuration file format. A sample configuration file is available as `picom.sample.conf` in the source tree. Most of command line switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
 
-Window-type-specific settings are exposed only in configuration file and has the following format:
+Window-type-specific settings allow you to set window-specific options based on the window type. These settings are exposed only in configuration file. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific options. The format of this option is as follows:
 
 ------------
 wintypes:
