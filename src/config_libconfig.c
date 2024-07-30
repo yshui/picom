@@ -764,6 +764,11 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		}
 	}
 
+	config_setting_t *rules = config_lookup(&cfg, "rules");
+	if (rules) {
+		parse_rules(rules, &opt->rules);
+	}
+
 	// --dbus
 	lcfg_lookup_bool(&cfg, "dbus", &opt->dbus);
 
@@ -790,10 +795,18 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// -i (inactive_opacity)
 	if (config_lookup_float(&cfg, "inactive-opacity", &dval)) {
 		opt->inactive_opacity = normalize_d(dval);
+		if (opt->rules) {
+			log_warn_both_style_of_rules("inactive-opacity");
+			opt->has_both_style_of_rules = true;
+		}
 	}
 	// --active_opacity
 	if (config_lookup_float(&cfg, "active-opacity", &dval)) {
 		opt->active_opacity = normalize_d(dval);
+		if (opt->rules) {
+			log_warn_both_style_of_rules("active-opacity");
+			opt->has_both_style_of_rules = true;
+		}
 	}
 	// --corner-radius
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
@@ -845,15 +858,34 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		goto out;
 	}
 	// --inactive-opacity-override
-	lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override);
+	if (lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("inactive-opacity-override");
+		opt->has_both_style_of_rules = true;
+	}
 	// --inactive-dim
-	config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim);
+	if (config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim) && opt->rules != NULL) {
+		log_warn_both_style_of_rules("inactive-dim");
+		opt->has_both_style_of_rules = true;
+	}
 	// --mark-wmwin-focused
-	lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused);
+	if (lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("mark-wmwin-focused");
+		opt->has_both_style_of_rules = true;
+	}
 	// --mark-ovredir-focused
-	lcfg_lookup_bool(&cfg, "mark-ovredir-focused", &opt->mark_ovredir_focused);
+	if (lcfg_lookup_bool(&cfg, "mark-ovredir-focused", &opt->mark_ovredir_focused) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("mark-ovredir-focused");
+		opt->has_both_style_of_rules = true;
+	}
 	// --shadow-ignore-shaped
-	lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped);
+	if (lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("shadow-ignore-shaped");
+		opt->has_both_style_of_rules = true;
+	}
 	// --detect-rounded-corners
 	lcfg_lookup_bool(&cfg, "detect-rounded-corners", &opt->detect_rounded_corners);
 	// --crop-shadow-to-monitor
@@ -933,24 +965,50 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// --dithered_present
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
 
-	if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
-	                       "transparent-clipping-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
-	    !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include") ||
-	    !parse_cfg_condlst(&cfg, &opt->blur_background_blacklist, "blur-background-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
-	                       "unredir-if-possible-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude") ||
-	    !parse_cfg_condlst_with_prefix(&opt->corner_radius_rules, &cfg, "corner-radius-rules",
-	                                   parse_numeric_prefix, NULL, (int[]){0, INT_MAX}) ||
-	    !parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
-	                                   parse_numeric_prefix, NULL, (int[]){0, 100}) ||
-	    !parse_cfg_condlst_with_prefix(
-	        &opt->window_shader_fg_rules, &cfg, "window-shader-fg-rule",
-	        parse_window_shader_prefix, free, (void *)config_get_include_dir(&cfg))) {
+	if (opt->rules != NULL) {
+		static const char *rule_list[] = {
+		    "transparent-clipping-exclude",
+		    "shadow-exclude",
+		    "clip-shadow-above",
+		    "fade-exclude",
+		    "focus-exclude",
+		    "invert-color-include",
+		    "blur-background-exclude",
+		    "unredir-if-possible-exclude",
+		    "rounded-corners-exclude",
+		    "corner-radius-rules",
+		    "opacity-rule",
+		    "window-shader-fg-rule",
+		    "wintypes",
+		};
+		for (size_t i = 0; i < sizeof(rule_list) / sizeof(rule_list[0]); i++) {
+			if (config_lookup(&cfg, rule_list[i])) {
+				log_warn_both_style_of_rules(rule_list[i]);
+				opt->has_both_style_of_rules = true;
+			}
+		}
+	} else if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
+	                              "transparent-clipping-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
+	           !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include") ||
+	           !parse_cfg_condlst(&cfg, &opt->blur_background_blacklist,
+	                              "blur-background-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
+	                              "unredir-if-possible-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist,
+	                              "rounded-corners-exclude") ||
+	           !parse_cfg_condlst_with_prefix(
+	               &opt->corner_radius_rules, &cfg, "corner-radius-rules",
+	               parse_numeric_prefix, NULL, (int[]){0, INT_MAX}) ||
+	           !parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
+	                                          parse_numeric_prefix, NULL, (int[]){0, 100}) ||
+	           !parse_cfg_condlst_with_prefix(&opt->window_shader_fg_rules, &cfg,
+	                                          "window-shader-fg-rule",
+	                                          parse_window_shader_prefix, free,
+	                                          (void *)config_get_include_dir(&cfg))) {
 		goto out;
 	}
 
@@ -1081,23 +1139,20 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// Wintype settings
 
 	// XXX ! Refactor all the wintype_* arrays into a struct
-	for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
-		parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
-		                     &opt->wintype_option_mask[i]);
+	if (opt->rules == NULL) {
+		for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
+			parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
+			                     &opt->wintype_option_mask[i]);
+		}
+		// Compatibility with the old name for notification windows.
+		parse_wintype_config(&cfg, "notify",
+		                     &opt->wintype_option[WINTYPE_NOTIFICATION],
+		                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
 	}
-
-	// Compatibility with the old name for notification windows.
-	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
-	                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
 
 	config_setting_t *animations = config_lookup(&cfg, "animations");
 	if (animations) {
 		parse_animations(opt->animations, animations, &opt->all_scripts);
-	}
-
-	config_setting_t *rules = config_lookup(&cfg, "rules");
-	if (rules) {
-		parse_rules(rules, &opt->rules);
 	}
 
 	opt->config_file_path = path;

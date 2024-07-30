@@ -427,6 +427,7 @@ typedef struct options {
 	struct script **all_scripts;
 
 	c2_lptr_t *rules;
+	bool has_both_style_of_rules;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
@@ -504,5 +505,11 @@ static inline bool parse_vsync(const char *str) {
 
 /// Generate animation script for legacy fading options
 void generate_fading_config(struct options *opt);
+
+static inline void log_warn_both_style_of_rules(const char *option_name) {
+	log_warn("Option \"%s\" is set along with \"rules\". \"rules\" will take "
+	         "precedence, and \"%s\" will have no effect.",
+	         option_name, option_name);
+}
 
 // vim: set noet sw=8 ts=8 :
