@@ -1,9 +1,9 @@
-picom-inspect(1)
-================
+= picom-inspect(1)
+Yuxuan Shui
 :doctype:     manpage
-:man source:  picom-inspect
-:man version: {picom-version}
-:man manual:  User Commands
+:mansource:  picom-inspect
+:manversion: {picom-version}
+:manmanual:  User Commands
 
 NAME
 ----
@@ -11,7 +11,7 @@ picom-inspect - easily test your picom rules
 
 SYNOPSIS
 --------
-*picom-inspect* ['OPTIONS']
+*picom-inspect* [_OPTIONS_]
 
 DESCRIPTION
 -----------
@@ -37,4 +37,4 @@ Homepage: <https://github.com/yshui/picom>
 
 SEE ALSO
 --------
-*xcompmgr*(1), link:picom.html[*picom*(1)]
+*xcompmgr*(1), xref:picom.1.adoc[*picom*(1)]

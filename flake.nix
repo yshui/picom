@@ -21,6 +21,10 @@
         picom = super.picom.overrideAttrs (oldAttrs: rec {
           version = "11";
           pname = "picom";
+          nativeBuildInputs = (removeFromList [ self.asciidoc ] oldAttrs.nativeBuildInputs) ++
+            [
+              self.asciidoctor
+            ];
           buildInputs =
             [
               self.pcre2
@@ -61,6 +65,7 @@
         nativeBuildInputs = o.nativeBuildInputs ++ (with pkgs; [
           clang-tools_18
           llvmPackages_18.clang-unwrapped.python
+          llvmPackages_18.libllvm
           python
         ]);
         hardeningDisable = ["fortify"];
@@ -79,7 +84,6 @@
         ;
       packages = {
         default = pkgs.picom;
-        llvm = profilePkgs.llvm_18;
       };
       devShells.default = mkDevShell packages.default;
       devShells.useClang = devShells.default.override {

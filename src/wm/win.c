@@ -443,7 +443,7 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 	          win_id(w), w->name, w->to_paint, w->flags);
 
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
-		win_map_start(w);
+		win_map_start(ps, w);
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
 
@@ -1296,8 +1296,6 @@ bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct win *
  * @param w struct _win of the parent window
  */
 void win_on_client_update(session_t *ps, struct win *w) {
-	auto client_win = wm_ref_client_of(w->tree_ref);
-
 	// If the window isn't mapped yet, stop here, as the function will be
 	// called in map_win()
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
@@ -1306,7 +1304,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 
 	win_update_wintype(&ps->c, ps->atoms, w);
 
-	xcb_window_t client_win_id = client_win ? wm_ref_win_id(client_win) : XCB_NONE;
+	xcb_window_t client_win_id = win_client_id(w, /*fallback_to_self=*/true);
 	// Get frame widths. The window is in damaged area already.
 	win_update_frame_extents(&ps->c, ps->atoms, w, client_win_id, ps->o.frame_opacity);
 
@@ -2188,9 +2186,83 @@ int win_find_monitor(const struct x_monitors *monitors, const struct win *mw) {
 	return ret;
 }
 
+bool win_set_pending_geometry(struct win *w, struct win_geometry g) {
+	// We check against pending_g here, because there might have been multiple
+	// configure notifies in this cycle, or the window could receive multiple updates
+	// while it's unmapped. `pending_g` should be equal to `g` otherwise.
+	bool position_changed = w->pending_g.x != g.x || w->pending_g.y != g.y;
+	bool size_changed = w->pending_g.width != g.width || w->pending_g.height != g.height ||
+	                    w->pending_g.border_width != g.border_width;
+	if (position_changed || size_changed) {
+		// Queue pending updates
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+
+		// At least one of the following if's is true
+		if (position_changed) {
+			log_trace("Window %#010x position changed, %dx%d -> %dx%d",
+			          win_id(w), w->g.x, w->g.y, g.x, g.y);
+			w->pending_g.x = g.x;
+			w->pending_g.y = g.y;
+			win_set_flags(w, WIN_FLAGS_POSITION_STALE);
+		}
+
+		if (size_changed) {
+			log_trace("Window %#010x size changed, %dx%d -> %dx%d", win_id(w),
+			          w->g.width, w->g.height, g.width, g.height);
+			w->pending_g.width = g.width;
+			w->pending_g.height = g.height;
+			w->pending_g.border_width = g.border_width;
+			win_set_flags(w, WIN_FLAGS_SIZE_STALE);
+		}
+	}
+	return position_changed || size_changed;
+}
+
+struct win_get_geometry_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+};
+
+static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
+                                          struct x_async_request_base *req_base,
+                                          xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct win_get_geometry_request *)req_base;
+	auto wid = req->wid;
+	auto ps = req->ps;
+	free(req);
+
+	if (reply_or_error->response_type == 0) {
+		log_debug("Failed to get geometry of window %#010x: %s", wid,
+		          x_strerror((xcb_generic_error_t *)reply_or_error));
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	if (cursor == NULL) {
+		// Rare, window is destroyed then its ID is reused
+		if (wm_is_consistent(ps->wm)) {
+			log_error("Successfully fetched geometry of a non-existent "
+			          "window %#010x",
+			          wid);
+			assert(false);
+		}
+		return;
+	}
+
+	auto w = wm_ref_deref(cursor);
+	if (w == NULL) {
+		// Not yet managed. Rare, window is destroyed then its ID is reused
+		return;
+	}
+
+	auto r = (xcb_get_geometry_reply_t *)reply_or_error;
+	ps->pending_updates |= win_set_pending_geometry(w, win_geometry_from_get_geometry(r));
+}
+
 /// Start the mapping of a window. We cannot map immediately since we might need to fade
 /// the window in.
-void win_map_start(struct win *w) {
+void win_map_start(struct session *ps, struct win *w) {
 	assert(w);
 
 	// Don't care about window mapping if it's an InputOnly window
@@ -2223,6 +2295,15 @@ void win_map_start(struct win *w) {
 
 	w->state = WSTATE_MAPPED;
 	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_CLIENT_STALE);
+
+	auto req = ccalloc(1, struct win_get_geometry_request);
+	req->base = (struct x_async_request_base){
+	    .callback = win_handle_get_geometry_reply,
+	    .sequence = xcb_get_geometry(ps->c.c, win_id(w)).sequence,
+	};
+	req->wid = win_id(w);
+	req->ps = ps;
+	x_await_request(&ps->c, &req->base);
 }
 
 /// Set flags on a window. Some sanity checks are performed

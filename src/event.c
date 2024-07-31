@@ -380,44 +380,14 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		return;
 	}
 
-	add_damage_from_win(ps, w);
-
-	// We check against pending_g here, because there might have been multiple
-	// configure notifies in this cycle, or the window could receive multiple updates
-	// while it's unmapped.
-	bool position_changed = w->pending_g.x != ce->x || w->pending_g.y != ce->y;
-	bool size_changed = w->pending_g.width != ce->width ||
-	                    w->pending_g.height != ce->height ||
-	                    w->pending_g.border_width != ce->border_width;
-	if (position_changed || size_changed) {
-		// Queue pending updates
-		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
-		// TODO(yshui) don't set pending_updates if the window is not
-		// visible/mapped
-		ps->pending_updates = true;
-
-		// At least one of the following if's is true
-		if (position_changed) {
-			log_trace("Window position changed, %dx%d -> %dx%d", w->g.x,
-			          w->g.y, ce->x, ce->y);
-			w->pending_g.x = ce->x;
-			w->pending_g.y = ce->y;
-			win_set_flags(w, WIN_FLAGS_POSITION_STALE);
-		}
-
-		if (size_changed) {
-			log_trace("Window size changed, %dx%d -> %dx%d", w->g.width,
-			          w->g.height, ce->width, ce->height);
-			w->pending_g.width = ce->width;
-			w->pending_g.height = ce->height;
-			w->pending_g.border_width = ce->border_width;
-			win_set_flags(w, WIN_FLAGS_SIZE_STALE);
-		}
-	}
-
-	// override_redirect flag cannot be changed after window creation, as far
-	// as I know, so there's no point to re-match windows here.
+	bool changed = win_set_pending_geometry(w, win_geometry_from_configure_notify(ce)) |
+	               (w->a.override_redirect != ce->override_redirect);
 	w->a.override_redirect = ce->override_redirect;
+
+	if (w->state == WSTATE_MAPPED) {
+		add_damage_from_win(ps, w);
+		ps->pending_updates |= changed;
+	}
 }
 
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {

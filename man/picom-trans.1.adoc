@@ -1,9 +1,9 @@
-picom-trans(1)
-================
-:doctype:     manpage
-:man source:  picom
-:man version: {picom-version}
-:man manual:  User Commands
+= picom-trans(1)
+Yuxuan Shui
+:doctype:    manpage
+:mansource:  picom
+:manversion: {picom-version}
+:manmanual:  User Commands
 
 NAME
 ----
@@ -12,19 +12,19 @@ picom-trans - an opacity setter tool
 SYNOPSIS
 --------
 
-*picom-trans* [-w 'WINDOW_ID'] [-n 'WINDOW_NAME'] [-c] [-s] 'OPACITY'
+*picom-trans* [-w _WINDOW_ID_] [-n _WINDOW_NAME_] [-c] [-s] _OPACITY_
 
 DESCRIPTION
 -----------
 
-*picom-trans* is a bash script that sets '_NET_WM_WINDOW_OPACITY' attribute of a window using standard X11 command-line utilities, including *xprop*(1) and *xwininfo*(1). It is similar to *transset*(1) or *transset-df*(1).
+*picom-trans* is a bash script that sets __NET_WM_WINDOW_OPACITY_ attribute of a window using standard X11 command-line utilities, including *xprop*(1) and *xwininfo*(1). It is similar to *transset*(1) or *transset-df*(1).
 
 OPTIONS
 -------
-*-w*, *--window*='WINDOW_ID'::
+*-w*, *--window*=_WINDOW_ID_::
 Specify the window id of the target window.
 
-*-n*, *--name*='WINDOW_NAME'::
+*-n*, *--name*=_WINDOW_NAME_::
 Specify and try to match a window name.
 
 *-c*, *--current*::
@@ -33,7 +33,7 @@ Specify the currently active window as target. Only works if EWMH '_NET_ACTIVE_W
 *-s*, *--select*::
 Select target window with mouse cursor. This is the default if no window has been specified.
 
-*-o*, *--opacity*='OPACITY'::
+*-o*, *--opacity*=_OPACITY_::
 Specify the new opacity value for the window. This value can be anywhere from 1-100. If it is prefixed with a plus or minus (+/-), this will increment or decrement from the target window's current opacity instead.
 
 *-g*, *--get*::
@@ -111,4 +111,4 @@ Please submit bug reports to <https://github.com/yshui/picom>.
 
 SEE ALSO
 --------
-link:picom.1.html[*picom*(1)], *xprop*(1), *xwininfo*(1)
+xref:picom.1.adoc[*picom*(1)], *xprop*(1), *xwininfo*(1)
