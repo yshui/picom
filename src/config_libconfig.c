@@ -529,6 +529,42 @@ void generate_fading_config(struct options *opt) {
 	dynarr_extend_from(opt->all_scripts, scripts, number_of_scripts);
 }
 
+static enum window_unredir_option parse_unredir_option(config_setting_t *setting) {
+	if (config_setting_type(setting) == CONFIG_TYPE_BOOL) {
+		auto bval = config_setting_get_bool(setting);
+		return bval ? WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE
+		            : WINDOW_UNREDIR_TERMINATE;
+	}
+	const char *sval = config_setting_get_string(setting);
+	if (!sval) {
+		log_error("Invalid value for \"unredir\" at line %d. It must be a "
+		          "boolean or a string.",
+		          config_setting_source_line(setting));
+		return WINDOW_UNREDIR_INVALID;
+	}
+	if (strcmp(sval, "yes") == 0 || strcmp(sval, "true") == 0 ||
+	    strcmp(sval, "default") == 0 || strcmp(sval, "when-possible-else-terminate")) {
+		return WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE;
+	}
+	if (strcmp(sval, "preferred") == 0 || strcmp(sval, "when-possible") == 0) {
+		return WINDOW_UNREDIR_WHEN_POSSIBLE;
+	}
+	if (strcmp(sval, "no") == 0 || strcmp(sval, "false") == 0 ||
+	    strcmp(sval, "terminate") == 0) {
+		return WINDOW_UNREDIR_TERMINATE;
+	}
+	if (strcmp(sval, "passive") == 0) {
+		return WINDOW_UNREDIR_PASSIVE;
+	}
+	if (strcmp(sval, "forced") == 0) {
+		return WINDOW_UNREDIR_FORCED;
+	}
+	log_error("Invalid string value for \"unredir\" at line %d. It must be one of "
+	          "\"preferred\", \"passive\", or \"force\". Got \"%s\".",
+	          config_setting_source_line(setting), sval);
+	return WINDOW_UNREDIR_INVALID;
+}
+
 static const struct {
 	const char *name;
 	ptrdiff_t offset;
@@ -585,6 +621,11 @@ static c2_lptr_t *parse_rule(config_setting_t *setting) {
 	}
 	if (config_setting_lookup_int(setting, "corner-radius", &ival)) {
 		wopts->corner_radius = ival;
+	}
+
+	auto unredir_setting = config_setting_lookup(setting, "unredir-if-possible");
+	if (unredir_setting) {
+		wopts->unredir = parse_unredir_option(unredir_setting);
 	}
 	return rule;
 }

@@ -1047,7 +1047,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 		win_update_opacity_rule(ps, w);
 		w->opacity = win_calc_opacity_target(ps, w, focused);
 		w->options.paint = TRI_UNKNOWN;
-		w->options.unredir_ignore = TRI_UNKNOWN;
+		w->options.unredir = WINDOW_UNREDIR_INVALID;
 		w->options.fade = TRI_UNKNOWN;
 		w->options.transparent_clipping = TRI_UNKNOWN;
 		if (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
@@ -1056,8 +1056,21 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 		}
 		if (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
 		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL)) {
-			w->options.unredir_ignore = TRI_TRUE;
+			if (ps->o.wintype_option[w->window_type].redir_ignore) {
+				w->options.unredir = WINDOW_UNREDIR_PASSIVE;
+			} else {
+				w->options.unredir = WINDOW_UNREDIR_TERMINATE;
+			}
+		} else if (win_is_bypassing_compositor(ps, w)) {
+			// Here we deviate from EWMH a bit. EWMH says we must not
+			// unredirect the screen if the window requesting bypassing would
+			// look different after unredirecting. Instead we always follow
+			// the request.
+			w->options.unredir = WINDOW_UNREDIR_FORCED;
+		} else if (ps->o.wintype_option[w->window_type].redir_ignore) {
+			w->options.unredir = WINDOW_UNREDIR_WHEN_POSSIBLE;
 		}
+
 		if (c2_match(ps->c2_state, w, ps->o.fade_blacklist, NULL)) {
 			w->options.fade = TRI_FALSE;
 		}
@@ -1075,6 +1088,12 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 		w->options = params.options;
 		if (safe_isnan(w->options.opacity) && w->has_opacity_prop) {
 			w->options.opacity = ((double)w->opacity_prop) / OPAQUE;
+		}
+		if (w->options.unredir == WINDOW_UNREDIR_INVALID &&
+		    win_is_bypassing_compositor(ps, w)) {
+			// If `unredir` is not set by a rule, we follow the bypassing
+			// compositor property.
+			w->options.unredir = WINDOW_UNREDIR_FORCED;
 		}
 		w->opacity = win_options(w).opacity;
 	}

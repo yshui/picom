@@ -898,30 +898,30 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// paint, but this is typically unnecessary, may cause flickering when
 		// fading is enabled, and could create inconsistency when the wallpaper
 		// is not correctly set.
-		if (ps->o.unredir_if_possible && is_highest) {
-			if (w->mode == WMODE_SOLID && !ps->o.force_win_blend &&
-			    w->is_fullscreen && !window_options.unredir_ignore) {
-				unredir_possible = true;
-			}
+		if (ps->o.unredir_if_possible && is_highest && w->mode == WMODE_SOLID &&
+		    !ps->o.force_win_blend && w->is_fullscreen &&
+		    (window_options.unredir == WINDOW_UNREDIR_WHEN_POSSIBLE ||
+		     window_options.unredir == WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE)) {
+			unredir_possible = true;
 		}
 
-		// Unredirect screen if some window is requesting compositor bypass, even
-		// if that window is not on the top.
-		if (ps->o.unredir_if_possible && win_is_bypassing_compositor(ps, w) &&
-		    !window_options.unredir_ignore) {
-			// Here we deviate from EWMH a bit. EWMH says we must not
-			// unredirect the screen if the window requesting bypassing would
-			// look different after unredirecting. Instead we always follow
-			// the request.
+		// Unredirect screen if some window is forcing unredir, even when they are
+		// not on the top.
+		if (ps->o.unredir_if_possible &&
+		    window_options.unredir == WINDOW_UNREDIR_FORCED) {
 			unredir_possible = true;
 		}
 
 		w->prev_trans = bottom;
 		bottom = w;
 
-		// If the screen is not redirected and the window has redir_ignore set,
-		// this window should not cause the screen to become redirected
-		if (!(ps->o.wintype_option[w->window_type].redir_ignore && !ps->redirected)) {
+		// If the screen is not redirected check if the window's unredir setting
+		// allows unredirection to be terminated.
+		if (ps->redirected || window_options.unredir == WINDOW_UNREDIR_TERMINATE ||
+		    window_options.unredir == WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE) {
+			// Setting is_highest to false will stop all windows stacked below
+			// from triggering unredirection. But if `unredir_possible` is
+			// already set, this will not prevent unredirection.
 			is_highest = false;
 		}
 
@@ -948,8 +948,11 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 	if (ps->o.redirected_force != UNSET) {
 		unredir_possible = !ps->o.redirected_force;
 	} else if (ps->o.unredir_if_possible && is_highest && !ps->redirected) {
-		// If there's no window to paint, and the screen isn't redirected,
-		// don't redirect it.
+		// `is_highest` being true means there's no window with a unredir setting
+		// that allows unredirection to be terminated. So if screen is not
+		// redirected, keep it that way.
+		//
+		// (might not be the best naming.)
 		unredir_possible = true;
 	}
 	if (unredir_possible) {
@@ -1999,7 +2002,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .invert_color = false,
 	    .paint = true,
 	    .clip_shadow_above = false,
-	    .unredir_ignore = false,
+	    .unredir = WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE,
 	    .opacity = 1,
 	};
 }

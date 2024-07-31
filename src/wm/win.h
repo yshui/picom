@@ -307,7 +307,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
     .opacity = NAN,
     .shader = NULL,
     .corner_radius = -1,
-    .unredir_ignore = TRI_UNKNOWN,
+    .unredir = WINDOW_UNREDIR_INVALID,
 };
 
 /// Combine two window options. The `upper` value has higher priority, the `lower` value
@@ -316,7 +316,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
 static inline struct window_maybe_options __attribute__((always_inline))
 win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_options lower) {
 	return (struct window_maybe_options){
-	    .unredir_ignore = tri_or(upper.unredir_ignore, lower.unredir_ignore),
+	    .unredir = upper.unredir == WINDOW_UNREDIR_INVALID ? lower.unredir : upper.unredir,
 	    .blur_background = tri_or(upper.blur_background, lower.blur_background),
 	    .clip_shadow_above = tri_or(upper.clip_shadow_above, lower.clip_shadow_above),
 	    .shadow = tri_or(upper.shadow, lower.shadow),
@@ -334,8 +334,9 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 /// values that are not set in the `window_maybe_options`.
 static inline struct window_options __attribute__((always_inline))
 win_maybe_options_or(struct window_maybe_options maybe, struct window_options def) {
+	assert(def.unredir != WINDOW_UNREDIR_INVALID);
 	return (struct window_options){
-	    .unredir_ignore = tri_or_bool(maybe.unredir_ignore, def.unredir_ignore),
+	    .unredir = maybe.unredir == WINDOW_UNREDIR_INVALID ? def.unredir : maybe.unredir,
 	    .blur_background = tri_or_bool(maybe.blur_background, def.blur_background),
 	    .clip_shadow_above = tri_or_bool(maybe.clip_shadow_above, def.clip_shadow_above),
 	    .shadow = tri_or_bool(maybe.shadow, def.shadow),

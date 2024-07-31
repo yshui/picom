@@ -136,6 +136,29 @@ struct included_config_file {
 	struct list_node siblings;
 };
 
+enum window_unredir_option {
+	/// This window should trigger unredirection if it meets certain conditions, and
+	/// it should terminate unredirection otherwise. Termination of unredir is always
+	/// suppressed if there is another window triggering unredirection, this is the
+	/// same for `WINDOW_UNREDIR_TERMINATE` as well.
+	///
+	/// This is the default choice for windows.
+	WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE,
+	/// This window should trigger unredirection if it meets certain conditions.
+	/// Otherwise it should have no effect on the compositor's redirection status.
+	WINDOW_UNREDIR_WHEN_POSSIBLE,
+	/// This window should always take the compositor out of unredirection, and never
+	/// trigger unredirection.
+	WINDOW_UNREDIR_TERMINATE,
+	/// This window should not cause either redirection or unredirection.
+	WINDOW_UNREDIR_PASSIVE,
+	/// This window always trigger unredirection
+	WINDOW_UNREDIR_FORCED,
+
+	/// Sentinel value
+	WINDOW_UNREDIR_INVALID,
+};
+
 struct window_maybe_options {
 	/// Radius of rounded window corners, -1 means not set.
 	int corner_radius;
@@ -164,7 +187,7 @@ struct window_maybe_options {
 	/// Whether the window is painted.
 	enum tristate paint;
 	/// Whether this window should be considered for unredirect-if-possible.
-	enum tristate unredir_ignore;
+	enum window_unredir_option unredir;
 };
 
 // Make sure `window_options` has no implicit padding.
@@ -176,6 +199,7 @@ struct window_options {
 	double dim;
 	const struct shader_info *shader;
 	unsigned int corner_radius;
+	enum window_unredir_option unredir;
 	bool transparent_clipping;
 	bool shadow;
 	bool invert_color;
@@ -183,9 +207,8 @@ struct window_options {
 	bool fade;
 	bool clip_shadow_above;
 	bool paint;
-	bool unredir_ignore;
 
-	char padding[4];
+	char padding[1];
 };
 #pragma GCC diagnostic pop
 
