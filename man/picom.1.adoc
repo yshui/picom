@@ -363,35 +363,78 @@ FORMAT OF CONDITIONS
 --------------------
 Some options accept a condition string to match certain windows. A condition string is formed by one or more conditions, joined by logical operators.
 
-A condition with "exists" operator looks like this:
+Formal grammar for a condition looks like this:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>]
+	Condition <- Term ('||' Term)*
+	Term <- Item ('&&' Item)*
+	Item <- '!'? Target '@'? ('[' Index ']')? (Operator Pattern)? | '(' Condition ')'
 
-With equals operator it looks like:
+Concretely speaking, a condition is a sequence of one or more simple pattern matching __Item__s, joined by logical operators `&&` (and) and `||` (or). `&&` has higher precedence than `||`. Both operators are left-associative. Parentheses can be used to raise precedence. If an _Item_ has a leading negation operator (`!`), the result of the item is negated.
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] <NEGATION> <OP QUALIFIER> <MATCH TYPE> = <PATTERN>
+Inside an _Item_:
 
-With greater-than/less-than operators it looks like:
+_Target_:: is either a predefined target name, or the name of a window property to match.
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] <NEGATION> <OPERATOR> <PATTERN>
+Supported predefined targets are: :::
 
-_NEGATION_ (optional) is one or more exclamation marks;
+  `x`, `y`, `x2`, `y2`::::
+	Window coordinates, from the top-left corner of the window `(x, y)` to the bottom-right corner `(x2, y2)`.
 
-_TARGET_ is either a predefined target name, or the name of a window property to match. Supported predefined targets are `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `group_focused` (whether the window belongs to the focused window group), `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*, note this has no relation to *--corner-radius*), `window_type` (window type in string), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+  `width`, `height`::::
+	Size of the window.
 
-_CLIENT/FRAME_ is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
+  `widthb`, `heightb`::::
+	Like `width` and `height`, but including the window border.
 
-_INDEX_ (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
+  `border_width`::::
+	Width of the window border.
 
-'OP QUALIFIER' (optional), applicable only for equals operator, could be `?` (ignore-case).
+  `fullscreen`::::
+	Whether the window is fullscreen. If *--no-ewmh-fullscreen* is set, this is determined by the window size and position; otherwise, it is determined by the _pass:[_]NET_WM_STATE_FULLSCREEN_ property.
 
-'MATCH TYPE' (optional), applicable only for equals operator, could be nothing (exact match), `*` (match anywhere), `^` (match from start), `%` (wildcard), or `~` (PCRE regular expression).
+  `override_redirect`::::
+	Whether the window is override-redirect.
 
-_OPERATOR_ is one of `=` (equals), `<`, `>`, `<=`, `=>`, or nothing (exists). Exists operator checks whether a property exists on a window (but for predefined targets, exists means != 0 then).
+  `argb`::::
+	Whether the window has an ARGB visual.
 
-_PATTERN_ is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences are supported in the string format.
+  `focused`::::
+	Whether the window is focused.
 
-Supported logical operators are `&&` (and) and `||` (or). `&&` has higher precedence than `||`, left-to-right associativity. Use parentheses to change precedence.
+  `group_focused`::::
+	Whether the window is in the same window group as the focused window. This requires *--detect-transient* or *--detect-client-leader*.
+
+  `wmwin`::::
+	Whether the window looks like a WM window, i.e. has no client window and is not override-redirected.
+
+  `bounding_shaped`::::
+	Whether the window has a bounding shape.
+
+  `rounded_corners`::::
+	Whether the window bounding shape only has rounded corners, and is otherwise rectangular. This implies `bounding_shaped`. Requires *--detect-rounded-corners*. This has no relation to *--corner-radius*.
+
+  `window_type`::::
+	Window type, as defined by _pass:[_]NET_WM_WINDOW_TYPE_. Name only, e.g. _normal_ means _pass:[_]NET_WM_WINDOW_TYPE_NORMAL_.
+
+  `name`::::
+	Name of the window. This is either _pass:[_]NET_WM_NAME_ or _pass:[_]WM_NAME_.
+
+  `class_i`, `class_g`::::
+	Instance and general class of the window. This is the first and second value of _pass:[_]WM_CLASS_, respectively.
+
+  `role`::::
+	Window role. This is the value of _pass:[_]WM_WINDOW_ROLE_.
+
++
+_Target_ can be followed by an optional `@` if the window attribute should be be looked up on client window. Otherwise the frame window will be used.
+
+_Index_:: is the index number of the property to look up. For example, `[2]` returns the third value of the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. None of the predefined targets have multiple values, so do not use this with them.
+
+_Operator_ and _Pattern_:: define how _Target_ will be matched. They can be omitted together, in which case the existence of the window property is checked when _Target_ is not a predefined target; for a predefined _Target_, omitting _Operator_ and _Pattern_ is equivalent to writing `!= 0`.
++
+Available operators change depends on the type of _Target_ being matched. If the target is a number, the operators are `=`, `>`, `<`, `>=`, `pass:[<=]`, as well as their negation, obtained by prefixing the operator with `!` (e.g. `!=`, `!>`, etc.). If the target is a string, the operators are `=` (strict equal), `pass:[*]=` (substring match), `^=` (starts with), `%=` (match with glob), `~=` (match with regex), as well as their case insensitive variants `?=`, `pass:[*]?=`, `^?=`, `%?=`, `~?=`. String operators can be negated by prefixing the operator with `!` as well (e.g. `!=`, `!pass:[*]=`, etc.).
++
+_Pattern_ is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences are supported for strings. Boolean values are interpreted as integers, i.e. writing `true` is equivalent to `1`, and `false` `0`.
 
 Examples:
 
@@ -425,22 +468,10 @@ Examples:
 	_NET_FRAME_EXTENTS@[2] < 20 || !_NET_FRAME_EXTENTS@
 	# The pattern here will be parsed as "dd4"
 	name = "\x64\x64\o64"
+	# These two are equivalent
+	name = 'Firefox' || name = 'Chromium' && class_i = 'Navigator'
+	name = 'Firefox' || (name = 'Chromium' && class_i = 'Navigator')
 
-
-LEGACY FORMAT OF CONDITIONS
----------------------------
-
-This is the old condition format we once used. Support of this format might be removed in the future.
-
-	condition = TARGET:TYPE[FLAGS]:PATTERN
-
-_TARGET_ is one of "n" (window name), "i" (window class instance), "g" (window general class), and "r" (window role).
-
-_TYPE_ is one of "e" (exact match), "a" (match anywhere), "s" (match from start), "w" (wildcard), and "p" (PCRE regular expressions, if compiled with the support).
-
-_FLAGS_ could be a series of flags. Currently the only defined flag is "i" (ignore case).
-
-_PATTERN_ is the actual pattern string.
 
 SHADER INTERFACE
 ----------------
