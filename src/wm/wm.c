@@ -159,9 +159,6 @@ struct wm_ref *wm_find(const struct wm *wm, xcb_window_t id) {
 
 struct wm_ref *wm_find_by_client(const struct wm *wm, xcb_window_t client) {
 	auto node = wm_tree_find(&wm->tree, client);
-	if (node == NULL) {
-		return NULL;
-	}
 	auto toplevel = wm_tree_find_toplevel_for(&wm->tree, node);
 	return toplevel != NULL ? (struct wm_ref *)&toplevel->siblings : NULL;
 }
@@ -276,12 +273,6 @@ static void wm_move_win(struct wm_tree_node *from, struct wm_tree_node *to) {
 
 void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	struct wm_tree_node *node = wm_tree_find(&wm->tree, wid);
-	if (!node) {
-		if (wm_is_consistent(wm)) {
-			log_error("Window %#010x destroyed, but it's not in our tree.", wid);
-		}
-		return;
-	}
 
 	log_debug("Destroying window %#010x", wid);
 
@@ -330,9 +321,7 @@ void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent) {
 
 	auto zombie = wm_tree_detach(&wm->tree, window);
 	assert(zombie != NULL || window->win == NULL);
-	if (zombie != NULL) {
 		wm_move_win(window, zombie);
-	}
 
 	// Attaching `window` to `new_parent` will change the children list of
 	// `new_parent`, if there is a pending query tree request for `new_parent`, doing
