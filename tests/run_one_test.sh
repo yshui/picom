@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xe
 if [ -z $DISPLAY ]; then
-	exec xvfb-run -s "+extension composite" -a $0 $1 $2 $3
+	exec xvfb-run -a -s "+extension composite +extension glx" -a $0 $1 $2 $3
 fi
 
 echo "Running test $2"

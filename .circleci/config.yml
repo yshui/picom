@@ -50,17 +50,21 @@ jobs:
       - attach_workspace:
           at: /tmp/workspace
       - run:
-          name: unit test
-          command: ninja -vC build test
-      - run:
-          name: test config file parsing
-          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
-      - run:
-          name: test config file parsing in a different locale
-          command: LC_NUMERIC=de_DE.UTF-8 xvfb-run -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
-      - run:
-          name: run testsuite
-          command: tests/run_tests.sh build/src/picom
+          name: Tests
+          command: |
+            ulimit -c unlimited
+
+            printf "\n::: Unit tests :::\n"
+            ninja -vC build test
+
+            printf "\n::: test config file parsing :::\n"
+            xvfb-run -a -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
+
+            printf "\n::: test config file parsing in a different locale :::\n"
+            LC_NUMERIC=de_DE.UTF-8 xvfb-run -a -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
+
+            printf "\n::: run testsuite :::\n"
+            tests/run_tests.sh build/src/picom
       - run:
           name: generate coverage reports
           command: cd build; find -name '*.gcno' -exec gcov -pb {} +
@@ -70,6 +74,18 @@ jobs:
       - run:
           name: upload coverage reports
           command: bash ./codecov.sh -X gcov
+      - run:
+          name: collect coredumps
+          when: on_fail
+          command: |
+            . $HOME/.cargo/env
+            mkdir /tmp/artifacts
+            for c in tests/core.*; do
+              coredump-copy $c /tmp/coredumps/`basename $c`
+            done
+            tar zcf /tmp/artifacts/coredumps.tar.xz /tmp/coredumps
+      - store_artifacts:
+          path: /tmp/artifacts
 
   minimal:
     executor: e
