@@ -106,7 +106,7 @@ OPTIONS
 [[corner-radius]]*--corner-radius* _VALUE_::
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
-[[corner-radius-rules]]*--corner-radius-rules* _RADIUS_:_CONDITION_::
+[[corner-radius-rules]]*--corner-radius-rules* _RADIUS_:__CONDITION__::
 	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific corner radius.
 
 [[rounded-corners-exclude]]*--rounded-corners-exclude* _CONDITION_::
@@ -220,7 +220,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 [[invert-color-include]]*--invert-color-include* _CONDITION_::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to do this.
 
-[[opacity-rule]]*--opacity-rule* _OPACITY_:_CONDITION_::
+[[opacity-rule]]*--opacity-rule* _OPACITY_:__CONDITION__::
 	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name pass:[*]= "Firefox"`. picom-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set _pass:[_]NET_WM_WINDOW_OPACITY_ on frame or client windows. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific opacity.
 
 *--crop-shadow-to-monitor*::
@@ -277,10 +277,10 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--window-shader-fg* _SHADER_::
 	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
 
-[[window-shader-fg-rule]]*--window-shader-fg-rule* _SHADER_:_CONDITION_::
+[[window-shader-fg-rule]]*--window-shader-fg-rule* _SHADER_:__CONDITION__::
 	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
 
-*--dithered-present*
+*--dithered-present*::
 	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
 
 WINDOW RULES
