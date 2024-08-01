@@ -173,6 +173,7 @@ struct _c2_l {
 		C2_L_POVREDIR,
 		C2_L_PARGB,
 		C2_L_PFOCUSED,
+		C2_L_PGROUPFOCUSED,
 		C2_L_PWMWIN,
 		C2_L_PBSHAPED,
 		C2_L_PROUNDED,
@@ -237,30 +238,31 @@ static struct {
 	bool is_string;
 	bool deprecated;
 } C2_PREDEFS[] = {
-    [C2_L_PID]         = { "id", false, true },
-    [C2_L_PX]          = { "x", false, },
-    [C2_L_PY]          = { "y", false, },
-    [C2_L_PX2]         = { "x2", false, },
-    [C2_L_PY2]         = { "y2", false, },
-    [C2_L_PWIDTH]      = { "width", false, },
-    [C2_L_PHEIGHT]     = { "height", false, },
-    [C2_L_PWIDTHB]     = { "widthb", false, },
-    [C2_L_PHEIGHTB]    = { "heightb", false, },
-    [C2_L_PBDW]        = { "border_width", false, },
-    [C2_L_PFULLSCREEN] = { "fullscreen", false, },
-    [C2_L_POVREDIR]    = { "override_redirect", false, },
-    [C2_L_PARGB]       = { "argb", false, },
-    [C2_L_PFOCUSED]    = { "focused", false, },
-    [C2_L_PWMWIN]      = { "wmwin", false, },
-    [C2_L_PBSHAPED]    = { "bounding_shaped", false, },
-    [C2_L_PROUNDED]    = { "rounded_corners", false, },
-    [C2_L_PCLIENT]     = { "client", false, true },
-    [C2_L_PWINDOWTYPE] = { "window_type", true, },
-    [C2_L_PLEADER]     = { "leader", false, true },
-    [C2_L_PNAME]       = { "name", true, },
-    [C2_L_PCLASSG]     = { "class_g", true, },
-    [C2_L_PCLASSI]     = { "class_i", true, },
-    [C2_L_PROLE]       = { "role", true, },
+    [C2_L_PID]           = { "id", false, true },
+    [C2_L_PX]            = { "x", false, },
+    [C2_L_PY]            = { "y", false, },
+    [C2_L_PX2]           = { "x2", false, },
+    [C2_L_PY2]           = { "y2", false, },
+    [C2_L_PWIDTH]        = { "width", false, },
+    [C2_L_PHEIGHT]       = { "height", false, },
+    [C2_L_PWIDTHB]       = { "widthb", false, },
+    [C2_L_PHEIGHTB]      = { "heightb", false, },
+    [C2_L_PBDW]          = { "border_width", false, },
+    [C2_L_PFULLSCREEN]   = { "fullscreen", false, },
+    [C2_L_POVREDIR]      = { "override_redirect", false, },
+    [C2_L_PARGB]         = { "argb", false, },
+    [C2_L_PFOCUSED]      = { "focused", false, },
+    [C2_L_PGROUPFOCUSED] = { "group_focused", false, },
+    [C2_L_PWMWIN]        = { "wmwin", false, },
+    [C2_L_PBSHAPED]      = { "bounding_shaped", false, },
+    [C2_L_PROUNDED]      = { "rounded_corners", false, },
+    [C2_L_PCLIENT]       = { "client", false, true },
+    [C2_L_PWINDOWTYPE]   = { "window_type", true, },
+    [C2_L_PLEADER]       = { "leader", false, true },
+    [C2_L_PNAME]         = { "name", true, },
+    [C2_L_PCLASSG]       = { "class_g", true, },
+    [C2_L_PCLASSI]       = { "class_i", true, },
+    [C2_L_PROLE]         = { "role", true, },
 };
 // clang-format on
 
@@ -1611,6 +1613,10 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 		case C2_L_PFOCUSED:
 			predef_target =
 			    w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused;
+			break;
+		case C2_L_PGROUPFOCUSED:
+			predef_target = w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+			                w->is_group_focused;
 			break;
 		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
 		case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
