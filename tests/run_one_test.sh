@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -xe
 if [ -z $DISPLAY ]; then
 	exec xvfb-run -s "+extension composite" -a $0 $1 $2 $3
