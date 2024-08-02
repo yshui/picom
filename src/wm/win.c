@@ -2149,15 +2149,16 @@ int win_find_monitor(const struct x_monitors *monitors, const struct win *mw) {
 		auto e = pixman_region32_extents(&monitors->regions[i]);
 		if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
 		    e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
-			log_debug("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
-			          "monitor %d (%dx%d+%dx%d)",
-			          win_id(mw), mw->name, mw->g.x, mw->g.y, mw->widthb,
-			          mw->heightb, i, e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
+			log_verbose("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
+			            "monitor %d (%dx%d+%dx%d)",
+			            win_id(mw), mw->name, mw->g.x, mw->g.y, mw->widthb,
+			            mw->heightb, i, e->x1, e->y1, e->x2 - e->x1,
+			            e->y2 - e->y1);
 			return i;
 		}
 	}
-	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not entirely on any monitor",
-	          win_id(mw), mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
+	log_verbose("Window %#010x (%s), %dx%d+%dx%d, is not entirely on any monitor",
+	            win_id(mw), mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
 	return ret;
 }
 
