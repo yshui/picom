@@ -2208,6 +2208,11 @@ static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
 	auto ps = req->ps;
 	free(req);
 
+	if (reply_or_error == NULL) {
+		// Shutting down
+		return;
+	}
+
 	if (reply_or_error->response_type == 0) {
 		log_debug("Failed to get geometry of window %#010x: %s", wid,
 		          x_strerror((xcb_generic_error_t *)reply_or_error));

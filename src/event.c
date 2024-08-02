@@ -206,6 +206,12 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 	free(req_base);
 
 	ps->pending_focus_check = false;
+
+	if (reply_or_error == NULL) {
+		// Connection shutdown
+		return;
+	}
+
 	if (reply_or_error->response_type == 0) {
 		log_error("Failed to get _NET_ACTIVE_WINDOW: %s",
 		          x_strerror(((xcb_generic_error_t *)reply_or_error)));
@@ -249,6 +255,11 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 	free(req_base);
 
 	ps->pending_focus_check = false;
+
+	if (reply_or_error == NULL) {
+		// Connection shutdown
+		return;
+	}
 
 	// Determine the currently focused window so we can apply appropriate
 	// opacity on it

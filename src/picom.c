@@ -1498,6 +1498,11 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 	auto new_window = wm_find(ps->wm, wid);
 	free(req);
 
+	if (reply_or_error == NULL) {
+		// Shutting down
+		return;
+	}
+
 	if (reply_or_error->response_type == 0) {
 		log_debug("Failed to get window attributes for newly created window "
 		          "%#010x",
