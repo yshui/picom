@@ -777,8 +777,7 @@ static inline void win_paint_shadow(session_t *ps, struct win *w,
 	}
 
 	xcb_render_picture_t td = XCB_NONE;
-	bool should_clip = (w_opts->corner_radius > 0) &&
-	                   (!ps->o.wintype_option[w->window_type].full_shadow);
+	bool should_clip = (w_opts->corner_radius > 0) && (!w_opts->full_shadow);
 	if (should_clip) {
 		if (ps->o.legacy_backend == BKEND_XRENDER ||
 		    ps->o.legacy_backend == BKEND_XR_GLX_HYBRID) {
@@ -1125,7 +1124,7 @@ void paint_all(session_t *ps, struct win *t) {
 			// needed Doing it here instead of in make_shadow() for
 			// saving GPU power and handling shaped windows (XXX
 			// unconfirmed)
-			if (!ps->o.wintype_option[w->window_type].full_shadow) {
+			if (!w_opts.full_shadow) {
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape_no_corners);
 			}
 

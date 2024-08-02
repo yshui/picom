@@ -572,6 +572,7 @@ static const struct {
     {"fade", offsetof(struct window_maybe_options, fade)},
     {"paint", offsetof(struct window_maybe_options, paint)},
     {"shadow", offsetof(struct window_maybe_options, shadow)},
+    {"full-shadow", offsetof(struct window_maybe_options, full_shadow)},
     {"invert-color", offsetof(struct window_maybe_options, invert_color)},
     {"blur-background", offsetof(struct window_maybe_options, blur_background)},
     {"clip-shadow-above", offsetof(struct window_maybe_options, clip_shadow_above)},

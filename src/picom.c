@@ -1847,7 +1847,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			    ps->o.force_win_blend, ps->o.blur_background_frame,
 			    ps->o.inactive_dim_fixed, ps->o.max_brightness,
 			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-			    ps->o.wintype_option, &after_damage_us);
+			    &after_damage_us);
 			if (!succeeded) {
 				log_fatal("Render failure");
 				abort();
@@ -1993,6 +1993,7 @@ static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) 
 static struct window_options win_options_from_config(const struct options *opts) {
 	return (struct window_options){
 	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
+	    .full_shadow = false,
 	    .shadow = opts->shadow_enable,
 	    .corner_radius = (unsigned)opts->corner_radius,
 	    .transparent_clipping = opts->transparent_clipping,

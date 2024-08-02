@@ -1077,6 +1077,8 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 		if (c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL)) {
 			w->options.transparent_clipping = TRI_FALSE;
 		}
+		w->options.full_shadow =
+		    tri_from_bool(ps->o.wintype_option[w->window_type].full_shadow);
 	} else {
 		struct win_update_rule_params params = {
 		    .w = w,

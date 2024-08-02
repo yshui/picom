@@ -319,6 +319,7 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .unredir = upper.unredir == WINDOW_UNREDIR_INVALID ? lower.unredir : upper.unredir,
 	    .blur_background = tri_or(upper.blur_background, lower.blur_background),
 	    .clip_shadow_above = tri_or(upper.clip_shadow_above, lower.clip_shadow_above),
+	    .full_shadow = tri_or(upper.full_shadow, lower.full_shadow),
 	    .shadow = tri_or(upper.shadow, lower.shadow),
 	    .fade = tri_or(upper.fade, lower.fade),
 	    .invert_color = tri_or(upper.invert_color, lower.invert_color),
@@ -339,6 +340,7 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .unredir = maybe.unredir == WINDOW_UNREDIR_INVALID ? def.unredir : maybe.unredir,
 	    .blur_background = tri_or_bool(maybe.blur_background, def.blur_background),
 	    .clip_shadow_above = tri_or_bool(maybe.clip_shadow_above, def.clip_shadow_above),
+	    .full_shadow = tri_or_bool(maybe.full_shadow, def.full_shadow),
 	    .shadow = tri_or_bool(maybe.shadow, def.shadow),
 	    .corner_radius = maybe.corner_radius >= 0 ? (unsigned int)maybe.corner_radius
 	                                              : def.corner_radius,

@@ -25,5 +25,4 @@ void command_builder_command_list_free(struct backend_command *cmds);
 /// stay true after further passes.
 void command_builder_build(struct command_builder *cb, struct layout *layout,
                            bool force_blend, bool blur_frame, bool inactive_dim_fixed,
-                           double max_brightness, const struct x_monitors *monitors,
-                           const struct win_option *wintype_options);
+                           double max_brightness, const struct x_monitors *monitors);

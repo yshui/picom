@@ -188,6 +188,8 @@ struct window_maybe_options {
 	enum tristate paint;
 	/// Whether this window should be considered for unredirect-if-possible.
 	enum window_unredir_option unredir;
+	/// Whether shadow should be rendered beneath this window.
+	enum tristate full_shadow;
 };
 
 // Make sure `window_options` has no implicit padding.
@@ -207,14 +209,13 @@ struct window_options {
 	bool fade;
 	bool clip_shadow_above;
 	bool paint;
-
-	char padding[1];
+	bool full_shadow;
 };
 #pragma GCC diagnostic pop
 
 static inline bool
 win_options_eq(const struct window_options *a, const struct window_options *b) {
-	return memcmp(a, b, offsetof(struct window_options, padding)) == 0;
+	return memcmp(a, b, sizeof(struct window_options)) == 0;
 }
 
 extern struct shader_info null_shader;
