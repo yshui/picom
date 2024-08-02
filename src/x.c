@@ -911,6 +911,11 @@ static void x_handle_update_monitors_reply(struct x_connection * /*c*/,
 	auto m = ((struct x_update_monitors_request *)req_base)->monitors;
 	free(req_base);
 
+	if (reply_or_error == NULL) {
+		// Shutting down
+		return;
+	}
+
 	if (reply_or_error->response_type == 0) {
 		log_warn("Failed to get monitor information using RandR: %s",
 		         x_strerror((xcb_generic_error_t *)reply_or_error));

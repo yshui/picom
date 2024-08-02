@@ -222,12 +222,8 @@ static inline void __attribute__((constructor(102))) run_tests(void) {
 
 #define TEST_CASE(name) static void __attribute__((unused)) __test_h_##name(void)
 
-#define TEST_EQUAL(a, b)                                                                 \
-	(void)(a);                                                                       \
-	(void)(b)
-#define TEST_NOTEQUAL(a, b)                                                              \
-	(void)(a);                                                                       \
-	(void)(b)
+#define TEST_EQUAL(a, b) (void)((a) == (b))
+#define TEST_NOTEQUAL(a, b) (void)((a) != (b))
 #define TEST_TRUE(a) (void)(a)
 #define TEST_STREQUAL(a, b)                                                              \
 	(void)(a);                                                                       \
