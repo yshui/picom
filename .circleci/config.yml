@@ -83,7 +83,7 @@ jobs:
             for c in tests/core.*; do
               coredump-copy $c /tmp/coredumps/`basename $c`
             done
-            tar zcf /tmp/artifacts/coredumps.tar.xz /tmp/coredumps
+            tar Jcf /tmp/artifacts/coredumps.tar.xz /tmp/coredumps
       - store_artifacts:
           path: /tmp/artifacts
 
