@@ -333,7 +333,7 @@ Within each sub-item, these keys are available: ::
 	Corner radius of the matching window in number of pixels. 0 means no corner rounding.
 
   blur-background:::
-	Whether to the background of the matching window should be blurred.
+	Whether the background of the matching window should be blurred.
 
   invert-color:::
 	Whether to invert the color of the matching window.
@@ -355,7 +355,7 @@ Within each sub-item, these keys are available: ::
 Most of the rule options should 1:1 map to the new window rules. Here is a list of the non-trivial ones and how to achieve the same effect with window rules.
 
 *Inactive dimming and opacity*:: This includes options <<inactive-opacity>>, <<inactive-dim>>, <<active-opacity>>,
-<<inactive-opacity-override>>, <<mark-wmwin-focused>>, and <<mark-ovredir-focused>>. When using the window rules, the compositor no longer have an "active window" concept, as it is easy to achieve with window rules. You can use `match = "focused || group_focused"` to match windows that would have been considered active with the old options. Then you can set the opacity and dim level for matched windows accordingly. <<mark-wmwin-focused>> and <<mark-ovredir-focused>> can be achieved by adding `|| wmmin` and `|| override_redirect` to the match string, respectively. <<inactive-opacity-override>> can be achieved by setting `opacity-override = true`.
+<<inactive-opacity-override>>, <<mark-wmwin-focused>>, and <<mark-ovredir-focused>>. When using the window rules, the compositor no longer have an "active window" concept, as it is easy to achieve with window rules. You can use `match = "focused || group_focused"` to match windows that would have been considered active with the old options. Then you can set the opacity and dim level for matched windows accordingly. <<mark-wmwin-focused>> and <<mark-ovredir-focused>> can be achieved by adding `|| wmwin` and `|| override_redirect` to the match string, respectively. <<inactive-opacity-override>> can be achieved by setting `opacity-override = true`.
 
 *Active window*:: This includes option <<focus-exclude>>. This option was only used to influence what windows are considered active, to apply inactive opacity and dimming. Since with window rules you no longer need the compositor to help you decide what is active and what is not (see above), this option is no longer needed.
 
