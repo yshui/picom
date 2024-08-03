@@ -197,6 +197,7 @@ struct _c2_l {
 #endif
 };
 
+static const unsigned int C2_L_INVALID_TARGET_ID = UINT_MAX;
 /// Initializer for c2_l_t.
 #define C2_L_INIT                                                                        \
 	{                                                                                \
@@ -212,6 +213,7 @@ struct _c2_l {
 	    .ptntype = C2_L_PTUNDEFINED,                                                 \
 	    .ptnstr = NULL,                                                              \
 	    .ptnint = 0,                                                                 \
+	    .target_id = C2_L_INVALID_TARGET_ID,                                         \
 	}
 
 static const c2_l_t leaf_def = C2_L_INIT;
@@ -1619,6 +1621,11 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 	}
 
 	// A raw window property
+	if (leaf->target_id == C2_L_INVALID_TARGET_ID) {
+		log_debug("Leaf target ID is invalid, skipping. Most likely a list "
+		          "postprocessing failure.");
+		return false;
+	}
 	auto values = &w->c2_state.values[leaf->target_id];
 	assert(!values->needs_update);
 	if (!values->valid) {
@@ -1708,6 +1715,11 @@ c2_match_once_leaf_string(struct atom *atoms, const struct win *w, const c2_l_t 
 		return c2_string_op(leaf, predef_target);
 	}
 
+	if (leaf->target_id == C2_L_INVALID_TARGET_ID) {
+		log_debug("Leaf target ID is invalid, skipping. Most likely a list "
+		          "postprocessing failure.");
+		return false;
+	}
 	auto values = &w->c2_state.values[leaf->target_id];
 	assert(!values->needs_update);
 	if (!values->valid) {
@@ -1784,6 +1796,11 @@ c2_match_once_leaf(struct c2_state *state, const struct win *w, const c2_l_t *le
 
 	unsigned int pattern_type = leaf->ptntype;
 	if (pattern_type == C2_L_PTUNDEFINED) {
+		if (leaf->target_id == C2_L_INVALID_TARGET_ID) {
+			log_debug("Leaf target ID is invalid, skipping. Most likely a "
+			          "list postprocessing failure.");
+			return false;
+		}
 		auto values = &w->c2_state.values[leaf->target_id];
 		if (values->type == C2_PROPERTY_TYPE_STRING) {
 			pattern_type = C2_L_PTSTRING;
