@@ -1296,6 +1296,9 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 }
 
 static bool c2_tree_postprocess(struct c2_state *state, xcb_connection_t *c, c2_ptr_t node) {
+	if (node.istrue) {
+		return true;
+	}
 	if (!node.isbranch) {
 		return c2_l_postprocess(state, c, node.l);
 	}
