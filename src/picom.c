@@ -1899,7 +1899,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	} else {
 		ps->fade_time = 0L;
 	}
-	if (ps->vblank_scheduler) {
+	if (ps->vblank_scheduler && ps->backend_busy) {
 		// Even if we might not want to render during next vblank, we want to keep
 		// `backend_busy` up to date, so when the next render comes, we can
 		// immediately know if we can render.
