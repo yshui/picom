@@ -1959,7 +1959,10 @@ void unmap_win_start(struct win *w) {
 }
 
 struct win_script_context win_script_context_prepare(struct session *ps, struct win *w) {
-	auto monitor_index = win_find_monitor(&ps->monitors, w);
+	auto monitor_index =
+	    ps->o.crop_shadow_to_monitor
+	        ? win_find_monitor(&ps->monitors, w)
+	        : -1;
 	auto monitor =
 	    monitor_index >= 0
 	        ? *pixman_region32_extents(&ps->monitors.regions[monitor_index])
