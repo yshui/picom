@@ -255,7 +255,7 @@ compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
 static bool
 set_animation(struct win_script *animations, const enum animation_trigger *triggers,
               int number_of_triggers, struct script *script, const int *output_indices,
-              uint64_t suppressions, unsigned line) {
+              uint64_t suppressions, unsigned line, bool is_generated) {
 	bool needed = false;
 	for (int i = 0; i < number_of_triggers; i++) {
 		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
@@ -272,6 +272,7 @@ set_animation(struct win_script *animations, const enum animation_trigger *trigg
 		       sizeof(int[NUM_OF_WIN_SCRIPT_OUTPUTS]));
 		animations[triggers[i]].script = script;
 		animations[triggers[i]].suppressions = suppressions;
+		animations[triggers[i]].is_generated = is_generated;
 		needed = true;
 	}
 	return needed;
@@ -379,7 +380,7 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 
 	bool needed = set_animation(animations, trigger_types, number_of_triggers, script,
 	                            output_indices, suppressions,
-	                            config_setting_source_line(setting));
+	                            config_setting_source_line(setting), false);
 	if (!needed) {
 		script_free(script);
 		script = NULL;
@@ -459,7 +460,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_in1;
 		} else {
 			script_free(fade_in1);
@@ -473,7 +474,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_in2;
 		} else {
 			script_free(fade_in2);
@@ -501,7 +502,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_out1;
 		} else {
 			script_free(fade_out1);
@@ -515,7 +516,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_out2;
 		} else {
 			script_free(fade_out2);

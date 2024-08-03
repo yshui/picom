@@ -49,7 +49,7 @@ OPTIONS
 *-c*, *--shadow*::
 	Enabled client-side shadows on windows. Note desktop windows (windows with __NET_WM_WINDOW_TYPE_DESKTOP_) never get shadow, unless explicitly requested using the wintypes option.
 
-*-f*, *--fading*::
+[[fading]]*-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 
 [[inactive-opacity]]*-i*, *--inactive-opacity*=_OPACITY_::
@@ -321,7 +321,7 @@ Within each sub-item, these keys are available: ::
 	Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
 
   fade:::
-	Whether to fade the matching window in/out when opening/closing it.
+	Whether to fade the matching window in/out when opening/closing it. When animations are used, this will have no effect. This can only be used to disable fading animations enabled by option <<fading>>.
 
   opacity:::
 	Opacity of the matching window. (0.0 - 1.0). If not explicitly set by a rule, the opacity value from the window properties (e.g. pass:[_]NET_WM_WINDOW_OPACITY) will be used.

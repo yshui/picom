@@ -1859,6 +1859,12 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		return true;
 	}
 
+	if (ps->o.animations[trigger].is_generated && !win_options(w).fade) {
+		// Window's animation is fading (as signified by the fact that it's
+		// generated), but the user has disabled fading for this window.
+		return true;
+	}
+
 	log_debug("Starting animation %s for window %#010x (%s)",
 	          animation_trigger_names[trigger], win_id(w), w->name);
 
