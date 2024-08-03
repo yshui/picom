@@ -41,13 +41,15 @@ struct layout_manager {
 /// visible / should not be rendered. `out_layer` is modified either way.
 static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size) {
 	bool to_paint = false;
-	if (!w->ever_damaged || w->paint_excluded) {
+	auto w_opts = win_options(w);
+	if (!w->ever_damaged || !w_opts.paint) {
 		goto out;
 	}
 	if (w->win_image == NULL) {
 		goto out;
 	}
 
+	out_layer->options = w_opts;
 	out_layer->scale = (vec2){
 	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X),
 	    .y = win_animatable_get(w, WIN_SCRIPT_SCALE_Y),
@@ -64,7 +66,7 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_WIDTH),
 	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_HEIGHT),
 	});
-	if (w->shadow) {
+	if (w_opts.shadow) {
 		out_layer->shadow_scale = (vec2){
 		    .x = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_X),
 		    .y = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_Y),
@@ -108,7 +110,6 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	// their extent rectangle.
 	out_layer->is_opaque =
 	    !win_has_alpha(w) && out_layer->opacity == 1.0F && !w->bounding_shaped;
-	out_layer->is_clipping = w->transparent_clipping;
 	out_layer->next_rank = -1;
 	out_layer->prev_rank = -1;
 	out_layer->key = wm_ref_treeid(w->tree_ref);

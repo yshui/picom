@@ -30,15 +30,9 @@ struct wm_get_property_request {
 };
 
 struct wm {
-	/// Pointer to <code>win</code> of current active window. Used by
-	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
-	/// it's more reliable to store the window ID directly here, just in
-	/// case the WM does something extraordinary, but caching the pointer
-	/// means another layer of complexity.
-	struct win *active_win;
-	/// Window ID of leader window of currently active window. Used for
-	/// subsidiary window detection.
-	struct wm_tree_node *active_leader;
+	/// The toplevel currently being focused. Concretely this is the toplevel window
+	/// that contains the window currently considered by the X server to be focused.
+	struct wm_tree_node *focused_win;
 	struct wm_tree tree;
 
 	/// This is a virtual root for all "orphaned" windows. A window is orphaned
@@ -55,6 +49,19 @@ struct wm {
 	/// structure. We guarantee that when there are pending query tree requests, no
 	/// tree nodes will be freed. This is a dynarr.
 	struct wm_query_tree_request **pending_query_trees;
+
+	/// Whether cached window leaders should be recalculated. Following tree changes
+	/// will trigger a leader refresh:
+	///   - A toplevel is added. This is because a window leader might be set before
+	///   we
+	///     have imported the target window into our tree.
+	///   - A toplevel is removed.
+	///   - The leader property of any toplevel is changed. A window's leader changing
+	///   affects
+	///     all of its descendants in the leadership tree (this is different from the
+	///     window tree). But keeping track of the leadership tree is too much work,
+	///     so we just refresh all cached leaders.
+	bool needs_leader_refresh;
 };
 
 // TODO(yshui): this is a bit weird and I am not decided on it yet myself. Maybe we can
@@ -106,20 +113,44 @@ void wm_ref_set(struct wm_ref *cursor, struct win *w) {
 	to_tree_node_mut(cursor)->win = w;
 }
 
-struct win *wm_active_win(struct wm *wm) {
-	return wm->active_win;
+void wm_ref_set_focused(struct wm *wm, struct wm_ref *cursor) {
+	auto node = to_tree_node_mut(cursor);
+	if (wm->focused_win == node) {
+		return;
+	}
+
+	log_debug("Focused window changed from %#010x to %#010x",
+	          wm->focused_win ? wm->focused_win->id.x : 0, node ? node->id.x : 0);
+	wm->focused_win = node;
 }
 
-void wm_set_active_win(struct wm *wm, struct win *w) {
-	wm->active_win = w;
+void wm_ref_set_leader(struct wm *wm, struct wm_ref *cursor, xcb_window_t leader) {
+	// This function only changes `leader`, not the cached `leader_final`. So this has
+	// no impact on the returned node of `wm_focused_leader()` - it will be updated
+	// along with all `leader_final`s in `wm_refresh_leaders`.
+	struct wm_tree_node *node =
+	    wm_tree_find_toplevel_for(&wm->tree, to_tree_node_mut(cursor));
+	if (node->leader == leader) {
+		return;
+	}
+
+	wm->needs_leader_refresh = true;
+	node->leader = leader;
 }
 
-struct wm_ref *wm_active_leader(struct wm *wm) {
-	return wm->active_leader != NULL ? (struct wm_ref *)&wm->active_leader->siblings : NULL;
+struct wm_ref *wm_focused_win(struct wm *wm) {
+	return wm->focused_win ? (struct wm_ref *)&wm->focused_win->siblings : NULL;
 }
 
-void wm_set_active_leader(struct wm *wm, struct wm_ref *leader) {
-	wm->active_leader = to_tree_node_mut(leader);
+const struct wm_ref *wm_focused_leader(struct wm *wm) {
+	return wm->focused_win != NULL
+	           ? (struct wm_ref *)&wm->focused_win->leader_final->siblings
+	           : NULL;
+}
+
+const struct wm_ref *wm_ref_leader(const struct wm_ref *cursor) {
+	auto node = to_tree_node(cursor);
+	return (struct wm_ref *)&node->leader_final->siblings;
 }
 
 bool wm_ref_is_zombie(const struct wm_ref *cursor) {
@@ -178,6 +209,50 @@ struct wm_ref *wm_ref_client_of(struct wm_ref *cursor) {
 
 struct wm_ref *wm_stack_end(struct wm *wm) {
 	return (struct wm_ref *)&wm->tree.root->children;
+}
+
+static struct wm_tree_node *wm_find_leader(struct wm *wm, struct wm_tree_node *node) {
+	if (node->leader_final != NULL) {
+		if (node->visited) {
+			log_warn("Window %#010x is part of a cycle in the leadership "
+			         "tree",
+			         node->id.x);
+		}
+		return node->leader_final;
+	}
+
+	node->leader_final = node;
+	if (node->leader != node->id.x) {
+		auto leader_node = wm_tree_find(&wm->tree, node->leader);
+		if (leader_node == NULL) {
+			return node->leader_final;
+		}
+		leader_node = wm_tree_find_toplevel_for(&wm->tree, leader_node);
+		node->visited = true;
+		node->leader_final = wm_find_leader(wm, leader_node);
+		node->visited = false;
+	}
+	return node->leader_final;
+}
+
+void wm_refresh_leaders(struct wm *wm) {
+	if (!wm->needs_leader_refresh) {
+		return;
+	}
+	wm->needs_leader_refresh = false;
+	list_foreach(struct wm_tree_node, i, &wm->tree.root->children, siblings) {
+		if (i->is_zombie) {
+			// Don't change anything about a zombie window.
+			continue;
+		}
+		i->leader_final = NULL;
+	}
+	list_foreach(struct wm_tree_node, i, &wm->tree.root->children, siblings) {
+		if (i->is_zombie) {
+			continue;
+		}
+		wm_find_leader(wm, i);
+	}
 }
 
 static long wm_find_pending_query_tree(struct wm *wm, struct wm_tree_node *node) {
@@ -288,6 +363,11 @@ void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	if (!list_is_empty(&node->children)) {
 		log_error("Window %#010x is destroyed but it still has children", wid);
 	}
+
+	if (node == wm->focused_win) {
+		wm->focused_win = NULL;
+	}
+
 	auto zombie = wm_tree_detach(&wm->tree, node);
 	assert(zombie != NULL || node->win == NULL);
 	if (zombie != NULL) {
@@ -567,9 +647,11 @@ struct wm_change wm_dequeue_change(struct wm *wm) {
 		break;
 	case WM_TREE_CHANGE_TOPLEVEL_KILLED:
 		ret.toplevel = (struct wm_ref *)&tree_change.killed->siblings;
+		wm->needs_leader_refresh = true;
 		break;
 	case WM_TREE_CHANGE_TOPLEVEL_NEW:
 		ret.toplevel = (struct wm_ref *)&tree_change.new_->siblings;
+		wm->needs_leader_refresh = true;
 		break;
 	default: break;
 	}

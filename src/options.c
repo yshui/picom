@@ -67,6 +67,17 @@ static bool set_flag(const struct picom_option * /*opt*/, const struct picom_arg
 	return true;
 }
 
+static bool set_rule_flag(const struct picom_option *arg_opt, const struct picom_arg *arg,
+                          const char * /*arg_str*/, void *output) {
+	auto opt = (struct options *)output;
+	if (opt->rules != NULL) {
+		log_warn_both_style_of_rules(arg_opt->long_name);
+		opt->has_both_style_of_rules = true;
+		return true;
+	}
+	*(bool *)(output + arg->offset) = true;
+	return true;
+}
 static bool unset_flag(const struct picom_option * /*opt*/, const struct picom_arg *arg,
                        const char * /*arg_str*/, void *output) {
 	*(bool *)(output + arg->offset) = false;
@@ -100,6 +111,17 @@ static bool store_float(const struct picom_option *opt, const struct picom_arg *
 	return true;
 }
 
+static bool store_rule_float(const struct picom_option *arg_opt, const struct picom_arg *arg,
+                             const char *arg_str, void *output) {
+	auto opt = (struct options *)output;
+	if (opt->rules != NULL) {
+		log_warn_both_style_of_rules(arg_opt->long_name);
+		opt->has_both_style_of_rules = true;
+		return true;
+	}
+	return store_float(arg_opt, arg, arg_str, output);
+}
+
 static bool store_int(const struct picom_option *opt, const struct picom_arg *arg,
                       const char *arg_str, void *output) {
 	const int *minmax = (const int *)arg->user_data;
@@ -121,9 +143,15 @@ static bool store_string(const struct picom_option * /*opt*/, const struct picom
 	return true;
 }
 
-static bool store_rules(const struct picom_option * /*opt*/, const struct picom_arg *arg,
+static bool store_rules(const struct picom_option *arg_opt, const struct picom_arg *arg,
                         const char *arg_str, void *output) {
 	const struct picom_rules_parser *parser = arg->user_data;
+	struct options *opt = (struct options *)output;
+	if (opt->rules != NULL) {
+		log_warn_both_style_of_rules(arg_opt->long_name);
+		opt->has_both_style_of_rules = true;
+		return true;
+	}
 	auto rules = (c2_lptr_t **)(output + arg->offset);
 	if (!parser->parse_prefix) {
 		return c2_parse(rules, arg_str, NULL) != NULL;
@@ -166,6 +194,13 @@ static bool say_deprecated(const struct picom_option *opt, const struct picom_ar
 		.offset = OFFSET(member), .handler = set_flag,                           \
 	}
 
+/// A true or false option that functions like a window rule. Which is superseded by the
+/// `rules` option.
+#define ENABLE_RULE(member)                                                              \
+	no_argument, {                                                                   \
+		.offset = OFFSET(member), .handler = set_rule_flag,                      \
+	}
+
 #define DISABLE(member)                                                                  \
 	no_argument, {                                                                   \
 		.offset = OFFSET(member), .handler = unset_flag,                         \
@@ -198,6 +233,14 @@ static bool say_deprecated(const struct picom_option *opt, const struct picom_ar
 #define FLOAT(member, min, max)                                                          \
 	required_argument, {                                                             \
 		.offset = OFFSET(member), .handler = store_float,                        \
+		.user_data = (double[]){min, max},                                       \
+	}
+
+/// A float option that functions like a window rule. Which is superseded by the `rules`
+/// option.
+#define FLOAT_RULE(member, min, max)                                                     \
+	required_argument, {                                                             \
+		.offset = OFFSET(member), .handler = store_rule_float,                   \
 		.user_data = (double[]){min, max},                                       \
 	}
 
@@ -313,7 +356,7 @@ static bool store_backend(const struct picom_option * /*opt*/, const struct pico
 }
 
 #define WINDOW_SHADER_RULE                                                               \
-	{ .parse_prefix = parse_window_shader_prefix_with_cwd, .free_value = free, }
+	{.parse_prefix = parse_window_shader_prefix_with_cwd, .free_value = free}
 
 #ifdef CONFIG_OPENGL
 #define BACKENDS "xrender, glx"
@@ -336,16 +379,22 @@ static const struct picom_option picom_options[] = {
     [256] = {"config"          , IGNORE(required_argument), "Path to the configuration file."},
     [307] = {"plugins"         , IGNORE(required_argument), "Plugins to load. Can be specified multiple times, each time with a single plugin."},
 
+    // "Rule-like" options
+    [262] = {"mark-wmwin-focused"       , ENABLE_RULE(mark_wmwin_focused)       , "Try to detect WM windows and mark them as active."},
+    [264] = {"mark-ovredir-focused"     , ENABLE_RULE(mark_ovredir_focused)     , "Mark windows that have no WM frame as active."},
+    [266] = {"shadow-ignore-shaped"     , ENABLE_RULE(shadow_ignore_shaped)     , "Do not paint shadows on shaped windows. (Deprecated, use --shadow-exclude "
+                                                                                  "\'bounding_shaped\' or --shadow-exclude \'bounding_shaped && "
+                                                                                  "!rounded_corners\' instead.)"},
+    [260] = {"inactive-opacity-override", ENABLE_RULE(inactive_opacity_override), "Inactive opacity set by -i overrides value of _NET_WM_WINDOW_OPACITY."},
+    [297] = {"active-opacity"           , FLOAT_RULE(active_opacity, 0, 1)      , "Default opacity for active windows. (0.0 - 1.0)"},
+    [261] = {"inactive-dim"             , FLOAT_RULE(inactive_dim, 0, 1)        , "Dim inactive windows. (0.0 - 1.0, defaults to 0)"},
+    ['i'] = {"inactive-opacity"         , FLOAT_RULE(inactive_opacity, 0, 1)    , "Opacity of inactive windows. (0.0 - 1.0)"},
+
     // Simple flags
     ['c'] = {"shadow"                   , ENABLE(shadow_enable)            , "Enabled client-side shadows on windows."},
     ['f'] = {"fading"                   , ENABLE(fading_enable)            , "Fade windows in/out when opening/closing and when opacity changes, "
                                                                              "unless --no-fading-openclose is used."},
-    [262] = {"mark-wmwin-focused"       , ENABLE(mark_wmwin_focused)       , "Try to detect WM windows and mark them as active."},
-    [264] = {"mark-ovredir-focused"     , ENABLE(mark_ovredir_focused)     , "Mark windows that have no WM frame as active."},
     [265] = {"no-fading-openclose"      , ENABLE(no_fading_openclose)      , "Do not fade on window open/close."},
-    [266] = {"shadow-ignore-shaped"     , ENABLE(shadow_ignore_shaped)     , "Do not paint shadows on shaped windows. (Deprecated, use --shadow-exclude "
-                                                                             "\'bounding_shaped\' or --shadow-exclude \'bounding_shaped && "
-                                                                             "!rounded_corners\' instead.)"},
     [268] = {"detect-client-opacity"    , ENABLE(detect_client_opacity)    , "Detect _NET_WM_WINDOW_OPACITY on client windows, useful for window "
                                                                              "managers not passing _NET_WM_WINDOW_OPACITY of client windows to frame"},
     [270] = {"vsync"                    , ENABLE(vsync)                    , "Enable VSync"},
@@ -381,7 +430,6 @@ static const struct picom_option picom_options[] = {
     [324] = {"no-use-damage"            , DISABLE(use_damage)              , "Disable the use of damage information. This cause the whole screen to be"
                                                                              "redrawn every time, instead of the part of the screen that has actually "
                                                                              "changed. Potentially degrades the performance, but might fix some artifacts."},
-    [260] = {"inactive-opacity-override", ENABLE(inactive_opacity_override), "Inactive opacity set by -i overrides value of _NET_WM_WINDOW_OPACITY."},
     [267] = {"detect-rounded-corners"   , ENABLE(detect_rounded_corners)   , "Try to detect windows with rounded corners and don't consider them shaped "
                                                                              "windows. Affects --shadow-ignore-shaped, --unredir-if-possible, and "
                                                                              "possibly others. You need to turn this on manually if you want to match "
@@ -413,16 +461,13 @@ static const struct picom_option picom_options[] = {
     ['I'] = {"fade-in-step"                , FLOAT(fade_in_step, 0, 1)                      , "Opacity change between steps while fading in. (default 0.028)"},
     ['O'] = {"fade-out-step"               , FLOAT(fade_out_step, 0, 1)                     , "Opacity change between steps while fading out. (default 0.03)"},
     ['D'] = {"fade-delta"                  , INTEGER(fade_delta, 1, INT_MAX)                , "The time between steps in a fade in milliseconds. (default 10)"},
-    ['i'] = {"inactive-opacity"            , FLOAT(inactive_opacity, 0, 1)                  , "Opacity of inactive windows. (0.0 - 1.0)"},
     ['e'] = {"frame-opacity"               , FLOAT(frame_opacity, 0, 1)                     , "Opacity of window titlebars and borders. (0.0 - 1.0)"},
     [257] = {"shadow-red"                  , FLOAT(shadow_red, 0, 1)                        , "Red color value of shadow (0.0 - 1.0, defaults to 0)."},
     [258] = {"shadow-green"                , FLOAT(shadow_green, 0, 1)                      , "Green color value of shadow (0.0 - 1.0, defaults to 0)."},
     [259] = {"shadow-blue"                 , FLOAT(shadow_blue, 0, 1)                       , "Blue color value of shadow (0.0 - 1.0, defaults to 0)."},
-    [261] = {"inactive-dim"                , FLOAT(inactive_dim, 0, 1)                      , "Dim inactive windows. (0.0 - 1.0, defaults to 0)"},
     [283] = {"blur-background"             , FIXED(blur_method, BLUR_METHOD_KERNEL)         , "Blur background of semi-transparent / ARGB windows. May impact performance"},
     [290] = {"backend"                     , DO(store_backend)                              , "Backend. Possible values are: " BACKENDS},
     [293] = {"benchmark"                   , INTEGER(benchmark, 0, INT_MAX)                 , "Benchmark mode. Repeatedly paint until reaching the specified cycles."},
-    [297] = {"active-opacity"              , FLOAT(active_opacity, 0, 1)                    , "Default opacity for active windows. (0.0 - 1.0)"},
     [302] = {"resize-damage"               , INTEGER(resize_damage, INT_MIN, INT_MAX)},       // only used by legacy backends
     [309] = {"unredir-if-possible-delay"   , INTEGER(unredir_if_possible_delay, 0, INT_MAX) , "Delay before unredirecting the window, in milliseconds. Defaults to 0."},
     [310] = {"write-pid-path"              , NAMED_STRING(write_pid_path, "PATH")           , "Write process ID to a file."},
@@ -879,6 +924,15 @@ static bool sanitize_options(struct options *opt) {
 		log_warn("Negative --resize-damage will not work correctly.");
 	}
 
+	if (opt->has_both_style_of_rules) {
+		log_warn("You have set both \"rules\", as well as old-style rule options "
+		         "in your configuration. The old-style rule options will have no "
+		         "effect. It is recommended that you remove the old-style rule "
+		         "options, and use only \"rules\" for all your window rules. If "
+		         "you do genuinely need to use the old-style rule options, you "
+		         "must not set \"rules\".");
+	}
+
 	return true;
 }
 
@@ -954,6 +1008,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 
 void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c,
                                   struct options *option) {
+	if (option->rules) {
+		if (!c2_list_postprocess(state, c->c, option->rules)) {
+			log_error("Post-processing of rules failed, some of your rules "
+			          "might not work");
+		}
+		return;
+	}
+
 	if (!(c2_list_postprocess(state, c->c, option->unredir_if_possible_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->paint_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->shadow_blacklist) &&
@@ -987,6 +1049,7 @@ void options_destroy(struct options *options) {
 	c2_list_free(&options->corner_radius_rules, NULL);
 	c2_list_free(&options->window_shader_fg_rules, free);
 	c2_list_free(&options->transparent_clipping_blacklist, NULL);
+	c2_list_free(&options->rules, free);
 
 	free(options->config_file_path);
 	free(options->write_pid_path);

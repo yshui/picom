@@ -255,7 +255,7 @@ compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
 static bool
 set_animation(struct win_script *animations, const enum animation_trigger *triggers,
               int number_of_triggers, struct script *script, const int *output_indices,
-              uint64_t suppressions, unsigned line) {
+              uint64_t suppressions, unsigned line, bool is_generated) {
 	bool needed = false;
 	for (int i = 0; i < number_of_triggers; i++) {
 		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
@@ -272,6 +272,7 @@ set_animation(struct win_script *animations, const enum animation_trigger *trigg
 		       sizeof(int[NUM_OF_WIN_SCRIPT_OUTPUTS]));
 		animations[triggers[i]].script = script;
 		animations[triggers[i]].suppressions = suppressions;
+		animations[triggers[i]].is_generated = is_generated;
 		needed = true;
 	}
 	return needed;
@@ -379,7 +380,7 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 
 	bool needed = set_animation(animations, trigger_types, number_of_triggers, script,
 	                            output_indices, suppressions,
-	                            config_setting_source_line(setting));
+	                            config_setting_source_line(setting), false);
 	if (!needed) {
 		script_free(script);
 		script = NULL;
@@ -459,7 +460,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_in1;
 		} else {
 			script_free(fade_in1);
@@ -473,7 +474,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_in2;
 		} else {
 			script_free(fade_in2);
@@ -501,7 +502,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_out1;
 		} else {
 			script_free(fade_out1);
@@ -515,7 +516,7 @@ void generate_fading_config(struct options *opt) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
 		}
 		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2,
-		                  output_indices, 0, 0)) {
+		                  output_indices, 0, 0, true)) {
 			scripts[number_of_scripts++] = fade_out2;
 		} else {
 			script_free(fade_out2);
@@ -527,6 +528,124 @@ void generate_fading_config(struct options *opt) {
 
 	log_debug("Generated %d scripts for fading.", number_of_scripts);
 	dynarr_extend_from(opt->all_scripts, scripts, number_of_scripts);
+}
+
+static enum window_unredir_option parse_unredir_option(config_setting_t *setting) {
+	if (config_setting_type(setting) == CONFIG_TYPE_BOOL) {
+		auto bval = config_setting_get_bool(setting);
+		return bval ? WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE
+		            : WINDOW_UNREDIR_TERMINATE;
+	}
+	const char *sval = config_setting_get_string(setting);
+	if (!sval) {
+		log_error("Invalid value for \"unredir\" at line %d. It must be a "
+		          "boolean or a string.",
+		          config_setting_source_line(setting));
+		return WINDOW_UNREDIR_INVALID;
+	}
+	if (strcmp(sval, "yes") == 0 || strcmp(sval, "true") == 0 ||
+	    strcmp(sval, "default") == 0 || strcmp(sval, "when-possible-else-terminate")) {
+		return WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE;
+	}
+	if (strcmp(sval, "preferred") == 0 || strcmp(sval, "when-possible") == 0) {
+		return WINDOW_UNREDIR_WHEN_POSSIBLE;
+	}
+	if (strcmp(sval, "no") == 0 || strcmp(sval, "false") == 0 ||
+	    strcmp(sval, "terminate") == 0) {
+		return WINDOW_UNREDIR_TERMINATE;
+	}
+	if (strcmp(sval, "passive") == 0) {
+		return WINDOW_UNREDIR_PASSIVE;
+	}
+	if (strcmp(sval, "forced") == 0) {
+		return WINDOW_UNREDIR_FORCED;
+	}
+	log_error("Invalid string value for \"unredir\" at line %d. It must be one of "
+	          "\"preferred\", \"passive\", or \"force\". Got \"%s\".",
+	          config_setting_source_line(setting), sval);
+	return WINDOW_UNREDIR_INVALID;
+}
+
+static const struct {
+	const char *name;
+	ptrdiff_t offset;
+} all_window_options[] = {
+    {"fade", offsetof(struct window_maybe_options, fade)},
+    {"paint", offsetof(struct window_maybe_options, paint)},
+    {"shadow", offsetof(struct window_maybe_options, shadow)},
+    {"full-shadow", offsetof(struct window_maybe_options, full_shadow)},
+    {"invert-color", offsetof(struct window_maybe_options, invert_color)},
+    {"blur-background", offsetof(struct window_maybe_options, blur_background)},
+    {"clip-shadow-above", offsetof(struct window_maybe_options, clip_shadow_above)},
+    {"transparent-clipping", offsetof(struct window_maybe_options, transparent_clipping)},
+};
+
+static c2_lptr_t *parse_rule(config_setting_t *setting) {
+	if (!config_setting_is_group(setting)) {
+		log_error("Invalid rule at line %d. It must be a group.",
+		          config_setting_source_line(setting));
+		return NULL;
+	}
+	int ival;
+	double fval;
+	const char *sval;
+	c2_lptr_t *rule = NULL;
+	if (config_setting_lookup_string(setting, "match", &sval)) {
+		rule = c2_parse(NULL, sval, NULL);
+		if (!rule) {
+			log_error("Failed to parse rule at line %d.",
+			          config_setting_source_line(setting));
+			return NULL;
+		}
+	} else {
+		// If no match condition is specified, it matches all windows
+		rule = c2_new_true();
+	}
+
+	auto wopts = cmalloc(struct window_maybe_options);
+	*wopts = (struct window_maybe_options){
+	    .opacity = NAN,
+	    .corner_radius = -1,
+	};
+	c2_list_set_data(rule, wopts);
+
+	for (size_t i = 0; i < ARR_SIZE(all_window_options); i++) {
+		if (config_setting_lookup_bool(setting, all_window_options[i].name, &ival)) {
+			void *ptr = (char *)wopts + all_window_options[i].offset;
+			*(enum tristate *)ptr = tri_from_bool(ival);
+		}
+	}
+	if (config_setting_lookup_float(setting, "opacity", &fval)) {
+		wopts->opacity = normalize_d(fval);
+	}
+	if (config_setting_lookup_float(setting, "dim", &fval)) {
+		wopts->dim = normalize_d(fval);
+	}
+	if (config_setting_lookup_int(setting, "corner-radius", &ival)) {
+		wopts->corner_radius = ival;
+	}
+
+	auto unredir_setting = config_setting_lookup(setting, "unredir-if-possible");
+	if (unredir_setting) {
+		wopts->unredir = parse_unredir_option(unredir_setting);
+	}
+	return rule;
+}
+
+static void parse_rules(config_setting_t *setting, c2_lptr_t **rules) {
+	if (!config_setting_is_list(setting)) {
+		log_error("Invalid value for \"rules\" at line %d. It must be a list.",
+		          config_setting_source_line(setting));
+		return;
+	}
+	const auto length = (unsigned int)config_setting_length(setting);
+	for (unsigned int i = 0; i < length; i++) {
+		auto sub = config_setting_get_elem(setting, i);
+		auto rule = parse_rule(sub);
+		if (rule != NULL) {
+			c2_condlist_insert(rules, rule);
+		}
+	}
 }
 
 static const char **
@@ -646,6 +765,11 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		}
 	}
 
+	config_setting_t *rules = config_lookup(&cfg, "rules");
+	if (rules) {
+		parse_rules(rules, &opt->rules);
+	}
+
 	// --dbus
 	lcfg_lookup_bool(&cfg, "dbus", &opt->dbus);
 
@@ -672,10 +796,18 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// -i (inactive_opacity)
 	if (config_lookup_float(&cfg, "inactive-opacity", &dval)) {
 		opt->inactive_opacity = normalize_d(dval);
+		if (opt->rules) {
+			log_warn_both_style_of_rules("inactive-opacity");
+			opt->has_both_style_of_rules = true;
+		}
 	}
 	// --active_opacity
 	if (config_lookup_float(&cfg, "active-opacity", &dval)) {
 		opt->active_opacity = normalize_d(dval);
+		if (opt->rules) {
+			log_warn_both_style_of_rules("active-opacity");
+			opt->has_both_style_of_rules = true;
+		}
 	}
 	// --corner-radius
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
@@ -727,15 +859,34 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		goto out;
 	}
 	// --inactive-opacity-override
-	lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override);
+	if (lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("inactive-opacity-override");
+		opt->has_both_style_of_rules = true;
+	}
 	// --inactive-dim
-	config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim);
+	if (config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim) && opt->rules != NULL) {
+		log_warn_both_style_of_rules("inactive-dim");
+		opt->has_both_style_of_rules = true;
+	}
 	// --mark-wmwin-focused
-	lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused);
+	if (lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("mark-wmwin-focused");
+		opt->has_both_style_of_rules = true;
+	}
 	// --mark-ovredir-focused
-	lcfg_lookup_bool(&cfg, "mark-ovredir-focused", &opt->mark_ovredir_focused);
+	if (lcfg_lookup_bool(&cfg, "mark-ovredir-focused", &opt->mark_ovredir_focused) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("mark-ovredir-focused");
+		opt->has_both_style_of_rules = true;
+	}
 	// --shadow-ignore-shaped
-	lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped);
+	if (lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped) &&
+	    opt->rules != NULL) {
+		log_warn_both_style_of_rules("shadow-ignore-shaped");
+		opt->has_both_style_of_rules = true;
+	}
 	// --detect-rounded-corners
 	lcfg_lookup_bool(&cfg, "detect-rounded-corners", &opt->detect_rounded_corners);
 	// --crop-shadow-to-monitor
@@ -815,24 +966,50 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// --dithered_present
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
 
-	if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
-	                       "transparent-clipping-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
-	    !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include") ||
-	    !parse_cfg_condlst(&cfg, &opt->blur_background_blacklist, "blur-background-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
-	                       "unredir-if-possible-exclude") ||
-	    !parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude") ||
-	    !parse_cfg_condlst_with_prefix(&opt->corner_radius_rules, &cfg, "corner-radius-rules",
-	                                   parse_numeric_prefix, NULL, (int[]){0, INT_MAX}) ||
-	    !parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
-	                                   parse_numeric_prefix, NULL, (int[]){0, 100}) ||
-	    !parse_cfg_condlst_with_prefix(
-	        &opt->window_shader_fg_rules, &cfg, "window-shader-fg-rule",
-	        parse_window_shader_prefix, free, (void *)config_get_include_dir(&cfg))) {
+	if (opt->rules != NULL) {
+		static const char *rule_list[] = {
+		    "transparent-clipping-exclude",
+		    "shadow-exclude",
+		    "clip-shadow-above",
+		    "fade-exclude",
+		    "focus-exclude",
+		    "invert-color-include",
+		    "blur-background-exclude",
+		    "unredir-if-possible-exclude",
+		    "rounded-corners-exclude",
+		    "corner-radius-rules",
+		    "opacity-rule",
+		    "window-shader-fg-rule",
+		    "wintypes",
+		};
+		for (size_t i = 0; i < sizeof(rule_list) / sizeof(rule_list[0]); i++) {
+			if (config_lookup(&cfg, rule_list[i])) {
+				log_warn_both_style_of_rules(rule_list[i]);
+				opt->has_both_style_of_rules = true;
+			}
+		}
+	} else if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
+	                              "transparent-clipping-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
+	           !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include") ||
+	           !parse_cfg_condlst(&cfg, &opt->blur_background_blacklist,
+	                              "blur-background-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
+	                              "unredir-if-possible-exclude") ||
+	           !parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist,
+	                              "rounded-corners-exclude") ||
+	           !parse_cfg_condlst_with_prefix(
+	               &opt->corner_radius_rules, &cfg, "corner-radius-rules",
+	               parse_numeric_prefix, NULL, (int[]){0, INT_MAX}) ||
+	           !parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
+	                                          parse_numeric_prefix, NULL, (int[]){0, 100}) ||
+	           !parse_cfg_condlst_with_prefix(&opt->window_shader_fg_rules, &cfg,
+	                                          "window-shader-fg-rule",
+	                                          parse_window_shader_prefix, free,
+	                                          (void *)config_get_include_dir(&cfg))) {
 		goto out;
 	}
 
@@ -963,14 +1140,16 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// Wintype settings
 
 	// XXX ! Refactor all the wintype_* arrays into a struct
-	for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
-		parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
-		                     &opt->wintype_option_mask[i]);
+	if (opt->rules == NULL) {
+		for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
+			parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
+			                     &opt->wintype_option_mask[i]);
+		}
+		// Compatibility with the old name for notification windows.
+		parse_wintype_config(&cfg, "notify",
+		                     &opt->wintype_option[WINTYPE_NOTIFICATION],
+		                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
 	}
-
-	// Compatibility with the old name for notification windows.
-	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
-	                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
 
 	config_setting_t *animations = config_lookup(&cfg, "animations");
 	if (animations) {

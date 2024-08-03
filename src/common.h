@@ -278,6 +278,8 @@ typedef struct session {
 
 	struct wm *wm;
 
+	struct window_options window_options_default;
+
 	// === Shadow/dimming related ===
 	/// 1x1 black Picture.
 	xcb_render_picture_t black_picture;

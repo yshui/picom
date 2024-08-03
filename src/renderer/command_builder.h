@@ -23,7 +23,6 @@ void command_builder_command_list_free(struct backend_command *cmds);
 /// It is guaranteed that each of the command's region of operation (e.g. the mask.region
 /// argument of blit), will be store in `struct backend_command::mask`. This might not
 /// stay true after further passes.
-void command_builder_build(struct command_builder *cb, struct layout *layout, bool force_blend,
-                           bool blur_frame, bool inactive_dim_fixed, double max_brightness,
-                           double inactive_dim, const struct x_monitors *monitors,
-                           const struct win_option *wintype_options);
+void command_builder_build(struct command_builder *cb, struct layout *layout,
+                           bool force_blend, bool blur_frame, bool inactive_dim_fixed,
+                           double max_brightness, const struct x_monitors *monitors);

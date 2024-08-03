@@ -210,8 +210,9 @@ err:
 	return succeeded;
 }
 
-image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
-                                       image_handle mask, int corner_radius, ivec2 mask_size) {
+image_handle
+renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
+                          image_handle mask, unsigned int corner_radius, ivec2 mask_size) {
 	image_handle normalized_mask_image = NULL, shadow_image = NULL,
 	             shadow_color_pixel = NULL;
 	bool succeeded = false;
@@ -366,7 +367,7 @@ renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct wi
 			return false;
 		}
 		w->shadow_image = renderer_shadow_from_mask(
-		    r, backend, w->mask_image, w->corner_radius,
+		    r, backend, w->mask_image, win_options(w).corner_radius,
 		    (ivec2){.width = w->widthb, .height = w->heightb});
 	}
 	if (!w->shadow_image) {
@@ -489,8 +490,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      uint64_t render_start_us, xcb_sync_fence_t xsync_fence,
                      bool use_damage, bool monitor_repaint, bool force_blend,
                      bool blur_frame, bool inactive_dim_fixed, double max_brightness,
-                     double inactive_dim, const struct x_monitors *monitors,
-                     const struct win_option *wintype_options, uint64_t *after_damage_us) {
+                     const struct x_monitors *monitors, uint64_t *after_damage_us) {
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
 		// concurrent with our CPU tasks to save time.
@@ -511,7 +511,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	renderer_ensure_images_ready(r, backend, monitor_repaint);
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
-	                      max_brightness, inactive_dim, monitors, wintype_options);
+	                      max_brightness, monitors);
 	if (log_get_level_tls() <= LOG_LEVEL_TRACE) {
 		auto layer = layout->layers - 1;
 		auto layer_end = &layout->commands[layout->first_layer_start];

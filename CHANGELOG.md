@@ -2,6 +2,7 @@
 
 ## New features
 
+* Universal window rules (#1284). One option to rule them all! Added new configuration option `rules` to replace all existing rule options, and to provide more flexibility on top of that. See [picom(1)](https://picom.app/#_window_rules) for more details.
 * `@include` directives in config file now also search in `$XDG_CONFIG_HOME/picom/include` and `$XDG_CONFIG_DIRS/picom/include`, in addition to relative to the config file's parent directory.
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
 * New `picom-inspect` tool, which lets you test out your picom rules. Sample output:
@@ -34,6 +35,7 @@
 * Marginally improve performance when resizing/opening/closing windows. (#1190)
 * Type and format specifiers are no longer used in rules. These specifiers are what you put after the colon (':') in rules, e.g. the `:32c` in `"_GTK_FRAME_EXTENTS@:32c"`. Now this information is ignored and the property is matched regardless of format or type.
 * `backend` is now a required option. picom will not start if one is not specified explicitly.
+* New predefined target for conditions: `group_focused`. This target indicate whether the focused window is in the same window group as the window being matched.
 
 ## Deprecated features
 
