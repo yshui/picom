@@ -2370,7 +2370,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Monitor screen changes if vsync_sw is enabled and we are using
 	// an auto-detected refresh rate, or when X RandR features are enabled
-	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
+	if (ps->randr_exists) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 		x_update_monitors_async(&ps->c, &ps->monitors);
