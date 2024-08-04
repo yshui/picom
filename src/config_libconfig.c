@@ -622,7 +622,7 @@ static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scr
 		wopts->corner_radius = ival;
 	}
 
-	auto unredir_setting = config_setting_lookup(setting, "unredir-if-possible");
+	auto unredir_setting = config_setting_lookup(setting, "unredir");
 	if (unredir_setting) {
 		wopts->unredir = parse_unredir_option(unredir_setting);
 	}
