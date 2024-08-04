@@ -1877,7 +1877,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	w->running_animation_outputs = ps->o.animations[trigger].output_indices;
 	w->running_animation_suppressions = ps->o.animations[trigger].suppressions;
 	script_instance_evaluate(w->running_animation, &win_ctx);
-	return false;
+	return script_instance_is_finished(w->running_animation);
 }
 
 #undef WSTATE_PAIR
