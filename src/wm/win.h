@@ -601,3 +601,14 @@ static inline bool attr_pure attr_unused win_has_frame(const struct win *w) {
 	return w->g.border_width || w->frame_extents.top || w->frame_extents.left ||
 	       w->frame_extents.right || w->frame_extents.bottom;
 }
+
+static inline const char *attr_pure attr_unused win_wm_ref_name(const struct wm_ref *ref) {
+	if (ref == NULL) {
+		return NULL;
+	}
+	auto win = wm_ref_deref(ref);
+	if (win == NULL) {
+		return NULL;
+	}
+	return win->name;
+}

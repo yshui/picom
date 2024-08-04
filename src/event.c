@@ -232,8 +232,7 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 	auto cursor = wm_find_by_client(ps->wm, wid);
 	wm_ref_set_focused(ps->wm, cursor);
 	ps->pending_updates = true;
-	log_debug("%#010x (%s) focused.", wid,
-	          wm_ref_deref(cursor) ? wm_ref_deref(cursor)->name : "");
+	log_debug("%#010x (%s) focused.", wid, win_wm_ref_name(cursor));
 }
 
 struct ev_recheck_focus_request {
@@ -279,25 +278,17 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 	}
 
 	auto cursor = wm_find(ps->wm, wid);
-	if (cursor == NULL) {
-		if (wm_is_consistent(ps->wm)) {
-			log_error("Window %#010x not found in window tree.", wid);
-			assert(false);
-		}
-		return;
-	}
+	assert(cursor != NULL || !wm_is_consistent(ps->wm));
 
-	cursor = wm_ref_toplevel_of(ps->wm, cursor);
-	if (cursor == NULL) {
-		assert(!wm_is_consistent(ps->wm));
-		return;
+	if (cursor != NULL) {
+		cursor = wm_ref_toplevel_of(ps->wm, cursor);
+		assert(cursor != NULL || !wm_is_consistent(ps->wm));
 	}
 
 	// And we set the focus state here
 	wm_ref_set_focused(ps->wm, cursor);
 	ps->pending_updates = true;
-	log_debug("%#010x (%s) focused.", wid,
-	          wm_ref_deref(cursor) ? wm_ref_deref(cursor)->name : "");
+	log_debug("%#010x (%s) focused.", wid, win_wm_ref_name(cursor));
 }
 
 void ev_update_focused(struct session *ps) {
