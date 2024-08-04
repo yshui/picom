@@ -603,10 +603,7 @@ static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scr
 	}
 
 	auto wopts = cmalloc(struct window_maybe_options);
-	*wopts = (struct window_maybe_options){
-	    .opacity = NAN,
-	    .corner_radius = -1,
-	};
+	*wopts = WIN_MAYBE_OPTIONS_DEFAULT;
 	c2_list_set_data(rule, wopts);
 
 	for (size_t i = 0; i < ARR_SIZE(all_window_options); i++) {
