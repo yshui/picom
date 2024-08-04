@@ -492,7 +492,7 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 	}
 
 	auto new_options = win_options(w);
-	if (win_options_eq(&old_options, &new_options)) {
+	if (win_options_no_damage(&old_options, &new_options)) {
 		pixman_region32_fini(&extents);
 		return;
 	}
@@ -792,7 +792,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 	if (w->state != WSTATE_DESTROYED) {
 		win_clear_flags(w, WIN_FLAGS_PIXMAP_ERROR);
 	}
-	assert(w->running_animation == NULL);
+	assert(w->running_animation_instance == NULL);
 }
 
 /**
@@ -1715,8 +1715,9 @@ struct win_script_context win_script_context_prepare(struct session *ps, struct 
 }
 
 double win_animatable_get(const struct win *w, enum win_script_output output) {
-	if (w->running_animation && w->running_animation_outputs[output] >= 0) {
-		return w->running_animation->memory[w->running_animation_outputs[output]];
+	if (w->running_animation_instance && w->running_animation.output_indices[output] >= 0) {
+		return w->running_animation_instance
+		    ->memory[w->running_animation.output_indices[output]];
 	}
 	switch (output) {
 	case WIN_SCRIPT_BLUR_OPACITY: return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
@@ -1758,7 +1759,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		bool state_changed = w->previous.state != w->state;
 		w->previous.state = w->state;
 		w->previous.opacity = w->opacity;
-		return state_changed || (w->running_animation != NULL);
+		return state_changed || (w->running_animation_instance != NULL);
 	}
 
 	auto win_ctx = win_script_context_prepare(ps, w);
@@ -1766,15 +1767,15 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	if (w->previous.state == w->state && win_ctx.opacity_before == win_ctx.opacity) {
 	advance_animation:
 		// No state changes, if there's a animation running, we just continue it.
-		if (w->running_animation == NULL) {
+		if (w->running_animation_instance == NULL) {
 			return false;
 		}
 		log_verbose("Advance animation for %#010x (%s) %f seconds", win_id(w),
 		            w->name, delta_t);
-		if (!script_instance_is_finished(w->running_animation)) {
-			w->running_animation->elapsed += delta_t;
-			auto result =
-			    script_instance_evaluate(w->running_animation, &win_ctx);
+		if (!script_instance_is_finished(w->running_animation_instance)) {
+			w->running_animation_instance->elapsed += delta_t;
+			auto result = script_instance_evaluate(
+			    w->running_animation_instance, &win_ctx);
 			if (result != SCRIPT_EVAL_OK) {
 				log_error("Failed to run animation script: %d", result);
 				return true;
@@ -1824,7 +1825,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			break;
 		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_DESTROYED):
 			if ((!ps->o.no_fading_destroyed_argb || !win_has_alpha(w)) &&
-			    w->running_animation != NULL) {
+			    w->running_animation_instance != NULL) {
 				trigger = ANIMATION_TRIGGER_CLOSE;
 			}
 			break;
@@ -1847,19 +1848,20 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		}
 	}
 
-	if (trigger != ANIMATION_TRIGGER_INVALID && w->running_animation &&
-	    (w->running_animation_suppressions & (1 << trigger)) != 0) {
+	if (trigger != ANIMATION_TRIGGER_INVALID && w->running_animation_instance &&
+	    (w->running_animation.suppressions & (1 << trigger)) != 0) {
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], win_id(w), w->name);
 		goto advance_animation;
 	}
 
-	if (trigger == ANIMATION_TRIGGER_INVALID || ps->o.animations[trigger].script == NULL) {
+	auto wopts = win_options(w);
+	if (trigger == ANIMATION_TRIGGER_INVALID || wopts.animations[trigger].script == NULL) {
 		return true;
 	}
 
-	if (ps->o.animations[trigger].is_generated && !win_options(w).fade) {
+	if (wopts.animations[trigger].is_generated && !wopts.fade) {
 		// Window's animation is fading (as signified by the fact that it's
 		// generated), but the user has disabled fading for this window.
 		return true;
@@ -1868,16 +1870,15 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	log_debug("Starting animation %s for window %#010x (%s)",
 	          animation_trigger_names[trigger], win_id(w), w->name);
 
-	auto new_animation = script_instance_new(ps->o.animations[trigger].script);
-	if (w->running_animation) {
-		script_instance_resume_from(w->running_animation, new_animation);
-		free(w->running_animation);
+	auto new_animation = script_instance_new(wopts.animations[trigger].script);
+	if (w->running_animation_instance) {
+		script_instance_resume_from(w->running_animation_instance, new_animation);
+		free(w->running_animation_instance);
 	}
-	w->running_animation = new_animation;
-	w->running_animation_outputs = ps->o.animations[trigger].output_indices;
-	w->running_animation_suppressions = ps->o.animations[trigger].suppressions;
-	script_instance_evaluate(w->running_animation, &win_ctx);
-	return script_instance_is_finished(w->running_animation);
+	w->running_animation_instance = new_animation;
+	w->running_animation = wopts.animations[trigger];
+	script_instance_evaluate(w->running_animation_instance, &win_ctx);
+	return script_instance_is_finished(w->running_animation_instance);
 }
 
 #undef WSTATE_PAIR
