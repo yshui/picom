@@ -403,14 +403,14 @@ static void parse_animations(struct win_script *animations, config_setting_t *se
 
 #define FADING_TEMPLATE_1                                                                \
 	"opacity = { "                                                                   \
-	"  timing = \"%sms linear\"; "                                                   \
+	"  duration = %s; "                                                              \
 	"  start = \"window-raw-opacity-before\"; "                                      \
 	"  end = \"window-raw-opacity\"; "                                               \
 	"};"                                                                             \
 	"shadow-opacity = \"opacity\";"
 #define FADING_TEMPLATE_2                                                                \
 	"blur-opacity = { "                                                              \
-	"  timing = \"%sms linear\"; "                                                   \
+	"  duration = %s; "                                                              \
 	"  start = %d; end = %d; "                                                       \
 	"};"
 
@@ -442,7 +442,7 @@ void generate_fading_config(struct options *opt) {
 	int number_of_triggers = 0;
 
 	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
-	double duration = 1.0 / opt->fade_in_step * opt->fade_delta;
+	double duration = 1.0 / opt->fade_in_step * opt->fade_delta / 1000.0;
 	if (!safe_isinf(duration) && !safe_isnan(duration) && duration > 0) {
 		scoped_charp duration_str = NULL;
 		dtostr(duration, &duration_str);

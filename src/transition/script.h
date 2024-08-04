@@ -29,7 +29,6 @@ struct script_parse_config {
 struct script;
 struct script_instance {
 	const struct script *script;
-	double elapsed;
 	double memory[];
 };
 enum script_evaluation_result {
@@ -49,7 +48,6 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 void script_free(struct script *script);
 enum script_evaluation_result
 script_instance_evaluate(struct script_instance *instance, void *context);
-bool script_instance_is_finished(const struct script_instance *instance);
 /// Resume the script instance from another script instance that's currently running.
 /// The script doesn't have to be the same. For resumable (explained later) transitions,
 /// if matching variables exist in the `old` script, their starting point will be
@@ -62,3 +60,13 @@ bool script_instance_is_finished(const struct script_instance *instance);
 /// configuration, in which case the user defined `start` value will always be used.
 void script_instance_resume_from(struct script_instance *old, struct script_instance *new_);
 struct script_instance *script_instance_new(const struct script *script);
+/// Get the total duration slot of a script.
+unsigned script_total_duration_slot(const struct script *script);
+unsigned script_elapsed_slot(const struct script *script);
+
+/// Check if a script instance has finished. The script instance must have been evaluated
+/// at least once.
+static inline bool script_instance_is_finished(const struct script_instance *instance) {
+	return instance->memory[script_elapsed_slot(instance->script)] >=
+	       instance->memory[script_total_duration_slot(instance->script)];
+}
