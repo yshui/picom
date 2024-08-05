@@ -51,6 +51,7 @@ target
 !/tests/testcases/*.py
 
 # Misc files
+.vscode
 *.conf
 !/tests/configs/*.conf
 perf.data
