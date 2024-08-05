@@ -580,7 +580,7 @@ static const struct {
     {"transparent-clipping", offsetof(struct window_maybe_options, transparent_clipping)},
 };
 
-static c2_lptr_t *parse_rule(config_setting_t *setting) {
+static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scripts) {
 	if (!config_setting_is_group(setting)) {
 		log_error("Invalid rule at line %d. It must be a group.",
 		          config_setting_source_line(setting));
@@ -603,10 +603,7 @@ static c2_lptr_t *parse_rule(config_setting_t *setting) {
 	}
 
 	auto wopts = cmalloc(struct window_maybe_options);
-	*wopts = (struct window_maybe_options){
-	    .opacity = NAN,
-	    .corner_radius = -1,
-	};
+	*wopts = WIN_MAYBE_OPTIONS_DEFAULT;
 	c2_list_set_data(rule, wopts);
 
 	for (size_t i = 0; i < ARR_SIZE(all_window_options); i++) {
@@ -625,14 +622,20 @@ static c2_lptr_t *parse_rule(config_setting_t *setting) {
 		wopts->corner_radius = ival;
 	}
 
-	auto unredir_setting = config_setting_lookup(setting, "unredir-if-possible");
+	auto unredir_setting = config_setting_lookup(setting, "unredir");
 	if (unredir_setting) {
 		wopts->unredir = parse_unredir_option(unredir_setting);
+	}
+
+	auto animations = config_setting_lookup(setting, "animations");
+	if (animations) {
+		parse_animations(wopts->animations, animations, out_scripts);
 	}
 	return rule;
 }
 
-static void parse_rules(config_setting_t *setting, c2_lptr_t **rules) {
+static void
+parse_rules(config_setting_t *setting, struct script ***out_scripts, c2_lptr_t **rules) {
 	if (!config_setting_is_list(setting)) {
 		log_error("Invalid value for \"rules\" at line %d. It must be a list.",
 		          config_setting_source_line(setting));
@@ -641,7 +644,7 @@ static void parse_rules(config_setting_t *setting, c2_lptr_t **rules) {
 	const auto length = (unsigned int)config_setting_length(setting);
 	for (unsigned int i = 0; i < length; i++) {
 		auto sub = config_setting_get_elem(setting, i);
-		auto rule = parse_rule(sub);
+		auto rule = parse_rule(sub, out_scripts);
 		if (rule != NULL) {
 			c2_condlist_insert(rules, rule);
 		}
@@ -767,7 +770,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
-		parse_rules(rules, &opt->rules);
+		parse_rules(rules, &opt->all_scripts, &opt->rules);
 	}
 
 	// --dbus
