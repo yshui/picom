@@ -1,1 +1,11 @@
-srcs += [ files('cache.c', 'file_watch.c', 'kernel.c', 'statistics.c', 'str.c', 'misc.c') ]
+srcs += [
+	files(
+		'cache.c',
+		'dynarr.c',
+		'file_watch.c',
+		'kernel.c',
+		'misc.c',
+		'statistics.c',
+		'str.c',
+	),
+]

@@ -4,6 +4,7 @@
 #pragma once
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -93,3 +94,15 @@ static inline bool starts_with(const char *str, const char *needle, bool ignore_
 /// reallocates it if it's not big enough.
 int asnprintf(char **strp, size_t *capacity, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
+
+/// Like `asprintf`, but it aborts the program if memory allocation fails.
+static inline size_t __attribute__((format(printf, 2, 3)))
+casprintf(char **strp, const char *fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+	int ret = vasprintf(strp, fmt, ap);
+	va_end(ap);
+
+	BUG_ON(ret < 0);
+	return (size_t)ret;
+}

@@ -49,3 +49,4 @@ static inline struct curve curve_new_step(int steps, bool jump_start, bool jump_
 struct curve curve_parse(const char *str, const char **end, char **err);
 /// Calculate the value of the curve at `progress`.
 double curve_sample(const struct curve *curve, double progress);
+char *curve_to_c(const struct curve *curve);

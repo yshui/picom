@@ -7,66 +7,18 @@
 #include <libconfig.h>
 #include <uthash.h>
 
+#include "utils/dynarr.h"
 #include "utils/list.h"
 #include "utils/str.h"
 #include "utils/uthash_extra.h"
 
 #include "curve.h"
 #include "script.h"
+#include "script_internal.h"
 
-enum op {
-	OP_ADD = 0,
-	OP_SUB,
-	OP_MUL,
-	OP_DIV,
-	/// Exponent
-	OP_EXP,
-	/// Negation
-	OP_NEG,
-	OP_MAX,
-};
-
-enum instruction_type {
-	/// Push an immediate value to the top of the stack
-	INST_IMM = 0,
-	/// Pop two values from the top of the stack, apply operator,
-	/// and push the result to the top of the stack
-	INST_OP,
-	/// Load a memory slot and push its value to the top of the stack.
-	INST_LOAD,
-	/// Load from evaluation context and push the value to the top of the stack.
-	INST_LOAD_CTX,
-	/// Pop one value from the top of the stack, and store it into a memory slot.
-	INST_STORE,
-	/// Pop one value from the top of the stack, if the memory slot contains NaN,
-	/// store it into the memory slot; otherwise discard the value.
-	INST_STORE_OVER_NAN,
-	/// Pop a value from the top of the stack, clamp its value to [0, 1], then
-	/// evaluate a curve at that point, push the result to the top of the stack.
-	INST_CURVE,
-	/// Jump to the branch target only when the script is evaluated for the first
-	/// time. Used to perform initialization and such.
-	INST_BRANCH_ONCE,
-	/// Unconditional branch
-	INST_BRANCH,
-	INST_HALT,
-};
-
-struct instruction {
-	enum instruction_type type;
-	union {
-		double imm;
-		enum op op;
-		/// Memory slot for load and store
-		unsigned slot;
-		/// Context offset for load_ctx
-		ptrdiff_t ctx;
-		/// Relative PC change for branching
-		int rel;
-		/// The curve
-		struct curve curve;
-	};
-};
+#define X(x) [x] = #x,
+static const char *op_names[] = {OPERATORS};
+#undef X
 
 struct fragment {
 	struct list_node siblings;
@@ -101,39 +53,6 @@ struct compilation_stack {
 	unsigned deps[];
 };
 
-/// Store metadata about where the result of a variable is stored
-struct variable_allocation {
-	UT_hash_handle hh;
-	char *name;
-	unsigned index;
-	/// The memory slot for variable named `name`
-	unsigned slot;
-};
-
-/// When interrupting an already executing script and starting a new script,
-/// we might want to inherit some of the existing values of variables as starting points,
-/// i.e. we want to "resume" animation for the current state. This is configurable, and
-/// can be disabled by enabling the `reset` property on a transition. This struct store
-/// where the `start` variables of those "resumable" transition variables, which can be
-/// overridden at the start of execution for this use case.
-struct overridable_slot {
-	UT_hash_handle hh;
-	char *name;
-	unsigned slot;
-};
-
-struct script {
-	unsigned len;
-	unsigned n_slots;
-	/// The memory slot for storing the elapsed time.
-	/// The next slot after this is used for storing the total duration of the script.
-	unsigned elapsed_slot;
-	unsigned stack_size;
-	struct variable_allocation *vars;
-	struct overridable_slot *overrides;
-	struct instruction instrs[];
-};
-
 struct script_compile_context {
 	struct script_context_info_internal *context_info;
 	struct variable_allocation *vars;
@@ -155,7 +74,6 @@ struct script_compile_context {
 };
 
 static const char operators[] = "+-*/^";
-static const char *operator_names[] = {"+", "-", "*", "/", "^", "neg", "max"};
 static const enum op operator_types[] = {OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_EXP};
 static const int operator_pre[] = {0, 0, 1, 1, 2};
 
@@ -171,7 +89,7 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 	case INST_BRANCH_ONCE: logv("br_once %d", inst->rel); break;
 	case INST_HALT: log_printf(tls_logger, level, func, "%u: halt", index); break;
 	case INST_CURVE: log_printf(tls_logger, level, func, "%u: curve", index); break;
-	case INST_OP: logv("op %d (%s)", inst->op, operator_names[inst->op]); break;
+	case INST_OP: logv("op %s", op_names[inst->op]); break;
 	case INST_LOAD: logv("load %u", inst->slot); break;
 	case INST_STORE: logv("store %u", inst->slot); break;
 	case INST_STORE_OVER_NAN: logv("store/nan %u", inst->slot); break;
@@ -181,6 +99,41 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 }
 #define log_instruction(level, i, inst)                                                  \
 	log_instruction_(LOG_LEVEL_##level, __func__, i, &(inst))
+
+char *instruction_to_c(struct instruction i) {
+	char *buf = NULL;
+	switch (i.type) {
+	case INST_IMM: casprintf(&buf, "{.type = INST_IMM, .imm = %f},", i.imm); break;
+	case INST_BRANCH:
+		casprintf(&buf, "{.type = INST_BRANCH, .rel = %d},", i.rel);
+		break;
+	case INST_BRANCH_ONCE:
+		casprintf(&buf, "{.type = INST_BRANCH_ONCE, .rel = %d},", i.rel);
+		break;
+	case INST_HALT: casprintf(&buf, "{.type = INST_HALT},"); break;
+	case INST_CURVE:;
+		char *curve = curve_to_c(&i.curve);
+		casprintf(&buf, "{.type = INST_CURVE, .curve = %s},", curve);
+		free(curve);
+		break;
+	case INST_OP:
+		casprintf(&buf, "{.type = INST_OP, .op = %s},", op_names[i.op]);
+		break;
+	case INST_LOAD:
+		casprintf(&buf, "{.type = INST_LOAD, .slot = %u},", i.slot);
+		break;
+	case INST_STORE:
+		casprintf(&buf, "{.type = INST_STORE, .slot = %u},", i.slot);
+		break;
+	case INST_STORE_OVER_NAN:
+		casprintf(&buf, "{.type = INST_STORE_OVER_NAN, .slot = %u},", i.slot);
+		break;
+	case INST_LOAD_CTX:
+		casprintf(&buf, "{.type = INST_LOAD_CTX, .ctx = %ld},", i.ctx);
+		break;
+	}
+	return buf;
+}
 
 static char parse_op(const char *input_str, const char **end, char **err) {
 	char *op = strchr(operators, input_str[0]);
@@ -1105,6 +1058,73 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 		free(i);
 	}
 	return script;
+}
+
+char *script_to_c(const struct script *script, const struct script_output_info *outputs) {
+	char **buf = dynarr_new(char *, script->len * 40);
+	char *tmp = NULL;
+	casprintf(&tmp, "{\n"
+	                "    static const struct instruction instrs[] = {\n");
+	dynarr_push(buf, tmp);
+	for (unsigned i = 0; i < script->len; i++) {
+		dynarr_push(buf, instruction_to_c(script->instrs[i]));
+	}
+	casprintf(&tmp,
+	          "    };\n    struct script *ret = \n"
+	          "    malloc(offsetof(struct script, instrs) + sizeof(instrs));\n"
+	          "    ret->len = ARR_SIZE(instrs); ret->elapsed_slot = %u;"
+	          "    ret->n_slots = %u; ret->stack_size = %u;\n"
+	          "    ret->vars = NULL; ret->overrides = NULL;\n"
+	          "    memcpy(ret->instrs, instrs, sizeof(instrs));\n",
+	          script->elapsed_slot, script->n_slots, script->stack_size);
+	dynarr_push(buf, tmp);
+
+	struct variable_allocation *var, *next_var;
+	HASH_ITER(hh, script->vars, var, next_var) {
+		char *var_str = NULL;
+		casprintf(&var_str,
+		          "    {\n"
+		          "      struct variable_allocation *var = \n"
+		          "          malloc(sizeof(*var));\n"
+		          "      *var = (struct variable_allocation){\n"
+		          "          .name = strdup(\"%s\"), .slot = %u, .index = %u\n"
+		          "      };\n"
+		          "      HASH_ADD_STR(ret->vars, name, var);\n"
+		          "    }\n",
+		          var->name, var->slot, var->index);
+		dynarr_push(buf, var_str);
+	}
+
+	struct overridable_slot *override, *next_override;
+	HASH_ITER(hh, script->overrides, override, next_override) {
+		char *override_str = NULL;
+		casprintf(&override_str,
+		          "    {\n"
+		          "      struct overridable_slot *override = \n"
+		          "         malloc(sizeof(*override));\n"
+		          "      *override = (struct overridable_slot){\n"
+		          "          .name = strdup(\"%s\"), .slot = %u\n"
+		          "      };\n"
+		          "      HASH_ADD_STR(ret->overrides, name, override);\n"
+		          "    }\n",
+		          override->name, override->slot);
+		dynarr_push(buf, override_str);
+	}
+
+	for (size_t i = 0; outputs && outputs[i].name; i++) {
+		struct variable_allocation *alloc = NULL;
+		HASH_FIND_STR(script->vars, outputs[i].name, alloc);
+		if (alloc) {
+			casprintf(&tmp, "    output_slots[%zu] = %u;\n", i, alloc->slot);
+		} else {
+			casprintf(&tmp, "    output_slots[%zu] = -1;\n", i);
+		}
+		dynarr_push(buf, tmp);
+	}
+
+	casprintf(&tmp, "    return ret;\n}\n");
+	dynarr_push(buf, tmp);
+	return dynarr_join(buf, "");
 }
 
 struct script_instance *script_instance_new(const struct script *script) {

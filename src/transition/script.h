@@ -43,6 +43,8 @@ typedef struct config_setting_t config_setting_t;
 static_assert(alignof(double) > alignof(unsigned), "double/unsigned has unexpected "
                                                    "alignment");
 
+#define SCRIPT_CTX_PLACEHOLDER_BASE (0x40000000)
+
 struct script *
 script_compile(config_setting_t *setting, struct script_parse_config cfg, char **out_err);
 void script_free(struct script *script);
@@ -70,3 +72,12 @@ static inline bool script_instance_is_finished(const struct script_instance *ins
 	return instance->memory[script_elapsed_slot(instance->script)] >=
 	       instance->memory[script_total_duration_slot(instance->script)];
 }
+
+/// Generate code for a C function that will return a script identical to `script` when
+/// called. The generated function will take a `int *output_slots` parameter, which it
+/// will fill in, based on `outputs` passed to this function. Specifically, the generated
+/// function will fill in `output_slots[i]` with the slot number of the output variable
+/// named `outputs[i].name`. The generated function will return a pointer to the script.
+/// This function only generates the function body, you need to provide the function
+/// signature and the function name yourself.
+char *script_to_c(const struct script *script, const struct script_output_info *outputs);

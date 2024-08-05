@@ -15,6 +15,10 @@ static double curve_sample_linear(const struct curve *this attr_unused, double p
 	return progress;
 }
 
+static char *curve_linear_to_c(const struct curve * /*this*/) {
+	return strdup("{.type = CURVE_LINEAR},");
+}
+
 // Cubic bezier interpolator.
 //
 // Stolen from servo:
@@ -78,6 +82,15 @@ curve_sample_cubic_bezier(const struct curve_cubic_bezier *curve, double progres
 	return cubic_bezier_sample_y(curve, t);
 }
 
+static char *curve_cubic_bezier_to_c(const struct curve_cubic_bezier *curve) {
+	char *buf = NULL;
+	casprintf(&buf,
+	          "{.type = CURVE_CUBIC_BEZIER, .bezier = { .ax = %f, .bx = %f, "
+	          ".cx = %f, .ay = %f, .by = %f, .cy = %f }},",
+	          curve->ax, curve->bx, curve->cx, curve->ay, curve->by, curve->cy);
+	return buf;
+}
+
 static double curve_sample_step(const struct curve_step *this, double progress) {
 	double y_steps = this->steps - 1 + this->jump_end + this->jump_start,
 	       x_steps = this->steps;
@@ -91,6 +104,16 @@ static double curve_sample_step(const struct curve_step *this, double progress) 
 	double scaled = progress * x_steps;
 	double quantized = this->jump_start ? ceil(scaled) : floor(scaled);
 	return quantized / y_steps;
+}
+
+static char *curve_step_to_c(const struct curve_step *this) {
+	char *buf = NULL;
+	casprintf(&buf,
+	          "{.type = CURVE_STEP, .step = { .steps = %d, .jump_start = %s, "
+	          ".jump_end = %s }},",
+	          this->steps, this->jump_start ? "true" : "false",
+	          this->jump_end ? "true" : "false");
+	return buf;
 }
 
 struct curve parse_linear(const char *str, const char **end, char **err) {
@@ -196,6 +219,17 @@ double curve_sample(const struct curve *curve, double progress) {
 	case CURVE_STEP: return curve_sample_step(&curve->step, progress);
 	case CURVE_CUBIC_BEZIER:
 		return curve_sample_cubic_bezier(&curve->bezier, progress);
-	case CURVE_INVALID: unreachable();
+	case CURVE_INVALID:
+	default: unreachable();
+	}
+}
+
+char *curve_to_c(const struct curve *curve) {
+	switch (curve->type) {
+	case CURVE_LINEAR: return curve_linear_to_c(curve);
+	case CURVE_STEP: return curve_step_to_c(&curve->step);
+	case CURVE_CUBIC_BEZIER: return curve_cubic_bezier_to_c(&curve->bezier);
+	case CURVE_INVALID:
+	default: unreachable();
 	}
 }
