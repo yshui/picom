@@ -60,9 +60,14 @@ typedef bool (*c2_list_foreach_cb_t)(const c2_lptr_t *cond, void *data);
 bool c2_list_foreach(const c2_lptr_t *list, c2_list_foreach_cb_t cb, void *data);
 /// Return user data stored in a condition.
 void *c2_list_get_data(const c2_lptr_t *condlist);
+/// Set user data stored in a condition. Return the old user data.
+void *c2_list_set_data(c2_lptr_t *condlist, void *data);
 /// Convert a c2_lptr_t to string. The returned string is only valid until the
 /// next call to this function, and should not be freed.
 const char *c2_lptr_to_str(const c2_lptr_t *);
+void c2_condlist_insert(c2_lptr_t **pcondlst, c2_lptr_t *pnew);
+/// Create a new condition list with a single condition that is always true.
+c2_lptr_t *c2_new_true(void);
 
 /**
  * Destroy a condition list.

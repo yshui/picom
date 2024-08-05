@@ -14,6 +14,7 @@
 
 #include "c2.h"
 #include "compiler.h"
+#include "config.h"
 #include "defs.h"
 #include "region.h"
 #include "render.h"
@@ -88,9 +89,10 @@ struct win_geometry {
 };
 
 /// These are changes of window state that might trigger an animation. We separate them
-/// out and delay their application so determine which animation to run is easier.
+/// out and delay their application so determining which animation to run is easier.
 struct win_state_change {
 	winstate_t state;
+	double opacity;
 };
 
 struct win {
@@ -159,26 +161,12 @@ struct win {
 	bool rounded_corners;
 	/// Whether this window is to be painted.
 	bool to_paint;
-	/// Whether the window is painting excluded.
-	bool paint_excluded;
-	/// Whether the window is unredirect-if-possible excluded.
-	bool unredir_if_possible_excluded;
 	/// Whether this window is in open/close state.
 	bool in_openclose;
 
 	// Client window related members
 	/// Type of the window.
 	wintype_t window_type;
-	/// Leader window ID of the window.
-	xcb_window_t leader;
-	/// Cached topmost window ID of the leader window.
-	struct wm_ref *cache_leader;
-
-	// Focus-related members
-	/// Whether the window is to be considered focused.
-	bool focused;
-	/// Override value of window focus state. Set by D-Bus method calls.
-	switch_t focused_force;
 
 	// Blacklist related members
 	/// Name of the window.
@@ -197,9 +185,11 @@ struct win {
 	bool is_fullscreen;
 	/// Whether the window is the active window.
 	bool is_focused;
+	/// Whether the window group this window belongs to is focused.
+	bool is_group_focused;
 
 	// Opacity-related members
-	/// Window opacity
+	/// The final window opacity if no animation is running
 	double opacity;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity
@@ -207,23 +197,10 @@ struct win {
 	bool has_opacity_prop;
 	/// Cached value of opacity window attribute.
 	opacity_t opacity_prop;
-	/// true if opacity is set by some rules
-	bool opacity_is_set;
 	/// Last window opacity value set by the rules.
 	double opacity_set;
 
-	/// Radius of rounded window corners
-	int corner_radius;
 	float border_col[4];
-
-	// Fading-related members
-	/// Override value of window fade state. Set by D-Bus method calls.
-	switch_t fade_force;
-	/// Whether fading is excluded by the rules. Calculated.
-	bool fade_excluded;
-
-	/// Whether transparent clipping is excluded by the rules.
-	bool transparent_clipping;
 
 	// Frame-opacity-related members
 	/// Current window frame opacity. Affected by window opacity.
@@ -238,10 +215,6 @@ struct win {
 	margin_t frame_extents;
 
 	// Shadow-related members
-	/// Whether a window has shadow. Calculated.
-	bool shadow;
-	/// Override value of window shadow state. Set by D-Bus method calls.
-	switch_t shadow_force;
 	/// Window specific shadow factor. The final shadow opacity is a combination of
 	/// this, the window opacity, and the window frame opacity.
 	double shadow_opacity;
@@ -258,24 +231,6 @@ struct win {
 	/// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
 	/// none.
 	long long prop_shadow;
-	/// Do not paint shadow over this window.
-	bool clip_shadow_above;
-
-	// Dim-related members
-	/// Whether the window is to be dimmed.
-	bool dim;
-
-	/// Whether to invert window color.
-	bool invert_color;
-	/// Override value of window color inversion state. Set by D-Bus method
-	/// calls.
-	switch_t invert_color_force;
-
-	/// Whether to blur window background.
-	bool blur_background;
-
-	/// The custom window shader to use when rendering.
-	struct shader_info *fg_shader;
 
 	struct c2_window_state c2_state;
 
@@ -290,6 +245,13 @@ struct win {
 
 	/// The damaged region of the window, in window local coordinates.
 	region_t damaged;
+
+	/// Per-window options coming from rules
+	struct window_maybe_options options;
+	/// Override of per-window options, used by dbus interface
+	struct window_maybe_options options_override;
+	/// Global per-window options default
+	const struct window_options *options_default;
 
 	/// Previous state of the window before state changed. This is used
 	/// by `win_process_animation_and_state_change` to trigger appropriate
@@ -340,6 +302,69 @@ static const struct script_output_info win_script_outputs[] = {
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
+static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
+    .blur_background = TRI_UNKNOWN,
+    .clip_shadow_above = TRI_UNKNOWN,
+    .shadow = TRI_UNKNOWN,
+    .fade = TRI_UNKNOWN,
+    .invert_color = TRI_UNKNOWN,
+    .paint = TRI_UNKNOWN,
+    .dim = NAN,
+    .opacity = NAN,
+    .shader = NULL,
+    .corner_radius = -1,
+    .unredir = WINDOW_UNREDIR_INVALID,
+};
+
+/// Combine two window options. The `upper` value has higher priority, the `lower` value
+/// will only be used if the corresponding value in `upper` is not set (e.g. it is
+/// TRI_UNKNOWN for tristate values, NaN for opacity, -1 for corner_radius).
+static inline struct window_maybe_options __attribute__((always_inline))
+win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_options lower) {
+	return (struct window_maybe_options){
+	    .unredir = upper.unredir == WINDOW_UNREDIR_INVALID ? lower.unredir : upper.unredir,
+	    .blur_background = tri_or(upper.blur_background, lower.blur_background),
+	    .clip_shadow_above = tri_or(upper.clip_shadow_above, lower.clip_shadow_above),
+	    .full_shadow = tri_or(upper.full_shadow, lower.full_shadow),
+	    .shadow = tri_or(upper.shadow, lower.shadow),
+	    .fade = tri_or(upper.fade, lower.fade),
+	    .invert_color = tri_or(upper.invert_color, lower.invert_color),
+	    .paint = tri_or(upper.paint, lower.paint),
+	    .opacity = !safe_isnan(upper.opacity) ? upper.opacity : lower.opacity,
+	    .dim = !safe_isnan(upper.dim) ? upper.dim : lower.dim,
+	    .shader = upper.shader ? upper.shader : lower.shader,
+	    .corner_radius = upper.corner_radius >= 0 ? upper.corner_radius : lower.corner_radius,
+	};
+}
+
+/// Unwrap a `window_maybe_options` to a `window_options`, using the default value for
+/// values that are not set in the `window_maybe_options`.
+static inline struct window_options __attribute__((always_inline))
+win_maybe_options_or(struct window_maybe_options maybe, struct window_options def) {
+	assert(def.unredir != WINDOW_UNREDIR_INVALID);
+	return (struct window_options){
+	    .unredir = maybe.unredir == WINDOW_UNREDIR_INVALID ? def.unredir : maybe.unredir,
+	    .blur_background = tri_or_bool(maybe.blur_background, def.blur_background),
+	    .clip_shadow_above = tri_or_bool(maybe.clip_shadow_above, def.clip_shadow_above),
+	    .full_shadow = tri_or_bool(maybe.full_shadow, def.full_shadow),
+	    .shadow = tri_or_bool(maybe.shadow, def.shadow),
+	    .corner_radius = maybe.corner_radius >= 0 ? (unsigned int)maybe.corner_radius
+	                                              : def.corner_radius,
+	    .fade = tri_or_bool(maybe.fade, def.fade),
+	    .invert_color = tri_or_bool(maybe.invert_color, def.invert_color),
+	    .paint = tri_or_bool(maybe.paint, def.paint),
+	    .opacity = !safe_isnan(maybe.opacity) ? maybe.opacity : def.opacity,
+	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
+	    .shader = maybe.shader ? maybe.shader : def.shader,
+	};
+}
+
+static inline struct window_options __attribute__((always_inline))
+win_options(const struct win *w) {
+	return win_maybe_options_or(
+	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);
+}
+
 /// Process pending updates/images flags on a window. Has to be called in X critical
 /// section. Returns true if the window had an animation running and it has just finished,
 /// or if the window's states just changed and there is no animation defined for this
@@ -364,18 +389,12 @@ void win_release_images(struct backend_base *backend, struct win *w);
 winmode_t attr_pure win_calc_mode_raw(const struct win *w);
 // TODO(yshui) `win_calc_mode` is only used by legacy backends
 winmode_t attr_pure win_calc_mode(const struct win *w);
-void win_set_shadow_force(session_t *ps, struct win *w, switch_t val);
-void win_set_fade_force(struct win *w, switch_t val);
-void win_set_focused_force(session_t *ps, struct win *w, switch_t val);
-void win_set_invert_color_force(session_t *ps, struct win *w, switch_t val);
 /**
  * Set real focused state of a window.
  */
 void win_set_focused(session_t *ps, struct win *w);
 void win_on_factor_change(session_t *ps, struct win *w);
 void win_on_client_update(session_t *ps, struct win *w);
-
-bool attr_pure win_should_dim(session_t *ps, const struct win *w);
 
 int attr_pure win_find_monitor(const struct x_monitors *monitors, const struct win *mw);
 
@@ -422,11 +441,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
  * Release a destroyed window that is no longer needed.
  */
 void win_destroy_finish(session_t *ps, struct win *w);
-
-/**
- * Check if a window is focused, without using any focus rules or forced focus settings
- */
-bool attr_pure win_is_focused_raw(const struct win *w);
 
 /// Return whether the group a window belongs to is really focused.
 ///
@@ -535,14 +549,15 @@ win_region_remove_corners(const struct win *w, ivec2 origin, region_t *res) {
 	    {1, 0},
 	    {1, 1},
 	};
+	int corner_radius = (int)win_options(w).corner_radius;
 	rect_t rectangles[4];
 	for (size_t i = 0; i < ARR_SIZE(corner_index); i++) {
 		rectangles[i] = (rect_t){
-		    .x1 = origin.x + corner_index[i][0] * (w->widthb - w->corner_radius),
-		    .y1 = origin.y + corner_index[i][1] * (w->heightb - w->corner_radius),
+		    .x1 = origin.x + corner_index[i][0] * (w->widthb - corner_radius),
+		    .y1 = origin.y + corner_index[i][1] * (w->heightb - corner_radius),
 		};
-		rectangles[i].x2 = rectangles[i].x1 + w->corner_radius;
-		rectangles[i].y2 = rectangles[i].y1 + w->corner_radius;
+		rectangles[i].x2 = rectangles[i].x1 + corner_radius;
+		rectangles[i].y2 = rectangles[i].y1 + corner_radius;
 	}
 	region_t corners;
 	pixman_region32_init_rects(&corners, rectangles, 4);
@@ -591,4 +606,15 @@ static inline margin_t attr_pure attr_unused win_calc_frame_extents(const struct
 static inline bool attr_pure attr_unused win_has_frame(const struct win *w) {
 	return w->g.border_width || w->frame_extents.top || w->frame_extents.left ||
 	       w->frame_extents.right || w->frame_extents.bottom;
+}
+
+static inline const char *attr_pure attr_unused win_wm_ref_name(const struct wm_ref *ref) {
+	if (ref == NULL) {
+		return NULL;
+	}
+	auto win = wm_ref_deref(ref);
+	if (win == NULL) {
+		return NULL;
+	}
+	return win->name;
 }

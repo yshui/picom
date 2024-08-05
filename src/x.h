@@ -264,6 +264,8 @@ static inline void x_discard_events(struct x_connection *c) {
  */
 xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid,
                                  xcb_atom_t aprop, bool *exists);
+bool wid_get_opacity_prop(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
+                          opacity_t def, opacity_t *out);
 
 /**
  * Get the value of a text property of a window.

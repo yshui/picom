@@ -26,5 +26,4 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      uint64_t render_start_us, xcb_sync_fence_t xsync_fence,
                      bool use_damage, bool monitor_repaint, bool force_blend,
                      bool blur_frame, bool inactive_dim_fixed, double max_brightness,
-                     double inactive_dim, const struct x_monitors *monitors,
-                     const struct win_option *wintype_options, uint64_t *after_damage_us);
+                     const struct x_monitors *monitors, uint64_t *after_damage_us);

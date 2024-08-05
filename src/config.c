@@ -639,6 +639,8 @@ bool load_plugin(const char *name, const char *include_dir) {
 	return handle != NULL;
 }
 
+struct shader_info null_shader = {0};
+
 bool parse_config(options_t *opt, const char *config_file) {
 	// clang-format off
 	*opt = (struct options){
@@ -718,7 +720,9 @@ bool parse_config(options_t *opt, const char *config_file) {
 
 	    .track_leader = false,
 
-	    .rounded_corners_blacklist = NULL
+	    .rounded_corners_blacklist = NULL,
+
+	    .rules = NULL,
 	};
 	// clang-format on
 

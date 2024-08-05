@@ -228,13 +228,11 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 	auto wid = *(xcb_window_t *)xcb_get_property_value(reply);
 	log_debug("EWMH _NET_ACTIVE_WINDOW is %#010x", wid);
 
-	auto cursor = wm_find_by_client(ps->wm, wid);
-	auto w = cursor ? wm_ref_deref(cursor) : NULL;
-
 	// Mark the window focused. No need to unfocus the previous one.
-	if (w) {
-		win_set_focused(ps, w);
-	}
+	auto cursor = wm_find_by_client(ps->wm, wid);
+	wm_ref_set_focused(ps->wm, cursor);
+	ps->pending_updates = true;
+	log_debug("%#010x (%s) focused.", wid, win_wm_ref_name(cursor));
 }
 
 struct ev_recheck_focus_request {
@@ -280,26 +278,17 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 	}
 
 	auto cursor = wm_find(ps->wm, wid);
-	if (cursor == NULL) {
-		if (wm_is_consistent(ps->wm)) {
-			log_error("Window %#010x not found in window tree.", wid);
-			assert(false);
-		}
-		return;
-	}
+	assert(cursor != NULL || !wm_is_consistent(ps->wm));
 
-	cursor = wm_ref_toplevel_of(ps->wm, cursor);
-	if (cursor == NULL) {
-		assert(!wm_is_consistent(ps->wm));
-		return;
+	if (cursor != NULL) {
+		cursor = wm_ref_toplevel_of(ps->wm, cursor);
+		assert(cursor != NULL || !wm_is_consistent(ps->wm));
 	}
 
 	// And we set the focus state here
-	auto w = wm_ref_deref(cursor);
-	if (w) {
-		log_debug("%#010x (%s) focused.", wid, w->name);
-		win_set_focused(ps, w);
-	}
+	wm_ref_set_focused(ps->wm, cursor);
+	ps->pending_updates = true;
+	log_debug("%#010x (%s) focused.", wid, win_wm_ref_name(cursor));
 }
 
 void ev_update_focused(struct session *ps) {
@@ -388,6 +377,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	auto w = wm_ref_deref(cursor);
 	if (!w) {
+		log_debug("Window %#010x is unmanaged.", ce->window);
 		return;
 	}
 
@@ -843,7 +833,7 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
-		if (ps->randr_exists && ps->o.crop_shadow_to_monitor &&
+		if (ps->randr_exists &&
 		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			x_update_monitors_async(&ps->c, &ps->monitors);
 			break;

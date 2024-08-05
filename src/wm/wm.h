@@ -104,10 +104,12 @@ static inline bool wm_treeid_eq(wm_treeid a, wm_treeid b) {
 struct wm *wm_new(void);
 void wm_free(struct wm *wm);
 
-struct win *wm_active_win(struct wm *wm);
-void wm_set_active_win(struct wm *wm, struct win *w);
-struct wm_ref *wm_active_leader(struct wm *wm);
-void wm_set_active_leader(struct wm *wm, struct wm_ref *leader);
+/// The current focused toplevel, based on information from X server.
+struct wm_ref *wm_focused_win(struct wm *wm);
+/// The current cached focused leader. This is only update to date after a call to
+/// `wm_refresh_leaders`, and before any changes to the wm tree. Otherwise this could
+/// return a dangling pointer.
+const struct wm_ref *wm_focused_leader(struct wm *wm);
 
 // Note: `wm` keeps track of 2 lists of windows. One is the window stack, which includes
 // all windows that might need to be rendered, which means it would include destroyed
@@ -144,7 +146,16 @@ xcb_window_t attr_pure wm_ref_win_id(const struct wm_ref *cursor);
 wm_treeid attr_pure wm_ref_treeid(const struct wm_ref *cursor);
 /// Assign a window to a cursor. The cursor must not already have a window assigned.
 void wm_ref_set(struct wm_ref *cursor, struct win *w);
+/// Mark `cursor` as the focused window.
+void wm_ref_set_focused(struct wm *wm, struct wm_ref *cursor);
+void wm_ref_set_leader(struct wm *wm, struct wm_ref *cursor, xcb_window_t leader);
+/// Get the current cached group leader of a window. This is only update to date after a
+/// call to `wm_refresh_leaders`.
+const struct wm_ref *wm_ref_leader(const struct wm_ref *cursor);
 bool attr_pure wm_ref_is_zombie(const struct wm_ref *cursor);
+
+/// Recalculate all cached leaders, and update `wm_focused_leader`.
+void wm_refresh_leaders(struct wm *wm);
 
 /// Destroy a window. Children of this window should already have been destroyed. This
 /// will cause a `WM_TREE_CHANGE_TOPLEVEL_KILLED` event to be generated, and a zombie

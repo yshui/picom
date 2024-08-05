@@ -8,6 +8,7 @@
 
 #include <picom/types.h>
 
+#include "config.h"
 #include "region.h"
 #include "wm/wm.h"
 
@@ -18,6 +19,7 @@ struct layer {
 	/// The window, this is only valid for the current layout. Once
 	/// a frame has passed, windows could have been freed.
 	struct win *win;
+	struct window_options options;
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
 	/// Window rectangle in screen coordinates, before it's scaled.
@@ -51,8 +53,6 @@ struct layer {
 
 	/// Is this window completely opaque?
 	bool is_opaque;
-	/// Is this window clipping the windows beneath it?
-	bool is_clipping;
 
 	// TODO(yshui) make opaqueness/blur finer grained maybe? to support
 	// things like blur-background-frame

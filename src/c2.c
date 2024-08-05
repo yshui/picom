@@ -44,6 +44,7 @@ typedef struct _c2_l c2_l_t;
 /// Pointer to a condition tree.
 typedef struct {
 	bool isbranch : 1;
+	bool istrue : 1;
 	union {
 		c2_b_t *b;
 		c2_l_t *l;
@@ -101,13 +102,11 @@ struct c2_property_value {
 };
 
 /// Initializer for c2_ptr_t.
-#define C2_PTR_INIT                                                                      \
-	{                                                                                \
-	    .isbranch = false,                                                           \
-	    .l = NULL,                                                                   \
-	}
-
-static const c2_ptr_t C2_PTR_NULL = C2_PTR_INIT;
+static const c2_ptr_t C2_PTR_INIT = {
+    .isbranch = false,
+    .istrue = false,
+    .l = NULL,
+};
 
 /// Operator of a branch element.
 typedef enum {
@@ -173,6 +172,7 @@ struct _c2_l {
 		C2_L_POVREDIR,
 		C2_L_PARGB,
 		C2_L_PFOCUSED,
+		C2_L_PGROUPFOCUSED,
 		C2_L_PWMWIN,
 		C2_L_PBSHAPED,
 		C2_L_PROUNDED,
@@ -199,24 +199,21 @@ struct _c2_l {
 
 static const unsigned int C2_L_INVALID_TARGET_ID = UINT_MAX;
 /// Initializer for c2_l_t.
-#define C2_L_INIT                                                                        \
-	{                                                                                \
-	    .neg = false,                                                                \
-	    .op = C2_L_OEXISTS,                                                          \
-	    .match = C2_L_MEXACT,                                                        \
-	    .match_ignorecase = false,                                                   \
-	    .tgt = NULL,                                                                 \
-	    .tgtatom = 0,                                                                \
-	    .target_on_client = false,                                                   \
-	    .predef = C2_L_PUNDEFINED,                                                   \
-	    .index = 0,                                                                  \
-	    .ptntype = C2_L_PTUNDEFINED,                                                 \
-	    .ptnstr = NULL,                                                              \
-	    .ptnint = 0,                                                                 \
-	    .target_id = C2_L_INVALID_TARGET_ID,                                         \
-	}
-
-static const c2_l_t leaf_def = C2_L_INIT;
+static const c2_l_t C2_L_INIT = {
+    .neg = false,
+    .op = C2_L_OEXISTS,
+    .match = C2_L_MEXACT,
+    .match_ignorecase = false,
+    .tgt = NULL,
+    .tgtatom = 0,
+    .target_on_client = false,
+    .predef = C2_L_PUNDEFINED,
+    .index = 0,
+    .ptntype = C2_L_PTUNDEFINED,
+    .ptnstr = NULL,
+    .ptnint = 0,
+    .target_id = C2_L_INVALID_TARGET_ID,
+};
 
 /// Linked list type of conditions.
 struct _c2_lptr {
@@ -235,31 +232,33 @@ typedef struct {
 static struct {
 	const char *name;
 	bool is_string;
+	bool deprecated;
 } C2_PREDEFS[] = {
-    [C2_L_PID]         = { "id", false, },
-    [C2_L_PX]          = { "x", false, },
-    [C2_L_PY]          = { "y", false, },
-    [C2_L_PX2]         = { "x2", false, },
-    [C2_L_PY2]         = { "y2", false, },
-    [C2_L_PWIDTH]      = { "width", false, },
-    [C2_L_PHEIGHT]     = { "height", false, },
-    [C2_L_PWIDTHB]     = { "widthb", false, },
-    [C2_L_PHEIGHTB]    = { "heightb", false, },
-    [C2_L_PBDW]        = { "border_width", false, },
-    [C2_L_PFULLSCREEN] = { "fullscreen", false, },
-    [C2_L_POVREDIR]    = { "override_redirect", false, },
-    [C2_L_PARGB]       = { "argb", false, },
-    [C2_L_PFOCUSED]    = { "focused", false, },
-    [C2_L_PWMWIN]      = { "wmwin", false, },
-    [C2_L_PBSHAPED]    = { "bounding_shaped", false, },
-    [C2_L_PROUNDED]    = { "rounded_corners", false, },
-    [C2_L_PCLIENT]     = { "client", false, },
-    [C2_L_PWINDOWTYPE] = { "window_type", true, },
-    [C2_L_PLEADER]     = { "leader", false, },
-    [C2_L_PNAME]       = { "name", true, },
-    [C2_L_PCLASSG]     = { "class_g", true, },
-    [C2_L_PCLASSI]     = { "class_i", true, },
-    [C2_L_PROLE]       = { "role", true, },
+    [C2_L_PID]           = { "id", false, true },
+    [C2_L_PX]            = { "x", false, },
+    [C2_L_PY]            = { "y", false, },
+    [C2_L_PX2]           = { "x2", false, },
+    [C2_L_PY2]           = { "y2", false, },
+    [C2_L_PWIDTH]        = { "width", false, },
+    [C2_L_PHEIGHT]       = { "height", false, },
+    [C2_L_PWIDTHB]       = { "widthb", false, },
+    [C2_L_PHEIGHTB]      = { "heightb", false, },
+    [C2_L_PBDW]          = { "border_width", false, },
+    [C2_L_PFULLSCREEN]   = { "fullscreen", false, },
+    [C2_L_POVREDIR]      = { "override_redirect", false, },
+    [C2_L_PARGB]         = { "argb", false, },
+    [C2_L_PFOCUSED]      = { "focused", false, },
+    [C2_L_PGROUPFOCUSED] = { "group_focused", false, },
+    [C2_L_PWMWIN]        = { "wmwin", false, },
+    [C2_L_PBSHAPED]      = { "bounding_shaped", false, },
+    [C2_L_PROUNDED]      = { "rounded_corners", false, },
+    [C2_L_PCLIENT]       = { "client", false, true },
+    [C2_L_PWINDOWTYPE]   = { "window_type", true, },
+    [C2_L_PLEADER]       = { "leader", false, true },
+    [C2_L_PNAME]         = { "name", true, },
+    [C2_L_PCLASSG]       = { "class_g", true, },
+    [C2_L_PCLASSI]       = { "class_i", true, },
+    [C2_L_PROLE]         = { "role", true, },
 };
 // clang-format on
 
@@ -298,7 +297,7 @@ static inline attr_unused bool c2_ptr_isempty(const c2_ptr_t p) {
  */
 static inline void c2_ptr_reset(c2_ptr_t *pp) {
 	if (pp) {
-		memcpy(pp, &C2_PTR_NULL, sizeof(c2_ptr_t));
+		*pp = C2_PTR_INIT;
 	}
 }
 
@@ -696,7 +695,7 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 			}
 			// Otherwise, combine the second and the incoming one
 			else {
-				eles[1] = c2h_comb_tree(ops[2], eles[1], C2_PTR_NULL);
+				eles[1] = c2h_comb_tree(ops[2], eles[1], C2_PTR_INIT);
 				assert(eles[1].isbranch);
 				pele = &eles[1].b->opr2;
 			}
@@ -730,6 +729,13 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 				typeof(pele->l->ptntype) predef_type =
 				    C2_PREDEFS[pele->l->predef].is_string ? C2_L_PTSTRING
 				                                          : C2_L_PTINT;
+				if (C2_PREDEFS[pele->l->predef].deprecated) {
+					log_warn("Predefined target \"%s\" is "
+					         "deprecated. Matching against it will "
+					         "always fail. Offending pattern is "
+					         "\"%s\"",
+					         pele->l->tgt, pattern);
+				}
 				if (pele->l->op == C2_L_OEXISTS) {
 					pele->l->ptntype = predef_type;
 				} else if (pele->l->ptntype != predef_type) {
@@ -803,7 +809,7 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 	presult->l = cmalloc(c2_l_t);
 
 	c2_l_t *const pleaf = presult->l;
-	memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
+	*pleaf = C2_L_INIT;
 
 	// Parse negation marks
 	while ('!' == pattern[offset]) {
@@ -1160,7 +1166,7 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
 	auto pleaf = cmalloc(c2_l_t);
 	presult->isbranch = false;
 	presult->l = pleaf;
-	memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
+	*pleaf = C2_L_INIT;
 	pleaf->op = C2_L_OEQ;
 	pleaf->ptntype = C2_L_PTSTRING;
 
@@ -1290,6 +1296,9 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 }
 
 static bool c2_tree_postprocess(struct c2_state *state, xcb_connection_t *c, c2_ptr_t node) {
+	if (node.istrue) {
+		return true;
+	}
 	if (!node.isbranch) {
 		return c2_l_postprocess(state, c, node.l);
 	}
@@ -1580,15 +1589,15 @@ static inline bool c2_int_op(const c2_l_t *leaf, int64_t target) {
 }
 
 static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
-	auto const client_win = win_client_id(w, /*fallback_to_self=*/true);
-	const xcb_window_t wid = (leaf->target_on_client ? client_win : win_id(w));
-
 	// Get the value
 	if (leaf->predef != C2_L_PUNDEFINED) {
 		// A predefined target
 		int64_t predef_target = 0;
+		if (C2_PREDEFS[leaf->predef].deprecated) {
+			return false;
+		}
+
 		switch (leaf->predef) {
-		case C2_L_PID: predef_target = wid; break;
 		case C2_L_PX: predef_target = w->g.x; break;
 		case C2_L_PY: predef_target = w->g.y; break;
 		case C2_L_PX2: predef_target = w->g.x + w->widthb; break;
@@ -1600,12 +1609,17 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 		case C2_L_PBDW: predef_target = w->g.border_width; break;
 		case C2_L_PFULLSCREEN: predef_target = w->is_fullscreen; break;
 		case C2_L_PARGB: predef_target = win_has_alpha(w); break;
-		case C2_L_PFOCUSED: predef_target = win_is_focused_raw(w); break;
+		case C2_L_PFOCUSED:
+			predef_target =
+			    w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused;
+			break;
+		case C2_L_PGROUPFOCUSED:
+			predef_target = w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+			                w->is_group_focused;
+			break;
 		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
 		case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
 		case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
-		case C2_L_PCLIENT: predef_target = client_win; break;
-		case C2_L_PLEADER: predef_target = w->leader; break;
 		case C2_L_POVREDIR:
 			// When user wants to check override-redirect, they almost always
 			// want to check the client window, not the frame window. We
@@ -1630,7 +1644,7 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 	assert(!values->needs_update);
 	if (!values->valid) {
 		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
-		            client_win, w->name);
+		            wm_ref_win_id(w->tree_ref), w->name);
 		return false;
 	}
 
@@ -1855,6 +1869,8 @@ static bool c2_match_once(struct c2_state *state, const struct win *w, const c2_
 
 		log_debug("(%#010x): branch: result = %d, pattern = %s", win_id(w),
 		          result, c2_condition_to_str2(cond));
+	} else if (cond.istrue) {
+		return true;
 	} else {
 		// A leaf
 		const c2_l_t *pleaf = cond.l;
@@ -1876,6 +1892,12 @@ static bool c2_match_once(struct c2_state *state, const struct win *w, const c2_
 	}
 
 	return result;
+}
+
+c2_lptr_t *c2_new_true(void) {
+	auto ret = ccalloc(1, c2_lptr_t);
+	ret->ptr = (c2_ptr_t){.istrue = true};
+	return ret;
 }
 
 /**
@@ -1932,6 +1954,12 @@ bool c2_list_foreach(const c2_lptr_t *condlist, c2_list_foreach_cb_t cb, void *d
 /// Return user data stored in a condition.
 void *c2_list_get_data(const c2_lptr_t *condlist) {
 	return condlist->data;
+}
+
+void *c2_list_set_data(c2_lptr_t *condlist, void *data) {
+	void *old = condlist->data;
+	condlist->data = data;
+	return old;
 }
 
 struct c2_state *c2_state_new(struct atom *atoms) {
@@ -2183,4 +2211,10 @@ bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
 	key.is_on_client = false;
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	return p != NULL;
+}
+
+void c2_condlist_insert(c2_lptr_t **pcondlst, c2_lptr_t *pnew) {
+	c2_lptr_t *pcur = *pcondlst;
+	pnew->next = pcur;
+	*pcondlst = pnew;
 }

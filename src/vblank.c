@@ -85,10 +85,10 @@ struct sgi_video_sync_vblank_scheduler {
 	_Atomic uint64_t current_ust;
 	ev_async notify;
 	pthread_t sync_thread;
-	bool running, error;
+	bool running, error, vblank_requested;
 	unsigned int last_msc;
 
-	/// Protects `running`, and `base.vblank_event_requested`
+	/// Protects `running`, and `vblank_requested`
 	pthread_mutex_t vblank_requested_mtx;
 	pthread_cond_t vblank_requested_cnd;
 };
@@ -201,7 +201,7 @@ static void *sgi_video_sync_thread(void *data) {
 
 	pthread_mutex_lock(&self->vblank_requested_mtx);
 	while (self->running) {
-		if (!self->base.vblank_event_requested) {
+		if (!self->vblank_requested) {
 			pthread_cond_wait(&self->vblank_requested_cnd,
 			                  &self->vblank_requested_mtx);
 			continue;
@@ -216,8 +216,9 @@ static void *sgi_video_sync_thread(void *data) {
 		atomic_store(&self->current_msc, last_msc);
 		atomic_store(&self->current_ust,
 		             (uint64_t)(now.tv_sec * 1000000 + now.tv_nsec / 1000));
-		ev_async_send(self->base.loop, &self->notify);
 		pthread_mutex_lock(&self->vblank_requested_mtx);
+		self->vblank_requested = false;
+		ev_async_send(self->base.loop, &self->notify);
 	}
 	pthread_mutex_unlock(&self->vblank_requested_mtx);
 	goto cleanup;
@@ -251,12 +252,15 @@ static bool sgi_video_sync_scheduler_schedule(struct vblank_scheduler *base) {
 	if (self->error) {
 		return false;
 	}
+	assert(!base->vblank_event_requested);
+
 	log_verbose("Requesting vblank event for msc %d", self->current_msc + 1);
 	pthread_mutex_lock(&self->vblank_requested_mtx);
-	assert(!base->vblank_event_requested);
-	base->vblank_event_requested = true;
+	self->vblank_requested = true;
 	pthread_cond_signal(&self->vblank_requested_cnd);
 	pthread_mutex_unlock(&self->vblank_requested_mtx);
+
+	base->vblank_event_requested = true;
 	return true;
 }
 
@@ -280,6 +284,7 @@ static bool sgi_video_sync_scheduler_init(struct vblank_scheduler *base) {
 	pthread_mutex_init(&self->vblank_requested_mtx, NULL);
 	pthread_cond_init(&self->vblank_requested_cnd, NULL);
 
+	self->vblank_requested = false;
 	self->running = true;
 	pthread_create(&self->sync_thread, NULL, sgi_video_sync_thread, &args);
 
