@@ -14,6 +14,11 @@ struct script_context_info {
 	ptrdiff_t offset;
 };
 
+struct script_specialization_context {
+	ptrdiff_t offset;
+	double value;
+};
+
 struct script_output_info {
 	const char *name;
 	/// Slot for this variable, -1 if this variable doesn't exist.
@@ -65,6 +70,13 @@ struct script_instance *script_instance_new(const struct script *script);
 /// Get the total duration slot of a script.
 unsigned script_total_duration_slot(const struct script *script);
 unsigned script_elapsed_slot(const struct script *script);
+
+/// Specialize a script instance with a context. During evaluation of the resulting
+/// script, what would have been read from the context will be replaced with the hardcoded
+/// value in the specialization context.
+void script_specialize(struct script *instance,
+                       const struct script_specialization_context *context,
+                       unsigned n_context);
 
 /// Check if a script instance has finished. The script instance must have been evaluated
 /// at least once.

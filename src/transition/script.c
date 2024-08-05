@@ -1127,6 +1127,22 @@ char *script_to_c(const struct script *script, const struct script_output_info *
 	return dynarr_join(buf, "");
 }
 
+void script_specialize(struct script *script,
+                       const struct script_specialization_context *spec, unsigned n_context) {
+	for (unsigned i = 0; i < script->len; i++) {
+		if (script->instrs[i].type != INST_LOAD_CTX) {
+			continue;
+		}
+		for (unsigned j = 0; j < n_context; j++) {
+			if (script->instrs[i].ctx == spec[j].offset) {
+				script->instrs[i].type = INST_IMM;
+				script->instrs[i].imm = spec[j].value;
+				break;
+			}
+		}
+	}
+}
+
 struct script_instance *script_instance_new(const struct script *script) {
 	// allocate no space for the variable length array is UB.
 	unsigned memory_size = max2(1, script->n_slots + script->stack_size);
