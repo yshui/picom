@@ -41,33 +41,50 @@ bool config_extra_lookup_float(config_setting_t *setting, const char *path, doub
 	return true;
 }
 
+char *sanitized_name(const char *name) {
+	char *ret = strdup(name);
+	for (char *p = ret; *p; p++) {
+		if (*p == '-') {
+			*p = '_';
+		}
+	}
+	return ret;
+}
+
 void codegen(const char *name, const char *body, const struct placeholder *placeholders) {
-	printf("static struct script *script_template__%s(int *output_slots)\n%s\n", name, body);
+	auto ident = sanitized_name(name);
+	printf("static struct script *script_template__%s(int *output_slots)\n%s\n",
+	       ident, body);
 	printf("static bool win_script_preset__%s(struct win_script *output, "
 	       "config_setting_t *setting) {\n",
-	       name);
-	printf("    output->script = script_template__%s(output->output_indices);\n", name);
+	       ident);
+	printf("    output->script = script_template__%s(output->output_indices);\n", ident);
 	for (size_t i = 0; i < 10; i++) {
 		if (placeholders[i].name) {
-			printf("    double placeholder_%s = %f;\n", placeholders[i].name,
+			auto placeholder_ident = sanitized_name(placeholders[i].name);
+			printf("    double placeholder_%s = %f;\n", placeholder_ident,
 			       placeholders[i].default_value);
 			printf("    config_setting_lookup_float(setting, \"%s\", "
 			       "&placeholder_%s);\n",
-			       placeholders[i].name, placeholders[i].name);
+			       placeholders[i].name, placeholder_ident);
+			free(placeholder_ident);
 		}
 	}
 	printf("    struct script_specialization_context spec[] = {\n");
 	for (size_t i = 0; i < 10; i++) {
 		if (placeholders[i].name) {
+			auto placeholder_ident = sanitized_name(placeholders[i].name);
 			printf("        {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + %zu, "
 			       ".value = placeholder_%s},\n",
-			       i * 4, placeholders[i].name);
+			       i * 4, placeholder_ident);
+			free(placeholder_ident);
 		}
 	}
 	printf("    };\n");
 	printf("    script_specialize(output->script, spec, ARR_SIZE(spec));\n");
 	printf("    return true;\n");
 	printf("}\n");
+	free(ident);
 }
 
 int main(int argc, const char **argv) {
@@ -220,8 +237,10 @@ int main(int argc, const char **argv) {
 	       "    bool (*func)(struct win_script *output, config_setting_t *setting);\n"
 	       "} win_script_presets[] = {\n");
 	dynarr_foreach(presets, p) {
-		printf("    {\"%s\", win_script_preset__%s},\n", *p, *p);
+		auto ident = sanitized_name(*p);
+		printf("    {\"%s\", win_script_preset__%s},\n", *p, ident);
 		free(*p);
+		free(ident);
 	}
 	printf("    {NULL, NULL},\n};\n");
 	dynarr_free_pod(presets);
