@@ -463,10 +463,10 @@ static void destroy_backend(session_t *ps) {
 		// `win_process_animation_and_state_change` hasn't been called.)
 		// TBH, this assertion is probably too complex than what it's worth.
 		assert(!w->win_image || w->state == WSTATE_MAPPED ||
-		       w->running_animation != NULL || w->previous.state != w->state);
+		       w->running_animation_instance != NULL || w->previous.state != w->state);
 		// Wrapping up animation in progress
-		free(w->running_animation);
-		w->running_animation = NULL;
+		free(w->running_animation_instance);
+		w->running_animation_instance = NULL;
 
 		if (ps->backend_data) {
 			// Unmapped windows could still have shadow images.
@@ -751,7 +751,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 
-		if (w->running_animation != NULL) {
+		if (w->running_animation_instance != NULL) {
 			*animation = true;
 		}
 
@@ -759,7 +759,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// If was_painted == false, and to_paint is also false, we don't care
 		// If was_painted == false, but to_paint is true, damage will be added in
 		// the loop below
-		if (was_painted && w->running_animation != NULL) {
+		if (was_painted && w->running_animation_instance != NULL) {
 			add_damage_from_win(ps, w);
 		}
 
@@ -822,7 +822,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
 		if ((w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYED) &&
-		    w->running_animation == NULL) {
+		    w->running_animation_instance == NULL) {
 			log_trace("|- is unmapped");
 			to_paint = false;
 		} else if (unlikely(ps->debug_window != XCB_NONE) &&
@@ -934,7 +934,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
 		w->reg_ignore_valid = true;
 
-		if (w->state == WSTATE_DESTROYED && w->running_animation == NULL) {
+		if (w->state == WSTATE_DESTROYED && w->running_animation_instance == NULL) {
 			// the window should be destroyed because it was destroyed
 			// by X server and now its animations are finished
 			win_destroy_finish(ps, w);
@@ -1667,8 +1667,8 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 		// Window might be freed by this function, if it's destroyed and its
 		// animation finished
 		if (w != NULL && win_process_animation_and_state_change(ps, w, delta_t)) {
-			free(w->running_animation);
-			w->running_animation = NULL;
+			free(w->running_animation_instance);
+			w->running_animation_instance = NULL;
 			w->in_openclose = false;
 			if (w->state == WSTATE_UNMAPPED) {
 				unmap_win_finish(ps, w);
@@ -1743,8 +1743,8 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			if (w == NULL) {
 				continue;
 			}
-			free(w->running_animation);
-			w->running_animation = NULL;
+			free(w->running_animation_instance);
+			w->running_animation_instance = NULL;
 			if (w->state == WSTATE_DESTROYED) {
 				win_destroy_finish(ps, w);
 			}
@@ -1999,7 +1999,7 @@ static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) 
 }
 
 static struct window_options win_options_from_config(const struct options *opts) {
-	return (struct window_options){
+	struct window_options ret = {
 	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
 	    .full_shadow = false,
 	    .shadow = opts->shadow_enable,
@@ -2014,6 +2014,8 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .unredir = WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE,
 	    .opacity = 1,
 	};
+	memcpy(ret.animations, opts->animations, sizeof(ret.animations));
+	return ret;
 }
 
 /**

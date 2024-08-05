@@ -257,9 +257,8 @@ struct win {
 	/// by `win_process_animation_and_state_change` to trigger appropriate
 	/// animations.
 	struct win_state_change previous;
-	struct script_instance *running_animation;
-	const int *running_animation_outputs;
-	uint64_t running_animation_suppressions;
+	struct script_instance *running_animation_instance;
+	struct win_script running_animation;
 };
 
 struct win_script_context {
@@ -316,12 +315,19 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
     .unredir = WINDOW_UNREDIR_INVALID,
 };
 
+static inline void win_script_fold(const struct win_script *upper,
+                                   const struct win_script *lower, struct win_script *output) {
+	for (size_t i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+		output[i] = upper[i].script ? upper[i] : lower[i];
+	}
+}
+
 /// Combine two window options. The `upper` value has higher priority, the `lower` value
 /// will only be used if the corresponding value in `upper` is not set (e.g. it is
 /// TRI_UNKNOWN for tristate values, NaN for opacity, -1 for corner_radius).
 static inline struct window_maybe_options __attribute__((always_inline))
 win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_options lower) {
-	return (struct window_maybe_options){
+	struct window_maybe_options ret = {
 	    .unredir = upper.unredir == WINDOW_UNREDIR_INVALID ? lower.unredir : upper.unredir,
 	    .blur_background = tri_or(upper.blur_background, lower.blur_background),
 	    .clip_shadow_above = tri_or(upper.clip_shadow_above, lower.clip_shadow_above),
@@ -335,6 +341,8 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .shader = upper.shader ? upper.shader : lower.shader,
 	    .corner_radius = upper.corner_radius >= 0 ? upper.corner_radius : lower.corner_radius,
 	};
+	win_script_fold(upper.animations, lower.animations, ret.animations);
+	return ret;
 }
 
 /// Unwrap a `window_maybe_options` to a `window_options`, using the default value for
@@ -342,7 +350,7 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 static inline struct window_options __attribute__((always_inline))
 win_maybe_options_or(struct window_maybe_options maybe, struct window_options def) {
 	assert(def.unredir != WINDOW_UNREDIR_INVALID);
-	return (struct window_options){
+	struct window_options ret = {
 	    .unredir = maybe.unredir == WINDOW_UNREDIR_INVALID ? def.unredir : maybe.unredir,
 	    .blur_background = tri_or_bool(maybe.blur_background, def.blur_background),
 	    .clip_shadow_above = tri_or_bool(maybe.clip_shadow_above, def.clip_shadow_above),
@@ -357,6 +365,8 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
 	    .shader = maybe.shader ? maybe.shader : def.shader,
 	};
+	win_script_fold(maybe.animations, def.animations, ret.animations);
+	return ret;
 }
 
 static inline struct window_options __attribute__((always_inline))
