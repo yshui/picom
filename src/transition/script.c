@@ -103,7 +103,7 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 char *instruction_to_c(struct instruction i) {
 	char *buf = NULL;
 	switch (i.type) {
-	case INST_IMM: casprintf(&buf, "{.type = INST_IMM, .imm = %f},", i.imm); break;
+	case INST_IMM: casprintf(&buf, "{.type = INST_IMM, .imm = %a},", i.imm); break;
 	case INST_BRANCH:
 		casprintf(&buf, "{.type = INST_BRANCH, .rel = %d},", i.rel);
 		break;

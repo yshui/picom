@@ -85,8 +85,8 @@ curve_sample_cubic_bezier(const struct curve_cubic_bezier *curve, double progres
 static char *curve_cubic_bezier_to_c(const struct curve_cubic_bezier *curve) {
 	char *buf = NULL;
 	casprintf(&buf,
-	          "{.type = CURVE_CUBIC_BEZIER, .bezier = { .ax = %f, .bx = %f, "
-	          ".cx = %f, .ay = %f, .by = %f, .cy = %f }},",
+	          "{.type = CURVE_CUBIC_BEZIER, .bezier = { .ax = %a, .bx = %a, "
+	          ".cx = %a, .ay = %a, .by = %a, .cy = %a }},",
 	          curve->ax, curve->bx, curve->cx, curve->ay, curve->by, curve->cy);
 	return buf;
 }
