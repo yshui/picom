@@ -64,7 +64,7 @@ struct instruction {
 		/// Relative PC change for branching
 		int rel;
 		/// The curve
-		const struct curve *curve;
+		struct curve curve;
 	};
 };
 
@@ -479,20 +479,20 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
                    struct script_compile_context *ctx, unsigned slot, char **out_err) {
 	int boolean = 0;
 	double number = 0;
-	const struct curve *curve;
+	struct curve curve;
 	bool reset = false;
 	char *err = NULL;
 	const char *str = NULL;
 	if (config_setting_lookup_string(setting, "curve", &str)) {
 		curve = curve_parse(str, &str, &err);
-		if (!curve) {
+		if (curve.type == CURVE_INVALID) {
 			asprintf(out_err, "Cannot parse curve at line %d: %s",
 			         config_setting_source_line(setting), err);
 			free(err);
 			return false;
 		}
 	} else {
-		curve = curve_new_linear();
+		curve = CURVE_LINEAR_INIT;
 	}
 
 	if (config_setting_lookup_bool(setting, "reset", &boolean)) {
@@ -728,10 +728,7 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 	return true;
 }
 
-static void instruction_deinit(struct instruction *instr) {
-	if (instr->type == INST_CURVE) {
-		instr->curve->free(instr->curve);
-	}
+static void instruction_deinit(struct instruction * /*instr*/) {
 }
 
 static void fragment_free(struct fragment *frag) {
@@ -1184,7 +1181,7 @@ script_instance_evaluate(struct script_instance *instance, void *context) {
 			BUG_ON(top < 1);
 			l = stack[top - 1];
 			l = min2(max2(0, l), 1);
-			stack[top - 1] = i->curve->sample(i->curve, l);
+			stack[top - 1] = curve_sample(&i->curve, l);
 			break;
 		}
 		if (top && safe_isnan(stack[top - 1])) {
