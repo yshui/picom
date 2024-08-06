@@ -1712,14 +1712,22 @@ c2_match_once_leaf_string(struct atom *atoms, const struct win *w, const c2_l_t 
 	// A predefined target
 	const char *predef_target = NULL;
 	if (leaf->predef != C2_L_PUNDEFINED) {
+		if (leaf->predef == C2_L_PWINDOWTYPE) {
+			for (unsigned i = 0; i < NUM_WINTYPES; i++) {
+				if (w->window_types & (1 << i) &&
+				    c2_string_op(leaf, WINTYPES[i].name)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		switch (leaf->predef) {
-		case C2_L_PWINDOWTYPE:
-			predef_target = WINTYPES[w->window_type].name;
-			break;
 		case C2_L_PNAME: predef_target = w->name; break;
 		case C2_L_PCLASSG: predef_target = w->class_general; break;
 		case C2_L_PCLASSI: predef_target = w->class_instance; break;
 		case C2_L_PROLE: predef_target = w->role; break;
+		case C2_L_PWINDOWTYPE:
 		default: unreachable();
 		}
 		if (!predef_target) {

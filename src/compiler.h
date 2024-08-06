@@ -118,6 +118,10 @@
 # define __has_include(x) 0
 #endif
 
+#ifndef __has_builtin
+# define __has_builtin(x) 0
+#endif
+
 #if !defined(__STDC_NO_THREADS__) && __has_include(<threads.h>)
 # include <threads.h>
 #elif __STDC_VERSION__ >= 201112L
@@ -136,4 +140,20 @@ typedef unsigned int uint;
 
 static inline int attr_const popcntul(unsigned long a) {
 	return __builtin_popcountl(a);
+}
+
+/// Get the index of the lowest bit set in a number. The result is undefined if
+/// `a` is 0.
+static inline int attr_const index_of_lowest_one(unsigned a) {
+#if __has_builtin(__builtin_ctz)
+	return __builtin_ctz(a);
+#else
+	auto lowbit = (a & -a);
+	int r = (lowbit & 0xAAAAAAAA) != 0;
+	r |= ((lowbit & 0xCCCCCCCC) != 0) << 1;
+	r |= ((lowbit & 0xF0F0F0F0) != 0) << 2;
+	r |= ((lowbit & 0xFF00FF00) != 0) << 3;
+	r |= ((lowbit & 0xFFFF0000) != 0) << 4;
+	return r;
+#endif
 }
