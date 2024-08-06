@@ -605,12 +605,32 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 
 	append(Mapped, bool_variant, w->state == WSTATE_MAPPED);
 	append(Id, wid_variant, win_id(w));
-	append(Type, string_variant, WINTYPES[w->window_type].name);
 	append(RawFocused, bool_variant,
 	       w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_focused);
 	append(ClientWin, wid_variant, win_client_id(w, /*fallback_to_self=*/true));
 	append(Leader, wid_variant, wm_ref_win_id(wm_ref_leader(w->tree_ref)));
 	append_win_property(Name, name, string_variant);
+
+	if (!strcmp("Type", target)) {
+		DBusMessageIter iter, sub;
+		dbus_message_iter_init_append(reply, &iter);
+		if (!dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "s", &sub)) {
+			return DBUS_HANDLER_RESULT_NEED_MEMORY;
+		}
+		for (int i = 0; i < NUM_WINTYPES; i++) {
+			if ((w->window_types & (1 << i)) == 0) {
+				continue;
+			}
+			if (!dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING,
+			                                    &WINTYPES[i].name)) {
+				return DBUS_HANDLER_RESULT_NEED_MEMORY;
+			}
+		}
+		if (!dbus_message_iter_close_container(&iter, &sub)) {
+			return DBUS_HANDLER_RESULT_NEED_MEMORY;
+		}
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
 
 	if (!strcmp("Next", target)) {
 		cdbus_window_t next_id = 0;
@@ -736,7 +756,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	append_win_property(mode, enum);
 	append_win_property(opacity, double);
 	append_win_property(ever_damaged, boolean);
-	append_win_property(window_type, enum);
+	append_win_property(window_types, enum);
 	append_win_property(name, string);
 	append_win_property(class_instance, string);
 	append_win_property(class_general, string);
@@ -1188,7 +1208,7 @@ static bool cdbus_process_window_introspect(DBusMessage *reply) {
 	    "    <property type='b' name='RawFocused' access='read'/>\n"
 	    "    <property type='b' name='Mapped' access='read'/>\n"
 	    "    <property type='s' name='Name' access='read'/>\n"
-	    "    <property type='s' name='Type' access='read'/>\n"
+	    "    <property type='as' name='Type' access='read'/>\n"
 	    "  </interface>\n"
 	    "</node>\n";
 	// clang-format on

@@ -414,7 +414,7 @@ Supported predefined targets are: :::
 	Whether the window bounding shape only has rounded corners, and is otherwise rectangular. This implies <<c2-bounding-shaped>>. Requires <<detect-rounded-corners>>. This has no relation to <<corner-radius>>.
 
   `window_type`::::
-	Window type, as defined by _pass:[_]NET_WM_WINDOW_TYPE_. Name only, e.g. _normal_ means _pass:[_]NET_WM_WINDOW_TYPE_NORMAL_.
+	Window type, as defined by _pass:[_]NET_WM_WINDOW_TYPE_. Name only, e.g. _normal_ means _pass:[_]NET_WM_WINDOW_TYPE_NORMAL_. Because a window can have multiple types, testing for equality succeeds if any of the window's types match.
 
   `name`::::
 	Name of the window. This is either _pass:[_]NET_WM_NAME_ or _pass:[_]WM_NAME_.
@@ -538,7 +538,7 @@ When `@include` directive is used in the config file, picom will first search fo
 
 picom uses general libconfig configuration file format. A sample configuration file is available as `picom.sample.conf` in the source tree. Most of command line switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
 
-Window-type-specific settings allow you to set window-specific options based on the window type. These settings are exposed only in configuration file. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific options. The format of this option is as follows:
+Window-type-specific settings allow you to set window-specific options based on the window type. These settings are exposed only in configuration file. The format of this option is as follows:
 
 [#wintypes]
 ------------
@@ -547,6 +547,10 @@ wintypes:
   WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; blur-background = BOOL; full-shadow = BOOL; clip-shadow-above = BOOL; redir-ignore = BOOL; };
 };
 ------------
+
+WARNING: Using this is highly discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific options.
+
+IMPORTANT: According to the window manager specification, a window can have multiple types. But due to the limitation of how _wintypes_ was implemented, if a window has multiple types, then for the purpose of applying `wintypes` options, one of the window types will be chosen at random. Again, you are recommended to use xref:_window_rules[*WINDOW RULES*] instead.
 
 _WINDOW_TYPE_ is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notification", "combo", and "dnd".
 

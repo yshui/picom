@@ -36,6 +36,7 @@
 * Type and format specifiers are no longer used in rules. These specifiers are what you put after the colon (':') in rules, e.g. the `:32c` in `"_GTK_FRAME_EXTENTS@:32c"`. Now this information is ignored and the property is matched regardless of format or type.
 * `backend` is now a required option. picom will not start if one is not specified explicitly.
 * New predefined target for conditions: `group_focused`. This target indicate whether the focused window is in the same window group as the window being matched.
+* Meaning of `window_type` in conditions changed slightly, now it supports windows with multiple types. (However the behavior of `wintypes` remains unchanged.)
 
 ## Deprecated features
 

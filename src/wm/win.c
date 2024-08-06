@@ -105,7 +105,7 @@ static bool win_is_focused(session_t *ps, struct win *w) {
 	}
 	// Use wintype_focus, and treat WM windows and override-redirected
 	// windows specially
-	if (ps->o.wintype_option[w->window_type].focus ||
+	if (ps->o.wintype_option[index_of_lowest_one(w->window_types)].focus ||
 	    (ps->o.mark_wmwin_focused && is_wmwin) ||
 	    (ps->o.mark_ovredir_focused && wm_ref_client_of(w->tree_ref) == NULL && !is_wmwin) ||
 	    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
@@ -655,24 +655,26 @@ static inline bool win_bounding_shaped(struct x_connection *c, xcb_window_t wid)
 	return bounding_shaped;
 }
 
-static wintype_t
-wid_get_prop_wintype(struct x_connection *c, struct atom *atoms, xcb_window_t wid) {
+static uint32_t
+wid_get_prop_window_types(struct x_connection *c, struct atom *atoms, xcb_window_t wid) {
 	winprop_t prop =
 	    x_get_prop(c, wid, atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
 
+	static_assert(NUM_WINTYPES <= 32, "too many window types");
+
+	uint32_t ret = 0;
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
-			if (get_atom_with_nul(atoms, WINTYPES[j].atom, c->c) ==
-			    (xcb_atom_t)prop.p32[i]) {
-				free_winprop(&prop);
-				return j;
+			if (get_atom_with_nul(atoms, WINTYPES[j].atom, c->c) == prop.atom[i]) {
+				ret |= (1 << j);
+				break;
 			}
 		}
 	}
 
 	free_winprop(&prop);
 
-	return WINTYPE_UNKNOWN;
+	return ret;
 }
 
 // XXX should distinguish between frame has alpha and window body has alpha
@@ -745,12 +747,13 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w, bool f
 		return 0;
 	}
 	// Try obeying opacity property and window type opacity firstly
+	auto window_type = index_of_lowest_one(w->window_types);
 	if (w->has_opacity_prop) {
 		opacity = ((double)w->opacity_prop) / OPAQUE;
 	} else if (!safe_isnan(w->options.opacity)) {
 		opacity = w->options.opacity;
-	} else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity)) {
-		opacity = ps->o.wintype_option[w->window_type].opacity;
+	} else if (!safe_isnan(ps->o.wintype_option[window_type].opacity)) {
+		opacity = ps->o.wintype_option[window_type].opacity;
 	} else {
 		// Respect active_opacity only when the window is physically
 		// focused
@@ -840,7 +843,7 @@ static void win_determine_shadow(session_t *ps, struct win *w) {
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
 	}
-	if (!ps->o.wintype_option[w->window_type].shadow) {
+	if (!ps->o.wintype_option[index_of_lowest_one(w->window_types)].shadow) {
 		log_debug("Shadow disabled by wintypes");
 		w->options.shadow = TRI_FALSE;
 	} else if (c2_match(ps->c2_state, w, ps->o.shadow_blacklist, NULL)) {
@@ -887,8 +890,9 @@ bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms
 }
 
 static void win_determine_clip_shadow_above(session_t *ps, struct win *w) {
-	bool should_crop = (ps->o.wintype_option[w->window_type].clip_shadow_above ||
-	                    c2_match(ps->c2_state, w, ps->o.shadow_clip_list, NULL));
+	bool should_crop =
+	    (ps->o.wintype_option[index_of_lowest_one(w->window_types)].clip_shadow_above ||
+	     c2_match(ps->c2_state, w, ps->o.shadow_clip_list, NULL));
 	w->options.clip_shadow_above = should_crop ? TRI_TRUE : TRI_UNKNOWN;
 }
 
@@ -918,7 +922,7 @@ static void win_determine_blur_background(session_t *ps, struct win *w) {
 
 	bool blur_background_new = ps->o.blur_method != BLUR_METHOD_NONE;
 	if (blur_background_new) {
-		if (!ps->o.wintype_option[w->window_type].blur_background) {
+		if (!ps->o.wintype_option[index_of_lowest_one(w->window_types)].blur_background) {
 			log_debug("Blur background disabled by wintypes");
 			w->options.blur_background = TRI_FALSE;
 		} else if (c2_match(ps->c2_state, w, ps->o.blur_background_blacklist, NULL)) {
@@ -1029,8 +1033,10 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	// on the focused state of the window
 	win_update_is_fullscreen(ps, w);
 
+	assert(w->window_types != 0);
 	if (ps->o.rules == NULL) {
 		bool focused = win_is_focused(ps, w);
+		auto window_type = index_of_lowest_one(w->window_types);
 		// Universal rules take precedence over wintype_option and
 		// other exclusion/inclusion lists. And it also supersedes
 		// some of the "override" options.
@@ -1056,7 +1062,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 		}
 		if (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
 		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL)) {
-			if (ps->o.wintype_option[w->window_type].redir_ignore) {
+			if (ps->o.wintype_option[window_type].redir_ignore) {
 				w->options.unredir = WINDOW_UNREDIR_PASSIVE;
 			} else {
 				w->options.unredir = WINDOW_UNREDIR_TERMINATE;
@@ -1067,7 +1073,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 			// look different after unredirecting. Instead we always follow
 			// the request.
 			w->options.unredir = WINDOW_UNREDIR_FORCED;
-		} else if (ps->o.wintype_option[w->window_type].redir_ignore) {
+		} else if (ps->o.wintype_option[window_type].redir_ignore) {
 			w->options.unredir = WINDOW_UNREDIR_WHEN_POSSIBLE;
 		}
 
@@ -1078,7 +1084,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 			w->options.transparent_clipping = TRI_FALSE;
 		}
 		w->options.full_shadow =
-		    tri_from_bool(ps->o.wintype_option[w->window_type].full_shadow);
+		    tri_from_bool(ps->o.wintype_option[window_type].full_shadow);
 	} else {
 		struct win_update_rule_params params = {
 		    .w = w,
@@ -1136,27 +1142,27 @@ void win_on_win_size_change(struct win *w, int shadow_offset_x, int shadow_offse
  * Update window type.
  */
 bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct win *w) {
-	const wintype_t wtype_old = w->window_type;
+	const uint32_t wtypes_old = w->window_types;
 	auto wid = win_client_id(w, /*fallback_to_self=*/true);
 
 	// Detect window type here
-	w->window_type = wid_get_prop_wintype(c, atoms, wid);
+	w->window_types = wid_get_prop_window_types(c, atoms, wid);
 
 	// Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
 	// override-redirect windows or windows without WM_TRANSIENT_FOR as
 	// _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
-	if (WINTYPE_UNKNOWN == w->window_type) {
+	if (w->window_types == 0) {
 		if (w->a.override_redirect ||
 		    !wid_has_prop(c->c, wid, atoms->aWM_TRANSIENT_FOR)) {
-			w->window_type = WINTYPE_NORMAL;
+			w->window_types = (1 << WINTYPE_NORMAL);
 		} else {
-			w->window_type = WINTYPE_DIALOG;
+			w->window_types = (1 << WINTYPE_DIALOG);
 		}
 	}
 
-	log_debug("Window (%#010x) has type %s", win_id(w), WINTYPES[w->window_type].name);
+	log_debug("Window (%#010x) has type %#x", win_id(w), w->window_types);
 
-	return w->window_type != wtype_old;
+	return w->window_types != wtypes_old;
 }
 
 /**
@@ -1253,7 +1259,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	                                 // change
 
 	    .mode = WMODE_TRANS,
-	    .window_type = WINTYPE_UNKNOWN,
 	    .opacity_prop = OPAQUE,
 	    .opacity_set = 1,
 	    .frame_extents = MARGIN_INIT,

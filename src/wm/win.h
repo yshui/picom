@@ -165,8 +165,9 @@ struct win {
 	bool in_openclose;
 
 	// Client window related members
-	/// Type of the window.
-	wintype_t window_type;
+	/// A bitflag of window types. According to ICCCM, a window can have more than one
+	/// type.
+	uint32_t window_types;
 
 	// Blacklist related members
 	/// Name of the window.
