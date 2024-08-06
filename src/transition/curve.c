@@ -15,46 +15,30 @@ static double curve_sample_linear(const struct curve *this attr_unused, double p
 	return progress;
 }
 
-static void noop_free(const struct curve *this attr_unused) {
+static char *curve_linear_to_c(const struct curve * /*this*/) {
+	return strdup("{.type = CURVE_LINEAR},");
 }
 
-static void trivial_free(const struct curve *this) {
-	free((void *)this);
-}
+// Cubic bezier interpolator.
+//
+// Stolen from servo:
+// https://searchfox.org/mozilla-central/rev/5da2d56d12/servo/components/style/bezier.rs
 
-static const struct curve static_linear_curve = {
-    .sample = curve_sample_linear,
-    .free = noop_free,
-};
-const struct curve *curve_new_linear(void) {
-	return &static_linear_curve;
-}
-
-/// Cubic bezier interpolator.
-///
-/// Stolen from servo:
-/// https://searchfox.org/mozilla-central/rev/5da2d56d12/servo/components/style/bezier.rs
-struct cubic_bezier_curve {
-	struct curve base;
-	double ax, bx, cx;
-	double ay, by, cy;
-};
-
-static inline double cubic_bezier_sample_x(const struct cubic_bezier_curve *self, double t) {
+static inline double cubic_bezier_sample_x(const struct curve_cubic_bezier *self, double t) {
 	return ((self->ax * t + self->bx) * t + self->cx) * t;
 }
 
-static inline double cubic_bezier_sample_y(const struct cubic_bezier_curve *self, double t) {
+static inline double cubic_bezier_sample_y(const struct curve_cubic_bezier *self, double t) {
 	return ((self->ay * t + self->by) * t + self->cy) * t;
 }
 
 static inline double
-cubic_bezier_sample_derivative_x(const struct cubic_bezier_curve *self, double t) {
+cubic_bezier_sample_derivative_x(const struct curve_cubic_bezier *self, double t) {
 	return (3.0 * self->ax * t + 2.0 * self->bx) * t + self->cx;
 }
 
 // Solve for the `t` in cubic bezier function that corresponds to `x`
-static inline double cubic_bezier_solve_x(const struct cubic_bezier_curve *this, double x) {
+static inline double cubic_bezier_solve_x(const struct curve_cubic_bezier *this, double x) {
 	static const int NEWTON_METHOD_ITERATIONS = 8;
 	double t = x;
 	// Fast path: try Newton's method.
@@ -88,47 +72,26 @@ static inline double cubic_bezier_solve_x(const struct cubic_bezier_curve *this,
 	return t;
 }
 
-static double curve_sample_cubic_bezier(const struct curve *base, double progress) {
-	auto this = (struct cubic_bezier_curve *)base;
+static double
+curve_sample_cubic_bezier(const struct curve_cubic_bezier *curve, double progress) {
 	assert(progress >= 0 && progress <= 1);
 	if (progress == 0 || progress == 1) {
 		return progress;
 	}
-	double t = cubic_bezier_solve_x(this, progress);
-	return cubic_bezier_sample_y(this, t);
+	double t = cubic_bezier_solve_x(curve, progress);
+	return cubic_bezier_sample_y(curve, t);
 }
 
-const struct curve *curve_new_cubic_bezier(double x1, double y1, double x2, double y2) {
-	if (x1 == y1 && x2 == y2) {
-		return curve_new_linear();
-	}
-
-	assert(x1 >= 0 && x1 <= 1 && x2 >= 0 && x2 <= 1);
-	auto ret = ccalloc(1, struct cubic_bezier_curve);
-	ret->base.sample = curve_sample_cubic_bezier;
-	ret->base.free = trivial_free;
-
-	double cx = 3. * x1;
-	double bx = 3. * (x2 - x1) - cx;
-	double cy = 3. * y1;
-	double by = 3. * (y2 - y1) - cy;
-	ret->ax = 1. - cx - bx;
-	ret->bx = bx;
-	ret->cx = cx;
-	ret->ay = 1. - cy - by;
-	ret->by = by;
-	ret->cy = cy;
-	return &ret->base;
+static char *curve_cubic_bezier_to_c(const struct curve_cubic_bezier *curve) {
+	char *buf = NULL;
+	casprintf(&buf,
+	          "{.type = CURVE_CUBIC_BEZIER, .bezier = { .ax = %a, .bx = %a, "
+	          ".cx = %a, .ay = %a, .by = %a, .cy = %a }},",
+	          curve->ax, curve->bx, curve->cx, curve->ay, curve->by, curve->cy);
+	return buf;
 }
 
-struct step_curve {
-	struct curve base;
-	int steps;
-	bool jump_start, jump_end;
-};
-
-static double curve_sample_step(const struct curve *base, double progress) {
-	auto this = (struct step_curve *)base;
+static double curve_sample_step(const struct curve_step *this, double progress) {
 	double y_steps = this->steps - 1 + this->jump_end + this->jump_start,
 	       x_steps = this->steps;
 	if (progress == 1) {
@@ -143,29 +106,28 @@ static double curve_sample_step(const struct curve *base, double progress) {
 	return quantized / y_steps;
 }
 
-const struct curve *curve_new_step(int steps, bool jump_start, bool jump_end) {
-	assert(steps > 0);
-	auto ret = ccalloc(1, struct step_curve);
-	ret->base.sample = curve_sample_step;
-	ret->base.free = trivial_free;
-	ret->steps = steps;
-	ret->jump_start = jump_start;
-	ret->jump_end = jump_end;
-	return &ret->base;
+static char *curve_step_to_c(const struct curve_step *this) {
+	char *buf = NULL;
+	casprintf(&buf,
+	          "{.type = CURVE_STEP, .step = { .steps = %d, .jump_start = %s, "
+	          ".jump_end = %s }},",
+	          this->steps, this->jump_start ? "true" : "false",
+	          this->jump_end ? "true" : "false");
+	return buf;
 }
 
-const struct curve *parse_linear(const char *str, const char **end, char **err) {
+struct curve parse_linear(const char *str, const char **end, char **err) {
 	*end = str;
 	*err = NULL;
-	return &static_linear_curve;
+	return CURVE_LINEAR_INIT;
 }
 
-const struct curve *parse_steps(const char *input_str, const char **out_end, char **err) {
+struct curve parse_steps(const char *input_str, const char **out_end, char **err) {
 	const char *str = input_str;
 	*err = NULL;
 	if (*str != '(') {
 		asprintf(err, "Invalid steps %s.", str);
-		return NULL;
+		return CURVE_INVALID_INIT;
 	}
 	str += 1;
 	str = skip_space(str);
@@ -173,12 +135,12 @@ const struct curve *parse_steps(const char *input_str, const char **out_end, cha
 	auto steps = strtol(str, &end, 10);
 	if (end == str || steps > INT_MAX) {
 		asprintf(err, "Invalid step count at \"%s\".", str);
-		return NULL;
+		return CURVE_INVALID_INIT;
 	}
 	str = skip_space(end);
 	if (*str != ',') {
 		asprintf(err, "Invalid steps argument list \"%s\".", input_str);
-		return NULL;
+		return CURVE_INVALID_INIT;
 	}
 	str = skip_space(str + 1);
 	bool jump_start =
@@ -187,25 +149,24 @@ const struct curve *parse_steps(const char *input_str, const char **out_end, cha
 	    starts_with(str, "jump-end", true) || starts_with(str, "jump-both", true);
 	if (!jump_start && !jump_end && !starts_with(str, "jump-none", true)) {
 		asprintf(err, "Invalid jump setting for steps \"%s\".", str);
-		return NULL;
+		return CURVE_INVALID_INIT;
 	}
 	str += jump_start ? (jump_end ? 9 : 10) : (jump_end ? 8 : 9);
 	str = skip_space(str);
 	if (*str != ')') {
 		asprintf(err, "Invalid steps argument list \"%s\".", input_str);
-		return NULL;
+		return CURVE_INVALID_INIT;
 	}
 	*out_end = str + 1;
 	return curve_new_step((int)steps, jump_start, jump_end);
 }
 
-const struct curve *
-parse_cubic_bezier(const char *input_str, const char **out_end, char **err) {
+struct curve parse_cubic_bezier(const char *input_str, const char **out_end, char **err) {
 	double numbers[4];
 	const char *str = input_str;
 	if (*str != '(') {
 		asprintf(err, "Invalid cubic-bazier %s.", str);
-		return NULL;
+		return CURVE_INVALID_INIT;
 	}
 	str += 1;
 	for (int i = 0; i < 4; i++) {
@@ -215,13 +176,13 @@ parse_cubic_bezier(const char *input_str, const char **out_end, char **err) {
 		numbers[i] = strtod_simple(str, &end);
 		if (end == str) {
 			asprintf(err, "Invalid number %s.", str);
-			return NULL;
+			return CURVE_INVALID_INIT;
 		}
 		str = skip_space(end);
 		const char expected = i == 3 ? ')' : ',';
 		if (*str != expected) {
 			asprintf(err, "Invalid cubic-bazier argument list %s.", input_str);
-			return NULL;
+			return CURVE_INVALID_INIT;
 		}
 		str += 1;
 	}
@@ -229,7 +190,7 @@ parse_cubic_bezier(const char *input_str, const char **out_end, char **err) {
 	return curve_new_cubic_bezier(numbers[0], numbers[1], numbers[2], numbers[3]);
 }
 
-typedef const struct curve *(*curve_parser)(const char *str, const char **end, char **err);
+typedef struct curve (*curve_parser)(const char *str, const char **end, char **err);
 
 static const struct {
 	curve_parser parse;
@@ -240,7 +201,7 @@ static const struct {
     {parse_steps, "steps"},
 };
 
-const struct curve *curve_parse(const char *str, const char **end, char **err) {
+struct curve curve_parse(const char *str, const char **end, char **err) {
 	str = skip_space(str);
 	for (size_t i = 0; i < ARR_SIZE(curve_parsers); i++) {
 		auto name_len = strlen(curve_parsers[i].name);
@@ -249,5 +210,26 @@ const struct curve *curve_parse(const char *str, const char **end, char **err) {
 		}
 	}
 	asprintf(err, "Unknown curve type \"%s\".", str);
-	return NULL;
+	return CURVE_INVALID_INIT;
+}
+
+double curve_sample(const struct curve *curve, double progress) {
+	switch (curve->type) {
+	case CURVE_LINEAR: return curve_sample_linear(curve, progress);
+	case CURVE_STEP: return curve_sample_step(&curve->step, progress);
+	case CURVE_CUBIC_BEZIER:
+		return curve_sample_cubic_bezier(&curve->bezier, progress);
+	case CURVE_INVALID:
+	default: unreachable();
+	}
+}
+
+char *curve_to_c(const struct curve *curve) {
+	switch (curve->type) {
+	case CURVE_LINEAR: return curve_linear_to_c(curve);
+	case CURVE_STEP: return curve_step_to_c(&curve->step);
+	case CURVE_CUBIC_BEZIER: return curve_cubic_bezier_to_c(&curve->bezier);
+	case CURVE_INVALID:
+	default: unreachable();
+	}
 }

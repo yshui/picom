@@ -72,7 +72,7 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_free(arr, dtor)                                                           \
 	do {                                                                             \
 		dynarr_clear(arr, dtor);                                                 \
-		free((struct dynarr_header *)(arr)-1);                                   \
+		free((struct dynarr_header *)(arr) - 1);                                 \
 		(arr) = NULL;                                                            \
 	} while (0)
 #define dynarr_free_pod(arr) dynarr_free(arr, (void (*)(typeof(arr)))NULL)
@@ -86,7 +86,7 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_resize(arr, newlen, init, dtor)                                           \
 	do {                                                                             \
 		BUG_ON((arr) == NULL);                                                   \
-		dynarr_reserve((arr), (newlen)-dynarr_len(arr));                         \
+		dynarr_reserve((arr), (newlen) - dynarr_len(arr));                       \
 		if ((init) != NULL) {                                                    \
 			for (size_t i = dynarr_len(arr); i < (newlen); i++) {            \
 				(init)((arr) + i);                                       \
@@ -121,9 +121,9 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_remove_swap(arr, idx)                                                     \
 	dynarr_remove_swap_impl(sizeof(typeof(*(arr))), (void *)(arr), idx)
 /// Return the length of the array
-#define dynarr_len(arr) (((struct dynarr_header *)(arr)-1)->len)
+#define dynarr_len(arr) (((struct dynarr_header *)(arr) - 1)->len)
 /// Return the capacity of the array
-#define dynarr_cap(arr) (((struct dynarr_header *)(arr)-1)->cap)
+#define dynarr_cap(arr) (((struct dynarr_header *)(arr) - 1)->cap)
 /// Return the last element of the array
 #define dynarr_last(arr) ((arr)[dynarr_len(arr) - 1])
 /// Return the pointer just past the last element of the array
@@ -183,3 +183,7 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 		}                                                                        \
 		dynarr_find_ret;                                                         \
 	})
+
+/// Concatenate a dynarr of strings into a single string, separated by `sep`. The array
+/// will be freed by this function.
+char *dynarr_join(char **arr, const char *sep);

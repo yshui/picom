@@ -7,69 +7,18 @@
 #include <libconfig.h>
 #include <uthash.h>
 
+#include "utils/dynarr.h"
 #include "utils/list.h"
 #include "utils/str.h"
 #include "utils/uthash_extra.h"
 
 #include "curve.h"
 #include "script.h"
+#include "script_internal.h"
 
-enum op {
-	OP_ADD = 0,
-	OP_SUB,
-	OP_MUL,
-	OP_DIV,
-	/// Exponent
-	OP_EXP,
-	/// Negation
-	OP_NEG,
-};
-
-enum instruction_type {
-	/// Push an immediate value to the top of the stack
-	INST_IMM = 0,
-	/// Pop two values from the top of the stack, apply operator,
-	/// and push the result to the top of the stack
-	INST_OP,
-	/// Load a memory slot and push its value to the top of the stack.
-	INST_LOAD,
-	/// Load from evaluation context and push the value to the top of the stack.
-	INST_LOAD_CTX,
-	/// Pop one value from the top of the stack, and store it into a memory slot.
-	INST_STORE,
-	/// Pop one value from the top of the stack, if the memory slot contains NaN,
-	/// store it into the memory slot; otherwise discard the value.
-	INST_STORE_OVER_NAN,
-	/// Evaluate a curve at the given point of elapsed time, push the result to
-	/// the top of the stack.
-	INST_CURVE,
-	/// Jump to the branch target only when the script is evaluated for the first
-	/// time. Used to perform initialization and such.
-	INST_BRANCH_ONCE,
-	/// Unconditional branch
-	INST_BRANCH,
-	INST_HALT,
-};
-
-struct instruction {
-	enum instruction_type type;
-	union {
-		double imm;
-		enum op op;
-		/// Memory slot for load and store
-		unsigned slot;
-		/// Context offset for load_ctx
-		ptrdiff_t ctx;
-		/// Relative PC change for branching
-		int rel;
-		/// The curve
-		struct {
-			const struct curve *curve;
-			double duration;
-			double delay;
-		};
-	};
-};
+#define X(x) [x] = #x,
+static const char *op_names[] = {OPERATORS};
+#undef X
 
 struct fragment {
 	struct list_node siblings;
@@ -104,50 +53,15 @@ struct compilation_stack {
 	unsigned deps[];
 };
 
-enum variable_type {
-	VAR_TYPE_TRANSITION,
-	VAR_TYPE_IMM,
-	VAR_TYPE_EXPR,
-};
-
-/// Store metadata about where the result of a variable is stored
-struct variable_allocation {
-	UT_hash_handle hh;
-	char *name;
-	unsigned index;
-	/// The memory slot for variable named `name`
-	unsigned slot;
-};
-
-/// When interrupting an already executing script and starting a new script,
-/// we might want to inherit some of the existing values of variables as starting points,
-/// i.e. we want to "resume" animation for the current state. This is configurable, and
-/// can be disabled by enabling the `reset` property on a transition. This struct store
-/// where the `start` variables of those "resumable" transition variables, which can be
-/// overridden at the start of execution for this use case.
-struct overridable_slot {
-	UT_hash_handle hh;
-	char *name;
-	unsigned slot;
-};
-
-struct script {
-	unsigned len;
-	unsigned nslots;
-	unsigned stack_size;
-	double max_duration;
-	struct variable_allocation *vars;
-	struct overridable_slot *overrides;
-	struct instruction instrs[];
-};
-
 struct script_compile_context {
 	struct script_context_info_internal *context_info;
 	struct variable_allocation *vars;
 	struct overridable_slot *overrides;
+	/// The memory slot for storing the elapsed time.
+	/// The next slot after this is used for storing the total duration of the script.
+	unsigned elapsed_slot;
 	unsigned allocated_slots;
 	unsigned max_stack;
-	double max_duration;
 	const char *current_variable_name;
 	int *compiled;
 	struct list_node all_fragments;
@@ -175,7 +89,7 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 	case INST_BRANCH_ONCE: logv("br_once %d", inst->rel); break;
 	case INST_HALT: log_printf(tls_logger, level, func, "%u: halt", index); break;
 	case INST_CURVE: log_printf(tls_logger, level, func, "%u: curve", index); break;
-	case INST_OP: logv("op %d (%c)", inst->op, operators[inst->op]); break;
+	case INST_OP: logv("op %s", op_names[inst->op]); break;
 	case INST_LOAD: logv("load %u", inst->slot); break;
 	case INST_STORE: logv("store %u", inst->slot); break;
 	case INST_STORE_OVER_NAN: logv("store/nan %u", inst->slot); break;
@@ -186,78 +100,39 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 #define log_instruction(level, i, inst)                                                  \
 	log_instruction_(LOG_LEVEL_##level, __func__, i, &(inst))
 
-static double parse_time_unit(const char *str, const char **end) {
-	if (strncasecmp(str, "s", 1) == 0) {
-		*end = str + 1;
-		return 1;
+char *instruction_to_c(struct instruction i) {
+	char *buf = NULL;
+	switch (i.type) {
+	case INST_IMM: casprintf(&buf, "{.type = INST_IMM, .imm = %a},", i.imm); break;
+	case INST_BRANCH:
+		casprintf(&buf, "{.type = INST_BRANCH, .rel = %d},", i.rel);
+		break;
+	case INST_BRANCH_ONCE:
+		casprintf(&buf, "{.type = INST_BRANCH_ONCE, .rel = %d},", i.rel);
+		break;
+	case INST_HALT: casprintf(&buf, "{.type = INST_HALT},"); break;
+	case INST_CURVE:;
+		char *curve = curve_to_c(&i.curve);
+		casprintf(&buf, "{.type = INST_CURVE, .curve = %s},", curve);
+		free(curve);
+		break;
+	case INST_OP:
+		casprintf(&buf, "{.type = INST_OP, .op = %s},", op_names[i.op]);
+		break;
+	case INST_LOAD:
+		casprintf(&buf, "{.type = INST_LOAD, .slot = %u},", i.slot);
+		break;
+	case INST_STORE:
+		casprintf(&buf, "{.type = INST_STORE, .slot = %u},", i.slot);
+		break;
+	case INST_STORE_OVER_NAN:
+		casprintf(&buf, "{.type = INST_STORE_OVER_NAN, .slot = %u},", i.slot);
+		break;
+	case INST_LOAD_CTX:
+		casprintf(&buf, "{.type = INST_LOAD_CTX, .ctx = %ld},", i.ctx);
+		break;
 	}
-	if (strncasecmp(str, "ms", 2) == 0) {
-		*end = str + 2;
-		return 1e-3;
-	}
-	return NAN;
-}
-
-static double parse_duration(const char *input_str, const char **end, char **err) {
-	const char *str = input_str;
-	double number = strtod_simple(str, end);
-	if (*end == str) {
-		asprintf(err, "Invalid curve definition \"%s\".", input_str);
-		return NAN;
-	}
-	str = *end;
-	double unit = parse_time_unit(str, end);
-	if (*end == str) {
-		asprintf(err, "Invalid curve definition \"%s\" (invalid time unit at \"%s\").",
-		         input_str, str);
-		*end = input_str;
-		return NAN;
-	}
-	return number * unit;
-}
-
-/// Parse a timing function.
-///
-/// Syntax for this is the same as CSS transitions:
-///    <duration> <timing-function> <delay>
-/// Examples:
-///    1s cubic-bezier(0.1, 0.2, 0.3, 0.4) 0.4s
-///    2s steps(5, jump-end)
-static const struct curve *
-parse_timing_function(const char *input_str, double *duration, double *delay, char **err) {
-	const char *str = skip_space(input_str);
-	const char *end = NULL;
-	*duration = parse_duration(str, &end, err);
-	if (str == end) {
-		return NULL;
-	}
-
-	if (*duration == 0) {
-		asprintf(err, "Timing function cannot have a zero duration.");
-		return NULL;
-	}
-
-	*delay = 0;
-	str = skip_space(end);
-	if (!*str) {
-		return curve_new_linear();
-	}
-
-	auto curve = curve_parse(str, &end, err);
-	if (!curve) {
-		return NULL;
-	}
-
-	str = skip_space(end);
-	if (!*str) {
-		return curve;
-	}
-	*delay = parse_duration(str, &end, err);
-	if (str == end) {
-		curve->free(curve);
-		return NULL;
-	}
-	return curve;
+	return buf;
 }
 
 static char parse_op(const char *input_str, const char **end, char **err) {
@@ -364,6 +239,7 @@ static inline double op_eval(double l, enum op op, double r) {
 	case OP_MUL: return l * r;
 	case OP_EXP: return pow(l, r);
 	case OP_NEG: return -l;
+	case OP_MAX: return max2(l, r);
 	}
 	unreachable();
 }
@@ -440,7 +316,8 @@ static struct fragment *fragment_new(struct script_compile_context *ctx, unsigne
 	return fragment;
 }
 
-/// Precedence based expression parser.
+/// Precedence based expression parser. Prepend fragments to `stack_entry`, or allocate a
+/// new one if `stack_entry` is NULL.
 static bool expression_compile(struct compilation_stack **stack_entry, const char *input_str,
                                struct script_compile_context *script_ctx, unsigned slot,
                                bool allow_override, char **err) {
@@ -452,9 +329,14 @@ static bool expression_compile(struct compilation_stack **stack_entry, const cha
 	}
 	// At most each character in `input_str` could map to an individual instruction
 	auto fragment = fragment_new(script_ctx, (unsigned)len + 1);
-	*stack_entry = calloc(1, sizeof(struct compilation_stack) + sizeof(unsigned[len]));
+	if (!*stack_entry) {
+		*stack_entry =
+		    calloc(1, sizeof(struct compilation_stack) + sizeof(unsigned[len]));
+		(*stack_entry)->exit = &fragment->next;
+	} else {
+		fragment->next = (*stack_entry)->entry_point;
+	}
 	(*stack_entry)->entry_point = fragment;
-	(*stack_entry)->exit = &fragment->next;
 
 	struct expression_parser_context ctx = {
 	    .op_stack = ccalloc(len, char),
@@ -513,6 +395,7 @@ end:
 	free(ctx.op_stack);
 	if (!succeeded) {
 		free(*stack_entry);
+		*stack_entry = NULL;
 	}
 	return succeeded;
 }
@@ -539,45 +422,48 @@ make_imm_stack_entry(struct script_compile_context *ctx, double imm, unsigned sl
 	return entry;
 }
 
+static void compilation_stack_cleanup(struct compilation_stack **stack_entry) {
+	free(*stack_entry);
+	*stack_entry = NULL;
+}
+
 static bool
 transition_compile(struct compilation_stack **stack_entry, config_setting_t *setting,
                    struct script_compile_context *ctx, unsigned slot, char **out_err) {
-	const char *str = NULL;
 	int boolean = 0;
 	double number = 0;
-	double duration, delay;
-	const struct curve *curve;
+	struct curve curve;
 	bool reset = false;
 	char *err = NULL;
-	if (!config_setting_lookup_string(setting, "timing", &str)) {
-		asprintf(out_err, "Transition section does not contain a timing function. Line %d.",
-		         config_setting_source_line(setting));
-		return false;
-	}
-	curve = parse_timing_function(str, &duration, &delay, &err);
-	if (curve == NULL) {
-		asprintf(out_err, "%s Line %d.", err, config_setting_source_line(setting));
-		free(err);
-		return false;
-	}
-	if (duration > ctx->max_duration) {
-		ctx->max_duration = duration;
+	const char *str = NULL;
+	if (config_setting_lookup_string(setting, "curve", &str)) {
+		curve = curve_parse(str, &str, &err);
+		if (curve.type == CURVE_INVALID) {
+			asprintf(out_err, "Cannot parse curve at line %d: %s",
+			         config_setting_source_line(setting), err);
+			free(err);
+			return false;
+		}
+	} else {
+		curve = CURVE_LINEAR_INIT;
 	}
 
 	if (config_setting_lookup_bool(setting, "reset", &boolean)) {
 		reset = boolean;
 	}
 
+	BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
+
+	// The start value must take a slot, because it's overridable.
 	auto start_slot = ctx->allocated_slots;
-	auto end_slot = ctx->allocated_slots + 1;
-	ctx->allocated_slots += 2;
+	ctx->allocated_slots += 1;
 	if (!reset) {
 		auto override = ccalloc(1, struct overridable_slot);
 		override->name = strdup(ctx->current_variable_name);
 		override->slot = start_slot;
 		HASH_ADD_STR(ctx->overrides, name, override);
 	}
-	struct compilation_stack *start = NULL, *end = NULL;
+	cleanup(compilation_stack_cleanup) struct compilation_stack *start = NULL, *end = NULL;
 	if (config_setting_lookup_float(setting, "start", &number)) {
 		start = make_imm_stack_entry(ctx, number, start_slot, true);
 	} else if (!config_setting_lookup_string(setting, "start", &str)) {
@@ -593,35 +479,124 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 		return false;
 	}
 
+	// 0 = end, 1 = duration, 2 = delay
+	struct instruction load_parameters[3];
 	if (config_setting_lookup_float(setting, "end", &number)) {
-		end = make_imm_stack_entry(ctx, number, end_slot, false);
+		load_parameters[0] = (struct instruction){
+		    .type = INST_IMM,
+		    .imm = number,
+		};
 	} else if (!config_setting_lookup_string(setting, "end", &str)) {
 		asprintf(out_err,
 		         "Transition definition does not contain a end value or "
 		         "expression. Line %d.",
 		         config_setting_source_line(setting));
 		return false;
-	} else if (!expression_compile(&end, str, ctx, end_slot, false, &err)) {
-		asprintf(out_err, "Transition has an invalid end expression: %s. Line %d",
-		         err, config_setting_source_line(setting));
-		free(err);
-		return false;
+	} else {
+		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
+		auto end_slot = ctx->allocated_slots++;
+		if (!expression_compile(&end, str, ctx, end_slot, false, &err)) {
+			asprintf(out_err,
+			         "Transition has an invalid end expression: %s. Line %d",
+			         err, config_setting_source_line(setting));
+			free(err);
+			return false;
+		}
+		load_parameters[0] = (struct instruction){
+		    .type = INST_LOAD,
+		    .slot = end_slot,
+		};
 	}
 
-	struct instruction instrs[] = {
-	    {.type = INST_LOAD, .slot = end_slot},
-	    {.type = INST_LOAD, .slot = start_slot},
-	    {.type = INST_OP, .op = OP_SUB},        // v1 = end - start
-	    {.type = INST_CURVE, .curve = curve, .duration = duration, .delay = delay},
-	    {.type = INST_OP, .op = OP_MUL},        // v2 = v1 * curve
-	    {.type = INST_LOAD, .slot = start_slot},
-	    {.type = INST_OP, .op = OP_ADD},        // v3 = v2 + start
-	    {.type = INST_STORE, .slot = slot},
-	};
-	if (ctx->max_stack < 2) {
-		// The list of instructions above needs 2 stack slots
-		ctx->max_stack = 2;
+	if (config_setting_lookup_float(setting, "duration", &number)) {
+		if (number == 0) {
+			asprintf(out_err, "Duration must be greater than 0. Line %d.",
+			         config_setting_source_line(setting));
+			return false;
+		}
+		load_parameters[1] = (struct instruction){
+		    .type = INST_IMM,
+		    .imm = number,
+		};
+	} else if (!config_setting_lookup_string(setting, "duration", &str)) {
+		asprintf(out_err,
+		         "Transition definition does not contain a duration value or "
+		         "expression. Line %d.",
+		         config_setting_source_line(setting));
+		return false;
+	} else {
+		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
+		auto duration_slot = ctx->allocated_slots++;
+		if (!expression_compile(&end, str, ctx, duration_slot, false, &err)) {
+			asprintf(out_err, "Transition has an invalid duration expression: %s. Line %d",
+			         err, config_setting_source_line(setting));
+			free(err);
+			return false;
+		}
+		load_parameters[1] = (struct instruction){
+		    .type = INST_LOAD,
+		    .slot = duration_slot,
+		};
 	}
+
+	if (config_setting_lookup_float(setting, "delay", &number)) {
+		load_parameters[2] = (struct instruction){
+		    .type = INST_IMM,
+		    .imm = number,
+		};
+	} else if (!config_setting_lookup_string(setting, "delay", &str)) {
+		load_parameters[2] = (struct instruction){
+		    .type = INST_IMM,
+		    .imm = 0,
+		};
+	} else {
+		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
+		auto delay_slot = ctx->allocated_slots++;
+		if (!expression_compile(&end, str, ctx, delay_slot, false, &err)) {
+			asprintf(out_err, "Transition has an invalid delay expression: %s. Line %d",
+			         err, config_setting_source_line(setting));
+			free(err);
+			return false;
+		}
+		load_parameters[2] = (struct instruction){
+		    .type = INST_LOAD,
+		    .slot = delay_slot,
+		};
+	}
+
+	// clang-format off
+	struct instruction instrs[] = {
+	    load_parameters[0],
+	    {.type = INST_LOAD, .slot = start_slot},
+	    {.type = INST_OP, .op = OP_SUB},         // v0 = end - start
+	    {.type = INST_LOAD, .slot = ctx->elapsed_slot},
+	    load_parameters[2],
+	    {.type = INST_OP, .op = OP_SUB},         // v1 = elapsed - delay
+	    load_parameters[1],
+	    {.type = INST_OP, .op = OP_DIV},         // v2 = v1 / duration
+	    {.type = INST_CURVE, .curve = curve},    // v3 = curve(v2)
+	    {.type = INST_OP, .op = OP_MUL},         // v4 = v0 * v3
+	    {.type = INST_LOAD, .slot = start_slot},
+	    {.type = INST_OP, .op = OP_ADD},         // v5 = v4 + start
+	    {.type = INST_STORE, .slot = slot},      // memory[slot] = v5
+	};
+
+	// Instructs for calculating the total duration of the transition
+	struct instruction total_duration_instrs[] = {
+	    load_parameters[1],
+	    load_parameters[2],
+	    {.type = INST_OP, .op = OP_ADD},        // v0 = duration + delay
+	    {.type = INST_LOAD, .slot = ctx->elapsed_slot + 1},
+	    {.type = INST_OP, .op = OP_MAX},        // v1 = max(v0, total_duration)
+	    {.type = INST_STORE, .slot = ctx->elapsed_slot + 1},
+	};
+	// clang-format on
+
+	if (ctx->max_stack < 3) {
+		// The list of instructions above needs 3 stack slots
+		ctx->max_stack = 3;
+	}
+
 	struct fragment *fragment = fragment_new(ctx, ARR_SIZE(instrs));
 	memcpy(fragment->instrs, instrs, sizeof(instrs));
 	fragment->ninstrs = ARR_SIZE(instrs);
@@ -653,13 +628,14 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 		ctx->once_tail = start->exit;
 	}
 
-	if (end->ndeps > 0) {
-		// Otherwise, the end value is not static, luckily we can still just
-		// calculate it at the end of the first evaluation, since at that point
-		// nothing can depends on a transition's end value. However, for the
-		// calculation of this transition curve, we don't yet have the end value.
-		// So we do this: `mem[output_slot] = mem[start_slot]`, instead of compute
-		// it normally.
+	// The `end` block includes `end`, `duration`, and `delay` values.
+	if (end != NULL && end->ndeps > 0) {
+		// If we get here, the end/duration/delay values are not static, luckily
+		// we can still just calculate it at the end of the first evaluation,
+		// since at that point nothing can depends on a transition's end value.
+		// However, for the calculation of this transition curve, we don't yet
+		// have the these values, so we do this: `mem[output_slot] =
+		// mem[start_slot]`, instead of compute it normally.
 		*ctx->once_end_tail = end->entry_point;
 		ctx->once_end_tail = end->exit;
 
@@ -681,25 +657,31 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 		fragment->next = phi;
 		(*stack_entry)->exit = &phi->next;
 	} else {
-		// The end value has no dependencies, so it only needs to be evaluated
-		// once at the start of the first evaluation. And therefore we can
-		// evaluate the curve like normal even for the first evaluation.
-		*ctx->once_tail = end->entry_point;
-		ctx->once_tail = end->exit;
+		if (end != NULL) {
+			// The end value has no dependencies, so it only needs to be
+			// evaluated once at the start of the first evaluation. And
+			// therefore we can evaluate the curve like normal even for the
+			// first evaluation.
+			*ctx->once_tail = end->entry_point;
+			ctx->once_tail = end->exit;
+		}
 
 		*next = fragment;
 		(*stack_entry)->exit = &fragment->next;
 	}
 
-	free(end);
-	free(start);
+	// This must happen _after_ the `end` block.
+	struct fragment *total_duration_fragment = fragment_new(ctx, ARR_SIZE(instrs));
+	memcpy(total_duration_fragment->instrs, total_duration_instrs,
+	       sizeof(total_duration_instrs));
+	total_duration_fragment->ninstrs = ARR_SIZE(total_duration_instrs);
+	*ctx->once_end_tail = total_duration_fragment;
+	ctx->once_end_tail = &total_duration_fragment->next;
+
 	return true;
 }
 
-static void instruction_deinit(struct instruction *instr) {
-	if (instr->type == INST_CURVE) {
-		instr->curve->free(instr->curve);
-	}
+static void instruction_deinit(struct instruction * /*instr*/) {
 }
 
 static void fragment_free(struct fragment *frag) {
@@ -945,20 +927,40 @@ script_compile_context_init(struct script_compile_context *ctx, config_setting_t
 		HASH_ADD_STR(ctx->vars, name, alloc);
 	}
 
-	ctx->allocated_slots = n;
+	ctx->allocated_slots = n + 2;
+	ctx->elapsed_slot = n;
 
 	auto head = fragment_new(ctx, 0);
 	ctx->head = head;
 	ctx->once_tail = &head->once_next;
 	ctx->tail = &head->next;
 
-	ctx->once_end_head = NULL;
-	ctx->once_end_tail = &ctx->once_end_head;
+	ctx->once_end_head = fragment_new(ctx, 2);
+	ctx->once_end_head->instrs[0] = (struct instruction){
+	    .type = INST_IMM,
+	    .imm = 0,
+	};
+	ctx->once_end_head->instrs[1] = (struct instruction){
+	    .type = INST_STORE,
+	    .slot = ctx->elapsed_slot + 1,
+	};
+	ctx->once_end_head->ninstrs = 2;
+	ctx->once_end_tail = &ctx->once_end_head->next;
+	ctx->max_stack = 1;
+}
+
+unsigned script_elapsed_slot(const struct script *script) {
+	return script->elapsed_slot;
+}
+
+unsigned script_total_duration_slot(const struct script *script) {
+	return script->elapsed_slot + 1;
 }
 
 struct script *
 script_compile(config_setting_t *setting, struct script_parse_config cfg, char **out_err) {
 	if (!config_setting_is_group(setting)) {
+		casprintf(out_err, "Script setting must be a group");
 		return NULL;
 	}
 	struct script_context_info_internal *context_table = NULL;
@@ -1033,13 +1035,14 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 	auto script = script_codegen(&ctx.all_fragments, ctx.head);
 	script->vars = ctx.vars;
 	script->overrides = ctx.overrides;
-	script->max_duration = ctx.max_duration;
-	script->nslots = ctx.allocated_slots;
+	script->elapsed_slot = ctx.elapsed_slot;
+	script->n_slots = ctx.allocated_slots;
 	script->stack_size = ctx.max_stack;
-	log_debug("Compiled script at line %d, total instructions: %d, max duration: %f, "
-	          "slots: %d, stack size: %d\n",
-	          config_setting_source_line(setting), script->len, script->max_duration,
-	          script->nslots, script->stack_size);
+	log_debug("Compiled script at line %d, total instructions: %d, "
+	          "slots: %d, stack size: %d, memory[%u] = total duration, memory[%u] = "
+	          "elapsed",
+	          config_setting_source_line(setting), script->len, script->n_slots,
+	          script->stack_size, script->elapsed_slot + 1, script->elapsed_slot);
 	if (log_get_level_tls() <= LOG_LEVEL_DEBUG) {
 		log_debug("Output mapping:");
 		HASH_ITER2(ctx.vars, var) {
@@ -1057,17 +1060,100 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 	return script;
 }
 
+char *script_to_c(const struct script *script, const struct script_output_info *outputs) {
+	char **buf = dynarr_new(char *, script->len * 40);
+	char *tmp = NULL;
+	casprintf(&tmp, "{\n"
+	                "    static const struct instruction instrs[] = {\n");
+	dynarr_push(buf, tmp);
+	for (unsigned i = 0; i < script->len; i++) {
+		dynarr_push(buf, instruction_to_c(script->instrs[i]));
+	}
+	casprintf(&tmp,
+	          "    };\n    struct script *ret = \n"
+	          "    malloc(offsetof(struct script, instrs) + sizeof(instrs));\n"
+	          "    ret->len = ARR_SIZE(instrs); ret->elapsed_slot = %u;"
+	          "    ret->n_slots = %u; ret->stack_size = %u;\n"
+	          "    ret->vars = NULL; ret->overrides = NULL;\n"
+	          "    memcpy(ret->instrs, instrs, sizeof(instrs));\n",
+	          script->elapsed_slot, script->n_slots, script->stack_size);
+	dynarr_push(buf, tmp);
+
+	struct variable_allocation *var, *next_var;
+	HASH_ITER(hh, script->vars, var, next_var) {
+		char *var_str = NULL;
+		casprintf(&var_str,
+		          "    {\n"
+		          "      struct variable_allocation *var = \n"
+		          "          malloc(sizeof(*var));\n"
+		          "      *var = (struct variable_allocation){\n"
+		          "          .name = strdup(\"%s\"), .slot = %u, .index = %u\n"
+		          "      };\n"
+		          "      HASH_ADD_STR(ret->vars, name, var);\n"
+		          "    }\n",
+		          var->name, var->slot, var->index);
+		dynarr_push(buf, var_str);
+	}
+
+	struct overridable_slot *override, *next_override;
+	HASH_ITER(hh, script->overrides, override, next_override) {
+		char *override_str = NULL;
+		casprintf(&override_str,
+		          "    {\n"
+		          "      struct overridable_slot *override = \n"
+		          "         malloc(sizeof(*override));\n"
+		          "      *override = (struct overridable_slot){\n"
+		          "          .name = strdup(\"%s\"), .slot = %u\n"
+		          "      };\n"
+		          "      HASH_ADD_STR(ret->overrides, name, override);\n"
+		          "    }\n",
+		          override->name, override->slot);
+		dynarr_push(buf, override_str);
+	}
+
+	for (size_t i = 0; outputs && outputs[i].name; i++) {
+		struct variable_allocation *alloc = NULL;
+		HASH_FIND_STR(script->vars, outputs[i].name, alloc);
+		if (alloc) {
+			casprintf(&tmp, "    output_slots[%zu] = %u;\n", i, alloc->slot);
+		} else {
+			casprintf(&tmp, "    output_slots[%zu] = -1;\n", i);
+		}
+		dynarr_push(buf, tmp);
+	}
+
+	casprintf(&tmp, "    return ret;\n}\n");
+	dynarr_push(buf, tmp);
+	return dynarr_join(buf, "");
+}
+
+void script_specialize(struct script *script,
+                       const struct script_specialization_context *spec, unsigned n_context) {
+	for (unsigned i = 0; i < script->len; i++) {
+		if (script->instrs[i].type != INST_LOAD_CTX) {
+			continue;
+		}
+		for (unsigned j = 0; j < n_context; j++) {
+			if (script->instrs[i].ctx == spec[j].offset) {
+				script->instrs[i].type = INST_IMM;
+				script->instrs[i].imm = spec[j].value;
+				break;
+			}
+		}
+	}
+}
+
 struct script_instance *script_instance_new(const struct script *script) {
 	// allocate no space for the variable length array is UB.
-	unsigned memory_size = max2(1, script->nslots + script->stack_size);
+	unsigned memory_size = max2(1, script->n_slots + script->stack_size);
 	struct script_instance *instance =
 	    calloc(1, sizeof(struct script_instance) + sizeof(double[memory_size]));
 	allocchk(instance);
 	instance->script = script;
-	instance->elapsed = 0;
-	for (unsigned i = 0; i < script->nslots; i++) {
+	for (unsigned i = 0; i < script->n_slots; i++) {
 		instance->memory[i] = NAN;
 	}
+	instance->memory[script->elapsed_slot] = 0;
 	return instance;
 }
 
@@ -1084,17 +1170,13 @@ void script_instance_resume_from(struct script_instance *old, struct script_inst
 	}
 }
 
-bool script_instance_is_finished(const struct script_instance *instance) {
-	return instance->elapsed >= instance->script->max_duration;
-}
-
 enum script_evaluation_result
 script_instance_evaluate(struct script_instance *instance, void *context) {
 	auto script = instance->script;
-	auto stack = (double *)&instance->memory[script->nslots];
+	auto stack = (double *)&instance->memory[script->n_slots];
 	unsigned top = 0;
 	double l, r;
-	bool do_branch_once = instance->elapsed == 0;
+	bool do_branch_once = instance->memory[script->elapsed_slot] == 0;
 	for (auto i = script->instrs;; i++) {
 		switch (i->type) {
 		case INST_IMM: stack[top++] = i->imm; break;
@@ -1132,9 +1214,10 @@ script_instance_evaluate(struct script_instance *instance, void *context) {
 			}
 			break;
 		case INST_CURVE:
-			l = (instance->elapsed - i->delay) / i->duration;
+			BUG_ON(top < 1);
+			l = stack[top - 1];
 			l = min2(max2(0, l), 1);
-			stack[top++] = i->curve->sample(i->curve, l);
+			stack[top - 1] = curve_sample(&i->curve, l);
 			break;
 		}
 		if (top && safe_isnan(stack[top - 1])) {
@@ -1171,23 +1254,28 @@ TEST_CASE(scripts_1) {
 		c = \"(b - 1) * (a+1)\";\
 		d = \"- e - 1\"; \
 		e : { \
-			timing = \"10s cubic-bezier(0.5,0.5, 0.5, 0.5) 0.5s\"; \
+			curve = \"cubic-bezier(0.5,0.5, 0.5, 0.5)\"; \
+			duration = \"a\"; \
+			delay = 0.5; \
 			start = 10; \
 			end = \"2 * c\"; \
 		}; \
 		f : { \
-			timing = \"10s cubic-bezier(0.1,0.2, 0.3, 0.4) 0.5s\"; \
+			curve = \"cubic-bezier(0.1,0.2, 0.3, 0.4)\"; \
+			duration = 10; \
+			delay = 0.5; \
 			start = \"e + 1\"; \
 			end = \"f - 1\"; \
 		}; \
 		neg = \"-a\"; \
 		timing1 : { \
-			timing = \"10s\"; \
+			duration = 10; \
 			start = 1; \
 			end = 0; \
 		};\
 		timing2 : { \
-			timing = \"10s steps(1, jump-start)\"; \
+			curve = \"steps(1, jump-start)\"; \
+			duration = 10; \
 			start = 1; \
 			end = 0; \
 		};";
@@ -1209,6 +1297,7 @@ TEST_CASE(scripts_1) {
 		struct script_instance *instance = script_instance_new(script);
 		auto result = script_instance_evaluate(instance, NULL);
 		TEST_EQUAL(result, SCRIPT_EVAL_OK);
+		TEST_EQUAL(instance->memory[script->elapsed_slot + 1], 10.5);
 		TEST_EQUAL(instance->memory[outputs[0].slot], 10);
 		TEST_EQUAL(instance->memory[outputs[1].slot], 20);
 		TEST_EQUAL(instance->memory[outputs[2].slot], 209);
@@ -1216,12 +1305,12 @@ TEST_CASE(scripts_1) {
 		TEST_EQUAL(instance->memory[outputs[4].slot], 10);
 		TEST_TRUE(!script_instance_is_finished(instance));
 
-		instance->elapsed += 5.5;
+		instance->memory[instance->script->elapsed_slot] += 5.5;
 		result = script_instance_evaluate(instance, NULL);
 		TEST_EQUAL(result, SCRIPT_EVAL_OK);
 		TEST_EQUAL(instance->memory[outputs[4].slot], 214);
 
-		instance->elapsed += 5.5;
+		instance->memory[instance->script->elapsed_slot] += 5.5;
 		result = script_instance_evaluate(instance, NULL);
 		TEST_EQUAL(result, SCRIPT_EVAL_OK);
 		TEST_EQUAL(instance->memory[outputs[0].slot], 10);
@@ -1252,21 +1341,20 @@ TEST_CASE(script_errors) {
 	static const char *cases[][2] = {
 	    {"a = \"1 @ 2 \";", "Failed to parse expression at line 1. Expected one of "
 	                        "\"+-*/^\", got '@'."},
-	    {"a = { timing = \"1 asdf\";};", "Invalid curve definition \"1 asdf\" "
-	                                     "(invalid time unit at \" asdf\"). Line 1."},
-	    {"a = { timing = \"1s asdf\";};", "Unknown curve type \"asdf\". Line 1."},
-	    {"a = { timing = \"1s steps(a)\";};", "Invalid step count at \"a)\". Line "
-	                                          "1."},
-	    {"a = { timing = \"1s steps(1)\";};", "Invalid steps argument list \"(1)\". "
-	                                          "Line 1."},
+	    {"a = { curve = \"asdf\";};", "Cannot parse curve at line 1: Unknown curve "
+	                                  "type \"asdf\"."},
+	    {"a = { curve = \"steps(a)\";};", "Cannot parse curve at line 1: Invalid "
+	                                      "step count at \"a)\"."},
+	    {"a = { curve = \"steps(1)\";};", "Cannot parse curve at line 1: Invalid "
+	                                      "steps argument list \"(1)\"."},
 	    {"a = \"1 + +\";", "Failed to parse expression at line 1. Expected a number "
 	                       "or a variable name, got \"+\"."},
 	    {"a = \"1)\";", "Failed to parse expression at line 1. Unmatched ')' in "
 	                    "expression \"1)\""},
-	    {"a = {};", "Transition section does not contain a timing function. Line 1."},
-	    {"a = { timing = \"0s\"; start = 0; end = 0; };", "Timing function cannot "
-	                                                      "have a zero duration. "
-	                                                      "Line 1."},
+	    {"a = {};", "Transition definition does not contain a start value or "
+	                "expression. Line 1."},
+	    {"a = { duration = 0; start = 0; end = 0; };", "Duration must be greater "
+	                                                   "than 0. Line 1."},
 	};
 	char *err = NULL;
 	struct script *script = NULL;

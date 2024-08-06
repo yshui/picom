@@ -40,6 +40,9 @@ jobs:
     steps:
       - build:
           build-config: -Dwith_docs=true -Db_coverage=true
+      - run:
+          name: build animgen
+          command: ninja -vC build tools/animgen
       - persist_to_workspace:
           root: .
           paths:
@@ -53,6 +56,10 @@ jobs:
           name: Tests
           command: |
             ulimit -c unlimited
+
+            printf "\n::: test animgen :::\n"
+            build/tools/animgen data/animation_presets.conf >/dev/null 2>error.log
+            [ -s error.log ] && cat error.log && exit 1
 
             printf "\n::: Unit tests :::\n"
             ninja -vC build test

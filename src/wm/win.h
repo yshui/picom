@@ -261,6 +261,8 @@ struct win_script_context {
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
 };
+static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
+              "win_script_context too large");
 
 static const struct script_context_info win_script_context_info[] = {
     {"window-x", offsetof(struct win_script_context, x)},
