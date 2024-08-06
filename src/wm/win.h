@@ -165,8 +165,9 @@ struct win {
 	bool in_openclose;
 
 	// Client window related members
-	/// Type of the window.
-	wintype_t window_type;
+	/// A bitflag of window types. According to ICCCM, a window can have more than one
+	/// type.
+	uint32_t window_types;
 
 	// Blacklist related members
 	/// Name of the window.
@@ -267,6 +268,8 @@ struct win_script_context {
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
 };
+static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
+              "win_script_context too large");
 
 static const struct script_context_info win_script_context_info[] = {
     {"window-x", offsetof(struct win_script_context, x)},

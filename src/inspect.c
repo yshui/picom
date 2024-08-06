@@ -280,8 +280,12 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 	if (w->role != NULL) {
 		printf("    role = '%s'\n", w->role);
 	}
-	if (w->window_type != WINTYPE_UNKNOWN) {
-		printf("    window_type = '%s'\n", WINTYPES[w->window_type].name);
+	if (w->window_types != 0) {
+		for (int i = 0; i < NUM_WINTYPES; i++) {
+			if (w->window_types & (1 << i)) {
+				printf("    window_type = '%s'\n", WINTYPES[i].name);
+			}
+		}
 	}
 	printf("    %sfullscreen\n", w->is_fullscreen ? "" : "! ");
 	if (w->bounding_shaped) {

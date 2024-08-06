@@ -16,6 +16,7 @@
 #include "common.h"
 #include "config.h"
 #include "log.h"
+#include "transition/preset.h"
 #include "transition/script.h"
 #include "utils/dynarr.h"
 #include "utils/misc.h"
@@ -233,8 +234,14 @@ static enum animation_trigger parse_animation_trigger(const char *trigger) {
 	return ANIMATION_TRIGGER_INVALID;
 }
 
-static struct script *
-compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
+/// Compile a script from `setting` into `result`, return false on failure.
+/// Only the `script` and `output_indices` fields of `result` will be modified.
+static bool
+compile_win_script(struct win_script *result, config_setting_t *setting, char **err) {
+	if (config_setting_lookup(setting, "preset")) {
+		return win_script_parse_preset(result, setting);
+	}
+
 	struct script_output_info outputs[ARR_SIZE(win_script_outputs)];
 	memcpy(outputs, win_script_outputs, sizeof(win_script_outputs));
 
@@ -242,20 +249,19 @@ compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
 	    .context_info = win_script_context_info,
 	    .output_info = outputs,
 	};
-	auto script = script_compile(setting, parse_config, err);
-	if (script == NULL) {
-		return script;
+	result->script = script_compile(setting, parse_config, err);
+	if (result->script == NULL) {
+		return false;
 	}
 	for (int i = 0; i < NUM_OF_WIN_SCRIPT_OUTPUTS; i++) {
-		output_indices[i] = outputs[i].slot;
+		result->output_indices[i] = outputs[i].slot;
 	}
-	return script;
+	return true;
 }
 
 static bool
 set_animation(struct win_script *animations, const enum animation_trigger *triggers,
-              int number_of_triggers, struct script *script, const int *output_indices,
-              uint64_t suppressions, unsigned line, bool is_generated) {
+              int number_of_triggers, struct win_script animation, unsigned line) {
 	bool needed = false;
 	for (int i = 0; i < number_of_triggers; i++) {
 		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
@@ -268,42 +274,39 @@ set_animation(struct win_script *animations, const enum animation_trigger *trigg
 			          animation_trigger_names[triggers[i]], line);
 			continue;
 		}
-		memcpy(animations[triggers[i]].output_indices, output_indices,
-		       sizeof(int[NUM_OF_WIN_SCRIPT_OUTPUTS]));
-		animations[triggers[i]].script = script;
-		animations[triggers[i]].suppressions = suppressions;
-		animations[triggers[i]].is_generated = is_generated;
+		animations[triggers[i]] = animation;
 		needed = true;
 	}
 	return needed;
 }
 
-static struct script *
-parse_animation_one(struct win_script *animations, config_setting_t *setting) {
+static bool parse_animation_one(struct win_script *animations,
+                                struct script ***all_scripts, config_setting_t *setting) {
+	struct win_script result = {};
 	auto triggers = config_setting_lookup(setting, "triggers");
 	if (!triggers) {
 		log_error("Missing triggers in animation script, at line %d",
 		          config_setting_source_line(setting));
-		return NULL;
+		return false;
 	}
 	if (!config_setting_is_list(triggers) && !config_setting_is_array(triggers) &&
 	    config_setting_get_string(triggers) == NULL) {
 		log_error("The \"triggers\" option must either be a string, a list, or "
 		          "an array, but is none of those at line %d",
 		          config_setting_source_line(triggers));
-		return NULL;
+		return false;
 	}
 	auto number_of_triggers =
 	    config_setting_get_string(triggers) == NULL ? config_setting_length(triggers) : 1;
 	if (number_of_triggers > ANIMATION_TRIGGER_LAST) {
 		log_error("Too many triggers in animation defined at line %d",
 		          config_setting_source_line(triggers));
-		return NULL;
+		return false;
 	}
 	if (number_of_triggers == 0) {
 		log_error("Trigger list is empty in animation defined at line %d",
 		          config_setting_source_line(triggers));
-		return NULL;
+		return false;
 	}
 	enum animation_trigger *trigger_types =
 	    alloca(sizeof(enum animation_trigger[number_of_triggers]));
@@ -322,7 +325,6 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 	// script parser shouldn't see this.
 	config_setting_remove(setting, "triggers");
 
-	uint64_t suppressions = 0;
 	auto suppressions_setting = config_setting_lookup(setting, "suppressions");
 	if (suppressions_setting != NULL) {
 		auto single_suppression = config_setting_get_string(suppressions_setting);
@@ -332,16 +334,16 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 			log_error("The \"suppressions\" option must either be a string, "
 			          "a list, or an array, but is none of those at line %d",
 			          config_setting_source_line(suppressions_setting));
-			return NULL;
+			return false;
 		}
 		if (single_suppression != NULL) {
 			auto suppression = parse_animation_trigger(single_suppression);
 			if (suppression == ANIMATION_TRIGGER_INVALID) {
 				log_error("Invalid suppression defined at line %d",
 				          config_setting_source_line(suppressions_setting));
-				return NULL;
+				return false;
 			}
-			suppressions = 1 << suppression;
+			result.suppressions = 1 << suppression;
 		} else {
 			auto len = config_setting_length(suppressions_setting);
 			for (int i = 0; i < len; i++) {
@@ -353,39 +355,37 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 					    "contain strings, but one of them is not at "
 					    "line %d",
 					    config_setting_source_line(suppressions_setting));
-					return NULL;
+					return false;
 				}
 				auto suppression = parse_animation_trigger(suppression_str);
 				if (suppression == ANIMATION_TRIGGER_INVALID) {
 					log_error(
 					    "Invalid suppression defined at line %d",
 					    config_setting_source_line(suppressions_setting));
-					return NULL;
+					return false;
 				}
-				suppressions |= 1U << suppression;
+				result.suppressions |= 1U << suppression;
 			}
 		}
 		config_setting_remove(setting, "suppressions");
 	}
 
-	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
 	char *err;
-	auto script = compile_win_script(setting, output_indices, &err);
-	if (!script) {
+	if (!compile_win_script(&result, setting, &err)) {
 		log_error("Failed to parse animation script at line %d: %s",
 		          config_setting_source_line(setting), err);
 		free(err);
-		return NULL;
+		return false;
 	}
 
-	bool needed = set_animation(animations, trigger_types, number_of_triggers, script,
-	                            output_indices, suppressions,
-	                            config_setting_source_line(setting), false);
+	bool needed = set_animation(animations, trigger_types, number_of_triggers, result,
+	                            config_setting_source_line(setting));
 	if (!needed) {
-		script_free(script);
-		script = NULL;
+		script_free(result.script);
+	} else {
+		dynarr_push(*all_scripts, result.script);
 	}
-	return script;
+	return true;
 }
 
 /// `out_scripts`: all the script objects created, this is a dynarr.
@@ -394,27 +394,24 @@ static void parse_animations(struct win_script *animations, config_setting_t *se
 	auto number_of_animations = (unsigned)config_setting_length(setting);
 	for (unsigned i = 0; i < number_of_animations; i++) {
 		auto sub = config_setting_get_elem(setting, (unsigned)i);
-		auto script = parse_animation_one(animations, sub);
-		if (script != NULL) {
-			dynarr_push(*out_scripts, script);
-		}
+		parse_animation_one(animations, out_scripts, sub);
 	}
 }
 
 #define FADING_TEMPLATE_1                                                                \
 	"opacity = { "                                                                   \
-	"  timing = \"%sms linear\"; "                                                   \
+	"  duration = %s; "                                                              \
 	"  start = \"window-raw-opacity-before\"; "                                      \
 	"  end = \"window-raw-opacity\"; "                                               \
 	"};"                                                                             \
 	"shadow-opacity = \"opacity\";"
 #define FADING_TEMPLATE_2                                                                \
 	"blur-opacity = { "                                                              \
-	"  timing = \"%sms linear\"; "                                                   \
+	"  duration = %s; "                                                              \
 	"  start = %d; end = %d; "                                                       \
 	"};"
 
-static struct script *compile_win_script_from_string(const char *input, int *output_indices) {
+static bool compile_win_script_from_string(struct win_script *result, const char *input) {
 	config_t tmp_config;
 	config_setting_t *setting;
 	config_init(&tmp_config);
@@ -424,11 +421,11 @@ static struct script *compile_win_script_from_string(const char *input, int *out
 
 	// Since we are compiling scripts we generated, it can't fail.
 	char *err = NULL;
-	auto script = compile_win_script(setting, output_indices, &err);
+	bool succeeded = compile_win_script(result, setting, &err);
 	config_destroy(&tmp_config);
 	BUG_ON(err != NULL);
 
-	return script;
+	return succeeded;
 }
 
 void generate_fading_config(struct options *opt) {
@@ -441,8 +438,7 @@ void generate_fading_config(struct options *opt) {
 	unsigned number_of_scripts = 0;
 	int number_of_triggers = 0;
 
-	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
-	double duration = 1.0 / opt->fade_in_step * opt->fade_delta;
+	double duration = 1.0 / opt->fade_in_step * opt->fade_delta / 1000.0;
 	if (!safe_isinf(duration) && !safe_isnan(duration) && duration > 0) {
 		scoped_charp duration_str = NULL;
 		dtostr(duration, &duration_str);
@@ -451,7 +447,8 @@ void generate_fading_config(struct options *opt) {
 		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
 		          duration_str, 0, 1);
 
-		auto fade_in1 = compile_win_script_from_string(str, output_indices);
+		struct win_script fade_in1 = {.is_generated = true};
+		BUG_ON(!compile_win_script_from_string(&fade_in1, str));
 		if (opt->animations[ANIMATION_TRIGGER_OPEN].script == NULL &&
 		    !opt->no_fading_openclose) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_OPEN;
@@ -459,25 +456,24 @@ void generate_fading_config(struct options *opt) {
 		if (opt->animations[ANIMATION_TRIGGER_SHOW].script == NULL) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1,
-		                  output_indices, 0, 0, true)) {
-			scripts[number_of_scripts++] = fade_in1;
+		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1, 0)) {
+			scripts[number_of_scripts++] = fade_in1.script;
 		} else {
-			script_free(fade_in1);
+			script_free(fade_in1.script);
 		}
 
 		// Fading for opacity change, for these, the blur opacity doesn't change.
 		asnprintf(&str, &len, FADING_TEMPLATE_1, duration_str);
-		auto fade_in2 = compile_win_script_from_string(str, output_indices);
+		struct win_script fade_in2 = {.is_generated = true};
+		BUG_ON(!compile_win_script_from_string(&fade_in2, str));
 		number_of_triggers = 0;
 		if (opt->animations[ANIMATION_TRIGGER_INCREASE_OPACITY].script == NULL) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2,
-		                  output_indices, 0, 0, true)) {
-			scripts[number_of_scripts++] = fade_in2;
+		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2, 0)) {
+			scripts[number_of_scripts++] = fade_in2.script;
 		} else {
-			script_free(fade_in2);
+			script_free(fade_in2.script);
 		}
 	} else {
 		log_error("Invalid fade-in setting (step: %f, delta: %d), ignoring.",
@@ -492,7 +488,8 @@ void generate_fading_config(struct options *opt) {
 		// Fading out to nothing, i.e. `hide` and `close`
 		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
 		          duration_str, 1, 0);
-		auto fade_out1 = compile_win_script_from_string(str, output_indices);
+		struct win_script fade_out1 = {.is_generated = true};
+		BUG_ON(!compile_win_script_from_string(&fade_out1, str));
 		number_of_triggers = 0;
 		if (opt->animations[ANIMATION_TRIGGER_CLOSE].script == NULL &&
 		    !opt->no_fading_openclose) {
@@ -501,25 +498,24 @@ void generate_fading_config(struct options *opt) {
 		if (opt->animations[ANIMATION_TRIGGER_HIDE].script == NULL) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1,
-		                  output_indices, 0, 0, true)) {
-			scripts[number_of_scripts++] = fade_out1;
+		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1, 0)) {
+			scripts[number_of_scripts++] = fade_out1.script;
 		} else {
-			script_free(fade_out1);
+			script_free(fade_out1.script);
 		}
 
 		// Fading for opacity change
 		asnprintf(&str, &len, FADING_TEMPLATE_1, duration_str);
-		auto fade_out2 = compile_win_script_from_string(str, output_indices);
+		struct win_script fade_out2 = {.is_generated = true};
+		BUG_ON(!compile_win_script_from_string(&fade_out2, str));
 		number_of_triggers = 0;
 		if (opt->animations[ANIMATION_TRIGGER_DECREASE_OPACITY].script == NULL) {
 			trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2,
-		                  output_indices, 0, 0, true)) {
-			scripts[number_of_scripts++] = fade_out2;
+		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2, 0)) {
+			scripts[number_of_scripts++] = fade_out2.script;
 		} else {
-			script_free(fade_out2);
+			script_free(fade_out2.script);
 		}
 	} else {
 		log_error("Invalid fade-out setting (step: %f, delta: %d), ignoring.",
