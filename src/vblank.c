@@ -87,6 +87,21 @@ struct sgi_video_sync_vblank_scheduler {
 	pthread_t sync_thread;
 	bool running, error, vblank_requested;
 	unsigned int last_msc;
+	/// Number of synthesized vblank event. Currently these are being inserted when
+	/// the driver reports duplicate msc to us.
+	///
+	/// This is because the NVIDIA driver has been observed to recover from a
+	/// duplicated msc loop by us rendering a new frame. So we insert a fake vblank
+	/// event so the render loop can progress, but doing so makes our msc desync from
+	/// the driver's msc. An hypothetical sequence of events go like this:
+	///
+	///   - driver -> msc 1, we report msc 1
+	///   - driver -> msc 1 (duplicate msc! if we don't render a new frame, we'll
+	///     be stuck here forever)
+	///   - we report msc 2
+	///   - new frame rendered, driver recover
+	///   - driver -> msc 2, but we already reported msc 2, so we have to report msc 3
+	unsigned int vblank_inserted;
 
 	/// Protects `running`, and `vblank_requested`
 	pthread_mutex_t vblank_requested_mtx;
@@ -323,28 +338,30 @@ static void sgi_video_sync_scheduler_deinit(struct vblank_scheduler *base) {
 static void
 sgi_video_sync_scheduler_callback(EV_P attr_unused, ev_async *w, int attr_unused revents) {
 	auto sched = container_of(w, struct sgi_video_sync_vblank_scheduler, notify);
-	auto msc = atomic_load(&sched->current_msc);
-	if (sched->last_msc == msc) {
+	auto msc = atomic_load(&sched->current_msc) + sched->vblank_inserted;
+	auto ust = atomic_load(&sched->current_ust);
+	if (sched->last_msc >= msc) {
 		// NVIDIA spams us with duplicate vblank events after a suspend/resume
-		// cycle. Recreating the X connection and GLX context seems to fix this.
-		// Oh NVIDIA.
-		log_warn("Duplicate vblank event found with msc %d. Possible NVIDIA bug?", msc);
-		log_warn("Resetting the vblank scheduler");
-		sgi_video_sync_scheduler_deinit(&sched->base);
-		sched->base.vblank_event_requested = false;
-		if (!sgi_video_sync_scheduler_init(&sched->base)) {
-			log_error("Failed to reset the vblank scheduler");
-		} else {
-			sgi_video_sync_scheduler_schedule(&sched->base);
-		}
-		return;
+		// cycle, or when the monitor turns off.
+		// Fake a vblank event in this case. See comments on `vblank_inserted`
+		// for more details.
+		log_warn("Duplicate vblank event found with msc %d. Possible NVIDIA bug? "
+		         "Number of duplicates so far: %d",
+		         msc, sched->vblank_inserted);
+		sched->last_msc++;
+		sched->vblank_inserted++;
+
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		ust = (uint64_t)(now.tv_sec * 1000000 + now.tv_nsec / 1000);
+	} else {
+		sched->last_msc = msc;
 	}
 	auto event = (struct vblank_event){
-	    .msc = msc,
-	    .ust = atomic_load(&sched->current_ust),
+	    .msc = sched->last_msc,
+	    .ust = ust,
 	};
 	sched->base.vblank_event_requested = false;
-	sched->last_msc = msc;
 	log_verbose("Received vblank event for msc %" PRIu64, event.msc);
 	vblank_scheduler_invoke_callbacks(&sched->base, &event);
 }
