@@ -350,6 +350,9 @@ Within each sub-item, these keys are available: ::
   shader:::
 	GLSL fragment shader path for rendering window contents. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
 
+  [[window-rules-animations]]animations:::
+	Define window-specific animation scripts. The format of this option is the same as the top-level _animations_ option. You can find more information in the xref:_animations[*ANIMATIONS*] section. If animation scripts are defined in multiple matching rules, they will be merged together. If multiple matching rules contain animation scripts for the same trigger, the last one will take effect, the same as other options.
+
 === Migrating old rules
 
 Most of the rule options should 1:1 map to the new window rules. Here is a list of the non-trivial ones and how to achieve the same effect with window rules.
@@ -472,6 +475,252 @@ Examples:
 	name = 'Firefox' || name = 'Chromium' && class_i = 'Navigator'
 	name = 'Firefox' || (name = 'Chromium' && class_i = 'Navigator')
 
+ANIMATIONS
+----------
+
+picom supports xref:fading[fading] animation when you open or close a window. In addition to that, picom also has a very powerful animation script system, which can be used to animate many aspects of a window based on certain triggers. Animation scripts can be defined in your configuration file by setting the option _animations_. It is also possible to define animations per-window using the xref:_window_rules[*WINDOW RULES*] system, by setting the <<window-rules-animations>> option in a rule. (Read the rest of this section first before you go there.)
+
+The basic syntax of the _animations_ option is as follows:
+
+----
+animations = ({
+	triggers = [ ... ];
+	suppressions = [ ... ];
+
+	# more options follow
+	...
+}, {
+	# another animation script
+}, ...)
+----
+
+`animations = ( ... )` sets _animations_ to a list, which can contain multiple sub-items, each item is an animation script. An animation script is a group containing multiple entries (i.e. `{ key = value; ... }`). All animation scripts share some common options, like _triggers_ and _suppressions_, they also contain more options that either defines the actual animation, or selects an animation preset.
+
+=== Common options
+
+  _triggers_:::
+	A list of triggers specifying when this animation should be started. Each trigger can have at most one animation script associated to it, otherwise the behavior is undefined, and a warning will be issued.
+
+	Valid triggers are: ::::
+
+	  _open_:: When a window is opened.
+
+	  _close_:: When a window is closed.
+
+	  _show_:: When a minimized or iconified window is shown.
+
+	  _hide_:: When a window is minimized or iconified.
+
+	  _increase-opacity_:: When the opacity of a window is increased.
+
+	  _decrease-opacity_:: When the opacity of a window is decreased.
+
+  _suppressions_:::
+	Which other animations should be suppressed when this animation is running. Normally, if another trigger is activated while an animation is already running, the animation in progress will be interrupted and the new animation will start. If you want to prevent this, you can set the `suppressions` option to a list of triggers that should be suppressed. This is optional, the default value for this is an empty list.
+
+=== Presets
+
+Defining an animation is a bit involved. To make animations more approachable, without you having to learn the nitty-gritty details of the script system, picom provides a number of presets that you can use by just specifying a handful of options.
+
+To choose a preset, add a _preset_ option to an animation script group, like this:
+
+----
+animations = ({
+	triggers = [ "close", "hide" ];
+	preset = "slide-out";
+	direction = "down";
+	...
+}, ...)
+----
+
+Some presets have additional options that you can set to customize the animation. In this example, the _slide-out_ preset has a _direction_ option specifying the direction of the sliding animation.
+
+ifndef::env-web[]
+NOTE: Describing animations with only words is difficult. We have short video clips showing off each preset, but sadly they cannot be included in this manpage. The web version of this document hosted on our website at https://picom.app[] on the other hand, does have those clips.
+endif::[]
+
+The following presets are available: ::
++
+_slide-in_, _slide-out_:::
++
+Show/hide the window with a sliding animation.
++
+--
+ifdef::env-web[]
+video::assets/slide.mp4[width=400]
+endif::[]
+--
++
+--
+*Options*:::
+
+  _direction_:: The sliding direction, valid values are _up_, _down_, _left_, _right_.
+
+  _duration_:: Duration of the animation in seconds. (Can be fractional).
+--
++
+_fly-in_, _fly-out_:::
++
+Show/hide the window with a flying animation.
++
+--
+ifdef::env-web[]
+video::assets/fly.mp4[width=400]
+endif::[]
+--
++
+--
+*Options*:::
+
+  _direction_:: The flying direction, valid values are _up_, _down_, _left_, _right_.
+
+  _duration_:: Duration of the animation in seconds.
+--
++
+_appear_, _disappear_:::
++
+Show/hide the window with a combination of scaling and fading.
++
+--
+ifdef::env-web[]
+video::assets/appear.mp4[width=400]
+endif::[]
+--
++
+--
+*Options*:::
+
+  _scale_:: The scaling factor of the window, 1.0 means no scaling.
+
+  _duration_:: Duration of the animation in seconds.
+--
+
+=== Advanced
+
+If the existing presets don't meet your needs, it is always possible to define your own animations. To put it simply, an animation script is just a collection of variables, and how their values should be computed. Animation scripts, when running, are evaluated once per frame, and the values of some of the variables are then used to animate the window.
+
+--
+
+*Basic syntax*
+
+To concretely illustrate what the above means, here is an example:
+
+----
+# this animation script does nothing to your windows by the way.
+animations = ({
+	# common options, these are not part of the collection of variables
+	triggers = [ "open" ];
+
+	# variables
+	a = 10;
+	b = "a * 10";
+	c = "a + b";
+	d = {
+		curve = "cubic-bezier(0.25, 0.1, 0.25, 1.0)";
+		duration = 0.5;
+		delay = 0;
+		start = 0;
+		end = 1;
+	};
+
+	# more options follow
+	# ...
+}, ...)
+----
+
+A variable can be defined as a number, an expression, or a timing function. In the example above, _a_ is defined to be a number (10), _b_ is defined to be the result of the expression `a * 10`, and _c_ similarly. Expression used to define one variable can refer to other variables in the same script. This is how you can create complex animations. Where the variables are defined in the script does not matter, as long as no circular references exist.
+
+NOTE: Because variable names can contain dashes (`-`), minus signs in expressions must be surrounded by spaces. For example, `a - 10` means `a` minus `10`, whereas `a-10` is a variable named `a-10`.
+
+_d_ is a timing function, which is a group with several options specifying its behavior. Timing functions are what drives an animation. If no timing function is defined in an animation script, nothing will be animated and the animation will end instantly.
+
+These options are valid for a timing function: :::
+
+  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _step_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_. This option is optional, is not specified, the curve will be linear.
+
+  _delay_:: The number of seconds to wait before the value starts changing. Optional, defaults to 0.
+
+  _duration_:: The number of seconds it will take for the value to go from _start_ to _end_ once it starts changing. Mandatory. And must be greater than 0.
+
+  _start_:: The start value of the variable. Mandatory.
+
+  _end_:: The end value of the variable. Mandatory.
+
+All options except _curve_ can be set to expressions. Timing function options are not variables themselves.
+
+NOTE: If any of _delay_, _duration_, _start_, or _end_ is defined with an expression, the expression will be evaluated only once when the animation starts. The values of _delay_, _duration_, _start_, and _end_ will then be fixed for the duration of the animation.
+
+The total duration of an animation is determined by the duration of the timing function with the longest duration. The animation will end when the longest timing function ends. Once an animation ends, its effects on the window will be removed.
+
+There isn't any restriction on what you can name the variables. Obviously they cannot conflict with the names of common options (_triggers_, _suppressions_, and _preset_), but other than that, you can name them whatever you want as long as libconfig allows it. Some variable names have special meanings as we will see below.
+--
+
+--
+*Output variables*
+
+Now you know how to write an animation script. But what we just wrote doesn't actually do anything to the window. To animate a window, we define a set of special variable names which we will call "output variables". If you define variables with these names, their values will be used to animate the window.
+
+For example, if you define an animation script like this:
+
+----
+animations = ({
+	triggers = [ "open" ];
+	offset-x = {
+		duration = 2;
+		start = 0;
+		end = 100;
+	};
+}, ...)
+----
+
+Then when a window opens, it will move 100 pixels to the right over the course of 2 seconds.
+
+WARNING: Although we did say you can name your variables whatever you want, if some of them become output variables in the future, your animation script will behave unexpectedly. To avoid this kind of problems, we reserve several classes of variable names which we will never use for special variables. These are: 1) any names that start with a single letter followed by a dash (e.g. `a-`, `b-`, etc.); 2) any names that start with `var-`, `tmp-`, or `user-`. If you need to define a non-output variable, use one of these names.
+
+Currently, these output variables are supported: :::
+
+  _offset-x_, _offset-y_:: The offset of the window in the X and Y direction, respectively. The window body will be moved by this amount. Note this does not affect the shadow, so if you define these but not _shadow-offset-x_ or _shadow-offset-y_, the shadow will remain where the window was without the animation.
+
+  _shadow-offset-x_, _shadow-offset-y_:: The offset of the shadow in the X and Y direction, respectively. The shadow will be moved by this amount.
+
+  _opacity_:: The opacity of the window. This is a number between 0 and 1.
+
+  _blur-opacity_:: The opacity of the blur behind the window. This is a number between 0 and 1.
+
+  _shadow-opacity_:: The opacity of the shadow. This is a number between 0 and 1.
+
+  _scale-x_, _scale-y_, _shadow-scale-x_, _shadow-scale-y_:: The scaling factor of the window and shadow in the X and Y direction, respectively. 1.0 means no scaling. The window body and the shadow are scaled independently.
+
+  _crop-x_, _crop-y_, _crop-width_, _crop-height_:: These four values combined defines a rectangle on the screen. The window and its shadow will be cropped to this rectangle. If not defined, the window and shadow will not be cropped.
+
+All coordinates are in pixels, and are in the coordinate system of the screen. Sizes are also in pixels.
+
+IMPORTANT: If an output variable name is not defined in your animation script, it will take the default value for whichever state the window is in. Specifically, if you don't define an _opacity_ variable in the animation script for the "close" or "hide" trigger, a closed window will, by default, have 0 opacity. So you will just see it disappear instantly. Oftentimes, you will want to set _opacity_ to 1 to make the window visible for the duration of the animation.
+--
+
+--
+*Context variables*
+
+Now you know how to animate a window. But this is still not powerful enough to support most animations you might want to define. For example, if you want your window to fly out the right side of your screen, the amount of pixels it has to move depends on where it is on the screen, and its width. For the last piece of the puzzle, we have context variables.
+
+A context variable is a variable picom defines for you, and you can use them in expressions like any other variables. Their values reflect certain attributes of the window you are animating.
+
+WARNING: If you define a variable with the same name as a context variable, your variable will shadow the context variable. Since more context variables can be added in the future, this can be difficult to avoid. Thus, the same rule for output variables applies here as well: if you need to define a temporary variable, use one of the reserved names.
+
+Currently, these context variables are defined: :::
+
+  _window-x_, _window-y_:: The coordinates of the top-left corner of the window.
+
+  _window-width_, _window-height_:: The size of the window.
+
+  _window-monitor-x_, _window-monitor-y_, _window-monitor-width_, _window-monitor-height_:: Defines the rectangle which reflects the monitor the window is on. If the window is not fully contained in any monitor, the rectangle will reflect the entire virtual screen.
+
+  _window-raw-opacity-before_, _window-raw-opacity_:: Animation triggers are usually accompanied by a change in the window's opacity. For example, when a window is opened, its opacity changes from 0 to 1. These two variables reflect the opacity of the window before and after the animation is triggered. They are useful if you want to smoothly transition the window's opacity.
+--
+
+=== Share your animations
+
+If you have created an animation script that you think is particularly cool, you are encouraged to share it with the community. You can submit an issue or a pull request to picom on GitHub, and get a chance to have your animation included as one of the presets, so it can be used by everyone.
 
 SHADER INTERFACE
 ----------------
@@ -537,6 +786,8 @@ picom could read from a configuration file if libconfig support is compiled in. 
 When `@include` directive is used in the config file, picom will first search for the included file in the parent directory of `picom.conf`, then in `$XDG_CONFIG_HOME/picom/include/`, then in `$XDG_CONFIG_DIRS/picom/include`.
 
 picom uses general libconfig configuration file format. A sample configuration file is available as `picom.sample.conf` in the source tree. Most of command line switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
+
+Some options can only be set in the configuration file. Such options include `rules` (see xref:_window_rules[*WINDOW RULES*]), `animations` (see xref:_animations[*ANIMATIONS*]), `wintypes` (see below).
 
 Window-type-specific settings allow you to set window-specific options based on the window type. These settings are exposed only in configuration file. The format of this option is as follows:
 
