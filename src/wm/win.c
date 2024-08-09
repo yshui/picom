@@ -29,6 +29,7 @@
 #include "picom.h"
 #include "region.h"
 #include "render.h"
+#include "utils/console.h"
 #include "utils/misc.h"
 #include "x.h"
 
@@ -1004,20 +1005,25 @@ void win_update_opacity_rule(session_t *ps, struct win *w) {
 	w->options.opacity = opacity;
 }
 
-struct win_update_rule_params {
-	struct win *w;
-	struct session *ps;
-	struct window_maybe_options options;
-};
-
-static bool win_update_rule(struct session *ps, struct win *w, const c2_condition *rule) {
+static bool
+win_update_rule(struct session *ps, struct win *w, const c2_condition *rule, bool inspect) {
 	void *pdata = NULL;
-	if (!c2_match_one(ps->c2_state, w, rule, &pdata)) {
+	if (inspect) {
+		printf("    %s ... ", c2_condition_to_str(rule));
+	}
+	bool matched = c2_match_one(ps->c2_state, w, rule, &pdata);
+	if (inspect) {
+		printf("%s\n", matched ? ANSI("1;32") "matched\033[0m" : "not matched");
+	}
+	if (!matched) {
 		return false;
 	}
 
 	auto wopts_next = (struct window_maybe_options *)pdata;
-	w->options = win_maybe_options_fold(w->options, *wopts_next);
+	if (inspect) {
+		inspect_dump_window_maybe_options(*wopts_next);
+	}
+	w->options = win_maybe_options_fold(*wopts_next, w->options);
 	return false;
 }
 
@@ -1028,11 +1034,18 @@ static bool win_update_rule(struct session *ps, struct win *w, const c2_conditio
  */
 void win_on_factor_change(session_t *ps, struct win *w) {
 	auto wid = win_client_id(w, /*fallback_to_self=*/true);
+	bool inspect = (ps->o.inspect_win != XCB_NONE && win_id(w) == ps->o.inspect_win) ||
+	               ps->o.inspect_monitor;
 	log_debug("Window %#010x, client %#010x (%s) factor change", win_id(w), wid, w->name);
 	c2_window_state_update(ps->c2_state, &w->c2_state, ps->c.c, wid, win_id(w));
 	// Focus and is_fullscreen needs to be updated first, as other rules might depend
 	// on the focused state of the window
 	win_update_is_fullscreen(ps, w);
+
+	if (ps->o.inspect_monitor) {
+		printf("Window %#010x (Client %#010x):\n======\n\n", win_id(w),
+		       win_client_id(w, /*fallback_to_self=*/true));
+	}
 
 	assert(w->window_types != 0);
 	if (list_is_empty(&ps->o.rules)) {
@@ -1089,8 +1102,11 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	} else {
 		w->options = WIN_MAYBE_OPTIONS_DEFAULT;
 		assert(w->state == WSTATE_MAPPED);
-		c2_condition_list_foreach(&ps->o.rules, i) {
-			win_update_rule(ps, w, i);
+		if (inspect) {
+			printf("Checking " BOLD("window rules") ":\n");
+		}
+		c2_condition_list_foreach_rev(&ps->o.rules, i) {
+			win_update_rule(ps, w, i, inspect);
 		}
 		if (safe_isnan(w->options.opacity) && w->has_opacity_prop) {
 			w->options.opacity = ((double)w->opacity_prop) / OPAQUE;
@@ -1114,12 +1130,7 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 		w->options.paint = TRI_FALSE;
 	}
 
-	if ((ps->o.inspect_win != XCB_NONE && win_id(w) == ps->o.inspect_win) ||
-	    ps->o.inspect_monitor) {
-		if (ps->o.inspect_monitor) {
-			printf("Window %#010x (Client %#010x):\n\n", win_id(w),
-			       win_client_id(w, /*fallback_to_self=*/true));
-		}
+	if (inspect) {
 		inspect_dump_window(ps->c2_state, &ps->o, w);
 		printf("\n");
 		if (!ps->o.inspect_monitor) {

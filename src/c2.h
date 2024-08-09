@@ -76,6 +76,10 @@ c2_condition *c2_new_true(struct list_node *list);
 	for (c2_condition *i =                                                           \
 	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->next);   \
 	     i; i = c2_condition_list_next(list, i))
+#define c2_condition_list_foreach_rev(list, i)                                           \
+	for (c2_condition *i =                                                           \
+	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->prev);   \
+	     i; i = c2_condition_list_prev(list, i))
 
 #define c2_condition_list_foreach_safe(list, i, n)                                       \
 	for (c2_condition *i =                                                           \

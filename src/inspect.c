@@ -15,6 +15,9 @@
 #include "common.h"
 #include "config.h"
 #include "log.h"
+#include "utils/console.h"
+#include "utils/dynarr.h"
+#include "utils/str.h"
 #include "wm/defs.h"
 #include "wm/win.h"
 #include "x.h"
@@ -97,33 +100,33 @@ static bool c2_match_and_log(const struct list_node *list, const struct c2_state
 	return false;
 }
 
-#define BOLD(str) "\033[1m" str "\033[0m"
-
 void inspect_dump_window(const struct c2_state *state, const struct options *opts,
                          const struct win *w) {
-	printf("Checking " BOLD("transparent-clipping-exclude") ":\n");
-	c2_match_and_log(&opts->transparent_clipping_blacklist, state, w, false);
-	printf("Checking " BOLD("shadow-exclude") ":\n");
-	c2_match_and_log(&opts->shadow_blacklist, state, w, false);
-	printf("Checking " BOLD("fade-exclude") ":\n");
-	c2_match_and_log(&opts->fade_blacklist, state, w, false);
-	printf("Checking " BOLD("clip-shadow-above") ":\n");
-	c2_match_and_log(&opts->shadow_clip_list, state, w, true);
-	printf("Checking " BOLD("focus-exclude") ":\n");
-	c2_match_and_log(&opts->focus_blacklist, state, w, false);
-	printf("Checking " BOLD("invert-color-include") ":\n");
-	c2_match_and_log(&opts->invert_color_list, state, w, false);
-	printf("Checking " BOLD("blur-background-exclude") ":\n");
-	c2_match_and_log(&opts->blur_background_blacklist, state, w, false);
-	printf("Checking " BOLD("unredir-if-possible-exclude") ":\n");
-	c2_match_and_log(&opts->unredir_if_possible_blacklist, state, w, false);
-	printf("Checking " BOLD("rounded-corners-exclude") ":\n");
-	c2_match_and_log(&opts->rounded_corners_blacklist, state, w, false);
+	if (list_is_empty(&opts->rules)) {
+		printf("Checking " BOLD("transparent-clipping-exclude") ":\n");
+		c2_match_and_log(&opts->transparent_clipping_blacklist, state, w, false);
+		printf("Checking " BOLD("shadow-exclude") ":\n");
+		c2_match_and_log(&opts->shadow_blacklist, state, w, false);
+		printf("Checking " BOLD("fade-exclude") ":\n");
+		c2_match_and_log(&opts->fade_blacklist, state, w, false);
+		printf("Checking " BOLD("clip-shadow-above") ":\n");
+		c2_match_and_log(&opts->shadow_clip_list, state, w, true);
+		printf("Checking " BOLD("focus-exclude") ":\n");
+		c2_match_and_log(&opts->focus_blacklist, state, w, false);
+		printf("Checking " BOLD("invert-color-include") ":\n");
+		c2_match_and_log(&opts->invert_color_list, state, w, false);
+		printf("Checking " BOLD("blur-background-exclude") ":\n");
+		c2_match_and_log(&opts->blur_background_blacklist, state, w, false);
+		printf("Checking " BOLD("unredir-if-possible-exclude") ":\n");
+		c2_match_and_log(&opts->unredir_if_possible_blacklist, state, w, false);
+		printf("Checking " BOLD("rounded-corners-exclude") ":\n");
+		c2_match_and_log(&opts->rounded_corners_blacklist, state, w, false);
 
-	printf("Checking " BOLD("opacity-rule") ":\n");
-	c2_match_and_log(&opts->opacity_rules, state, w, true);
-	printf("Checking " BOLD("corner-radius-rule") ":\n");
-	c2_match_and_log(&opts->corner_radius_rules, state, w, true);
+		printf("Checking " BOLD("opacity-rule") ":\n");
+		c2_match_and_log(&opts->opacity_rules, state, w, true);
+		printf("Checking " BOLD("corner-radius-rule") ":\n");
+		c2_match_and_log(&opts->corner_radius_rules, state, w, true);
+	}
 
 	printf("\nHere are some rule(s) that match this window:\n");
 	if (w->name != NULL) {
@@ -150,4 +153,88 @@ void inspect_dump_window(const struct c2_state *state, const struct options *opt
 		printf("    bounding_shaped\n");
 	}
 	printf("    border_width = %d\n", w->g.border_width);
+}
+
+void inspect_dump_window_maybe_options(struct window_maybe_options wopts) {
+	bool nothing = true;
+	printf("      Applying:\n");
+	if (wopts.shadow != TRI_UNKNOWN) {
+		printf("        shadow = %s\n", wopts.shadow == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.fade != TRI_UNKNOWN) {
+		printf("        fade = %s\n", wopts.fade == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.blur_background != TRI_UNKNOWN) {
+		printf("        blur_background = %s\n",
+		       wopts.blur_background == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.invert_color != TRI_UNKNOWN) {
+		printf("        invert_color = %s\n",
+		       wopts.invert_color == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.clip_shadow_above != TRI_UNKNOWN) {
+		printf("        clip_shadow_above = %s\n",
+		       wopts.clip_shadow_above == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.transparent_clipping != TRI_UNKNOWN) {
+		printf("        transparent_clipping = %s\n",
+		       wopts.transparent_clipping == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.full_shadow != TRI_UNKNOWN) {
+		printf("        full_shadow = %s\n",
+		       wopts.full_shadow == TRI_TRUE ? "true" : "false");
+		nothing = false;
+	}
+	if (wopts.unredir != WINDOW_UNREDIR_INVALID) {
+		const char *str = NULL;
+		switch (wopts.unredir) {
+		case WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE: str = "true"; break;
+		case WINDOW_UNREDIR_TERMINATE: str = "false"; break;
+		case WINDOW_UNREDIR_FORCED: str = "\"forced\""; break;
+		case WINDOW_UNREDIR_PASSIVE: str = "\"passive\""; break;
+		case WINDOW_UNREDIR_WHEN_POSSIBLE: str = "\"preferred\""; break;
+		default: unreachable();
+		}
+		printf("        unredir = %s\n", str);
+		nothing = false;
+	}
+	if (!safe_isnan(wopts.opacity)) {
+		printf("        opacity = %f\n", wopts.opacity);
+		nothing = false;
+	}
+	if (!safe_isnan(wopts.dim)) {
+		printf("        dim = %f\n", wopts.dim);
+		nothing = false;
+	}
+	if (wopts.corner_radius >= 0) {
+		printf("        corner_radius = %d\n", wopts.corner_radius);
+		nothing = false;
+	}
+
+	char **animation_triggers = dynarr_new(char *, 0);
+	for (int i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+		if (wopts.animations[i].script != NULL) {
+			char *name = NULL;
+			casprintf(&name, "\"%s\"", animation_trigger_names[i]);
+			dynarr_push(animation_triggers, name);
+		}
+	}
+	if (dynarr_len(animation_triggers) > 0) {
+		char *animation_triggers_str = dynarr_join(animation_triggers, ", ");
+		printf("        animations = { triggers = [%s]; }\n", animation_triggers_str);
+		free(animation_triggers_str);
+		nothing = false;
+	} else {
+		dynarr_free_pod(animation_triggers);
+	}
+
+	if (nothing) {
+		printf("        (nothing)\n");
+	}
 }

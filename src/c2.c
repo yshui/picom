@@ -1506,7 +1506,7 @@ c2_condition_node_to_str(const c2_condition_node_ptr p, char *output, size_t len
 		default: assert(0); break;
 		}
 		break;
-	case C2_NODE_TYPE_TRUE: push_str("true"); break;
+	case C2_NODE_TYPE_TRUE: push_str("(default)"); break;
 	default: unreachable();
 	}
 #undef push_char
