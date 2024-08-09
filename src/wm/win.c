@@ -1119,9 +1119,15 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 
 	if ((ps->o.inspect_win != XCB_NONE && win_id(w) == ps->o.inspect_win) ||
 	    ps->o.inspect_monitor) {
+		if (ps->o.inspect_monitor) {
+			printf("Window %#010x (Client %#010x):\n\n", win_id(w),
+			       win_client_id(w, /*fallback_to_self=*/true));
+		}
 		inspect_dump_window(ps->c2_state, &ps->o, w);
 		printf("\n");
-		quit(ps);
+		if (!ps->o.inspect_monitor) {
+			quit(ps);
+		}
 	}
 }
 

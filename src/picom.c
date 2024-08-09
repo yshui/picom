@@ -2199,7 +2199,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		ps->o.backend = backend_find("dummy");
 		ps->o.print_diagnostics = false;
 		ps->o.dbus = false;
-		ps->o.inspect_win = inspect_select_window(&ps->c);
+		if (!ps->o.inspect_monitor) {
+			ps->o.inspect_win = inspect_select_window(&ps->c);
+		}
 	}
 
 	ps->window_options_default = win_options_from_config(&ps->o);
