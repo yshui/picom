@@ -27,9 +27,10 @@ jobs:
 
       - name: Build
         run: |
-          asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom.1.adoc -D _site
+          asciidoctor -a env-web -a doctype=article -a stylesheet=../assets/next.css -b html man/picom.1.adoc -D _site
           asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom-inspect.1.adoc -D _site
           asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom-trans.1.adoc -D _site
+          cp -r assets _site/
           cp _site/picom.1.html _site/index.html
 
       - name: Upload
