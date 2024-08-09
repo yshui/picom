@@ -81,17 +81,19 @@ struct c2_match_state {
 	bool print_value;
 };
 
-static bool c2_match_once_and_log(const c2_lptr_t *cond, void *data) {
-	struct c2_match_state *state = data;
+static bool c2_match_and_log(const struct list_node *list, const struct c2_state *state,
+                             const struct win *w, bool print_value) {
 	void *rule_data = NULL;
-	printf("    %s ... ", c2_lptr_to_str(cond));
-	bool matched = c2_match_one(state->state, state->w, cond, rule_data);
-	printf("%s", matched ? "\033[1;32mmatched\033[0m" : "not matched");
-	if (state->print_value && matched) {
-		printf("/%lu", (unsigned long)(intptr_t)rule_data);
-		state->print_value = false;
+	c2_condition_list_foreach((struct list_node *)list, i) {
+		printf("    %s ... ", c2_condition_to_str(i));
+		bool matched = c2_match_one(state, w, i, rule_data);
+		printf("%s", matched ? "\033[1;32mmatched\033[0m" : "not matched");
+		if (print_value && matched) {
+			printf("/%lu", (unsigned long)(intptr_t)rule_data);
+			print_value = false;
+		}
+		printf("\n");
 	}
-	printf("\n");
 	return false;
 }
 
@@ -99,36 +101,29 @@ static bool c2_match_once_and_log(const c2_lptr_t *cond, void *data) {
 
 void inspect_dump_window(const struct c2_state *state, const struct options *opts,
                          const struct win *w) {
-	struct c2_match_state match_state = {
-	    .state = state,
-	    .w = w,
-	};
 	printf("Checking " BOLD("transparent-clipping-exclude") ":\n");
-	c2_list_foreach(opts->transparent_clipping_blacklist, c2_match_once_and_log,
-	                &match_state);
+	c2_match_and_log(&opts->transparent_clipping_blacklist, state, w, false);
 	printf("Checking " BOLD("shadow-exclude") ":\n");
-	c2_list_foreach(opts->shadow_blacklist, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->shadow_blacklist, state, w, false);
 	printf("Checking " BOLD("fade-exclude") ":\n");
-	c2_list_foreach(opts->fade_blacklist, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->fade_blacklist, state, w, false);
 	printf("Checking " BOLD("clip-shadow-above") ":\n");
-	c2_list_foreach(opts->shadow_clip_list, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->shadow_clip_list, state, w, true);
 	printf("Checking " BOLD("focus-exclude") ":\n");
-	c2_list_foreach(opts->focus_blacklist, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->focus_blacklist, state, w, false);
 	printf("Checking " BOLD("invert-color-include") ":\n");
-	c2_list_foreach(opts->invert_color_list, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->invert_color_list, state, w, false);
 	printf("Checking " BOLD("blur-background-exclude") ":\n");
-	c2_list_foreach(opts->blur_background_blacklist, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->blur_background_blacklist, state, w, false);
 	printf("Checking " BOLD("unredir-if-possible-exclude") ":\n");
-	c2_list_foreach(opts->unredir_if_possible_blacklist, c2_match_once_and_log,
-	                &match_state);
+	c2_match_and_log(&opts->unredir_if_possible_blacklist, state, w, false);
 	printf("Checking " BOLD("rounded-corners-exclude") ":\n");
-	c2_list_foreach(opts->rounded_corners_blacklist, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->rounded_corners_blacklist, state, w, false);
 
-	match_state.print_value = true;
 	printf("Checking " BOLD("opacity-rule") ":\n");
-	c2_list_foreach(opts->opacity_rules, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->opacity_rules, state, w, true);
 	printf("Checking " BOLD("corner-radius-rule") ":\n");
-	c2_list_foreach(opts->corner_radius_rules, c2_match_once_and_log, &match_state);
+	c2_match_and_log(&opts->corner_radius_rules, state, w, true);
 
 	printf("\nHere are some rule(s) that match this window:\n");
 	if (w->name != NULL) {

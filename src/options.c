@@ -71,7 +71,7 @@ static bool set_flag(const struct picom_option * /*opt*/, const struct picom_arg
 static bool set_rule_flag(const struct picom_option *arg_opt, const struct picom_arg *arg,
                           const char * /*arg_str*/, void *output) {
 	auto opt = (struct options *)output;
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules(arg_opt->long_name);
 		opt->has_both_style_of_rules = true;
 		return true;
@@ -115,7 +115,7 @@ static bool store_float(const struct picom_option *opt, const struct picom_arg *
 static bool store_rule_float(const struct picom_option *arg_opt, const struct picom_arg *arg,
                              const char *arg_str, void *output) {
 	auto opt = (struct options *)output;
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules(arg_opt->long_name);
 		opt->has_both_style_of_rules = true;
 		return true;
@@ -148,12 +148,12 @@ static bool store_rules(const struct picom_option *arg_opt, const struct picom_a
                         const char *arg_str, void *output) {
 	const struct picom_rules_parser *parser = arg->user_data;
 	struct options *opt = (struct options *)output;
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules(arg_opt->long_name);
 		opt->has_both_style_of_rules = true;
 		return true;
 	}
-	auto rules = (c2_lptr_t **)(output + arg->offset);
+	auto rules = (struct list_node *)(output + arg->offset);
 	if (!parser->parse_prefix) {
 		return c2_parse(rules, arg_str, NULL) != NULL;
 	}
@@ -856,7 +856,7 @@ static bool sanitize_options(struct options *opt) {
 			dynarr_clear(opt->all_scripts, script_ptr_deinit);
 		}
 
-		if (opt->window_shader_fg || opt->window_shader_fg_rules) {
+		if (opt->window_shader_fg || !list_is_empty(&opt->window_shader_fg_rules)) {
 			log_warn("The new shader interface is not supported by the "
 			         "legacy glx backend. You may want to use "
 			         "--glx-fshader-win instead.");
@@ -1028,27 +1028,27 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 
 void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c,
                                   struct options *option) {
-	if (option->rules) {
-		if (!c2_list_postprocess(state, c->c, option->rules)) {
+	if (!list_is_empty(&option->rules)) {
+		if (!c2_list_postprocess(state, c->c, &option->rules)) {
 			log_error("Post-processing of rules failed, some of your rules "
 			          "might not work");
 		}
 		return;
 	}
 
-	if (!(c2_list_postprocess(state, c->c, option->unredir_if_possible_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->paint_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->shadow_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->shadow_clip_list) &&
-	      c2_list_postprocess(state, c->c, option->fade_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->blur_background_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->invert_color_list) &&
-	      c2_list_postprocess(state, c->c, option->window_shader_fg_rules) &&
-	      c2_list_postprocess(state, c->c, option->opacity_rules) &&
-	      c2_list_postprocess(state, c->c, option->rounded_corners_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->corner_radius_rules) &&
-	      c2_list_postprocess(state, c->c, option->focus_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->transparent_clipping_blacklist))) {
+	if (!(c2_list_postprocess(state, c->c, &option->unredir_if_possible_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->paint_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->shadow_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->shadow_clip_list) &&
+	      c2_list_postprocess(state, c->c, &option->fade_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->blur_background_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->invert_color_list) &&
+	      c2_list_postprocess(state, c->c, &option->window_shader_fg_rules) &&
+	      c2_list_postprocess(state, c->c, &option->opacity_rules) &&
+	      c2_list_postprocess(state, c->c, &option->rounded_corners_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->corner_radius_rules) &&
+	      c2_list_postprocess(state, c->c, &option->focus_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->transparent_clipping_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your "
 		          "rules might not work");
 	}

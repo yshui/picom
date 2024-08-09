@@ -1986,10 +1986,6 @@ err:
 	return true;
 }
 
-static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) {
-	return load_shader_source(data, c2_list_get_data(cond));
-}
-
 static struct window_options win_options_from_config(const struct options *opts) {
 	struct window_options ret = {
 	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
@@ -2238,9 +2234,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	options_postprocess_c2_lists(ps->c2_state, &ps->c, &ps->o);
 
 	// Load shader source file specified in the shader rules
-	if (c2_list_foreach(ps->o.window_shader_fg_rules, load_shader_source_for_condition, ps)) {
-		log_error("Failed to load shader source file for some of the window "
-		          "shader rules");
+	c2_condition_list_foreach(&ps->o.window_shader_fg_rules, i) {
+		if (!load_shader_source(ps, c2_condition_get_data(i))) {
+			log_error("Failed to load shader source file for some of the "
+			          "window shader rules");
+		}
 	}
 	if (load_shader_source(ps, ps->o.window_shader_fg)) {
 		log_error("Failed to load window shader source file");

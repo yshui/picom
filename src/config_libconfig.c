@@ -124,7 +124,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 /**
  * Parse a condition list in configuration file.
  */
-bool must_use parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *name) {
+bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg, const char *name) {
 	config_setting_t *setting = config_lookup(pcfg, name);
 	if (setting == NULL) {
 		return true;
@@ -133,15 +133,14 @@ bool must_use parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, cons
 	if (config_setting_is_array(setting)) {
 		int i = config_setting_length(setting);
 		while (i--) {
-			if (!c2_parse(pcondlst,
-			              config_setting_get_string_elem(setting, i), NULL)) {
+			if (!c2_parse(list, config_setting_get_string_elem(setting, i), NULL)) {
 				return false;
 			}
 		}
 	}
 	// Treat it as a single pattern if it's a string
 	else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-		if (!c2_parse(pcondlst, config_setting_get_string(setting), NULL)) {
+		if (!c2_parse(list, config_setting_get_string(setting), NULL)) {
 			return false;
 		}
 	}
@@ -152,7 +151,7 @@ bool must_use parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, cons
  * Parse a window corner radius rule list in configuration file.
  */
 static inline bool
-parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const char *name,
+parse_cfg_condlst_with_prefix(struct list_node *list, const config_t *pcfg, const char *name,
                               void *(*parse_prefix)(const char *, const char **, void *),
                               void (*free_value)(void *), void *user_data) {
 	config_setting_t *setting = config_lookup(pcfg, name);
@@ -164,7 +163,7 @@ parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const c
 		int i = config_setting_length(setting);
 		while (i--) {
 			if (!c2_parse_with_prefix(
-			        condlst, config_setting_get_string_elem(setting, i),
+			        list, config_setting_get_string_elem(setting, i),
 			        parse_prefix, free_value, user_data)) {
 				return false;
 			}
@@ -172,7 +171,7 @@ parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const c
 	}
 	// Treat it as a single pattern if it's a string
 	else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-		if (!c2_parse_with_prefix(condlst, config_setting_get_string(setting),
+		if (!c2_parse_with_prefix(list, config_setting_get_string(setting),
 		                          parse_prefix, free_value, user_data)) {
 			return false;
 		}
@@ -576,7 +575,8 @@ static const struct {
     {"transparent-clipping", offsetof(struct window_maybe_options, transparent_clipping)},
 };
 
-static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scripts) {
+static c2_condition *
+parse_rule(struct list_node *rules, config_setting_t *setting, struct script ***out_scripts) {
 	if (!config_setting_is_group(setting)) {
 		log_error("Invalid rule at line %d. It must be a group.",
 		          config_setting_source_line(setting));
@@ -585,9 +585,9 @@ static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scr
 	int ival;
 	double fval;
 	const char *sval;
-	c2_lptr_t *rule = NULL;
+	c2_condition *rule = NULL;
 	if (config_setting_lookup_string(setting, "match", &sval)) {
-		rule = c2_parse(NULL, sval, NULL);
+		rule = c2_parse(rules, sval, NULL);
 		if (!rule) {
 			log_error("Failed to parse rule at line %d.",
 			          config_setting_source_line(setting));
@@ -595,12 +595,12 @@ static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scr
 		}
 	} else {
 		// If no match condition is specified, it matches all windows
-		rule = c2_new_true();
+		rule = c2_new_true(rules);
 	}
 
 	auto wopts = cmalloc(struct window_maybe_options);
 	*wopts = WIN_MAYBE_OPTIONS_DEFAULT;
-	c2_list_set_data(rule, wopts);
+	c2_condition_set_data(rule, wopts);
 
 	for (size_t i = 0; i < ARR_SIZE(all_window_options); i++) {
 		if (config_setting_lookup_bool(setting, all_window_options[i].name, &ival)) {
@@ -630,8 +630,8 @@ static c2_lptr_t *parse_rule(config_setting_t *setting, struct script ***out_scr
 	return rule;
 }
 
-static void
-parse_rules(config_setting_t *setting, struct script ***out_scripts, c2_lptr_t **rules) {
+static void parse_rules(struct list_node *rules, config_setting_t *setting,
+                        struct script ***out_scripts) {
 	if (!config_setting_is_list(setting)) {
 		log_error("Invalid value for \"rules\" at line %d. It must be a list.",
 		          config_setting_source_line(setting));
@@ -640,10 +640,7 @@ parse_rules(config_setting_t *setting, struct script ***out_scripts, c2_lptr_t *
 	const auto length = (unsigned int)config_setting_length(setting);
 	for (unsigned int i = 0; i < length; i++) {
 		auto sub = config_setting_get_elem(setting, i);
-		auto rule = parse_rule(sub, out_scripts);
-		if (rule != NULL) {
-			c2_condlist_insert(rules, rule);
-		}
+		parse_rule(rules, sub, out_scripts);
 	}
 }
 
@@ -766,7 +763,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
-		parse_rules(rules, &opt->all_scripts, &opt->rules);
+		parse_rules(&opt->rules, rules, &opt->all_scripts);
 	}
 
 	// --dbus
@@ -795,7 +792,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// -i (inactive_opacity)
 	if (config_lookup_float(&cfg, "inactive-opacity", &dval)) {
 		opt->inactive_opacity = normalize_d(dval);
-		if (opt->rules) {
+		if (!list_is_empty(&opt->rules)) {
 			log_warn_both_style_of_rules("inactive-opacity");
 			opt->has_both_style_of_rules = true;
 		}
@@ -803,7 +800,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// --active_opacity
 	if (config_lookup_float(&cfg, "active-opacity", &dval)) {
 		opt->active_opacity = normalize_d(dval);
-		if (opt->rules) {
+		if (!list_is_empty(&opt->rules)) {
 			log_warn_both_style_of_rules("active-opacity");
 			opt->has_both_style_of_rules = true;
 		}
@@ -859,30 +856,31 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	}
 	// --inactive-opacity-override
 	if (lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override) &&
-	    opt->rules != NULL) {
+	    !list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules("inactive-opacity-override");
 		opt->has_both_style_of_rules = true;
 	}
 	// --inactive-dim
-	if (config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim) && opt->rules != NULL) {
+	if (config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim) &&
+	    !list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules("inactive-dim");
 		opt->has_both_style_of_rules = true;
 	}
 	// --mark-wmwin-focused
 	if (lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused) &&
-	    opt->rules != NULL) {
+	    !list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules("mark-wmwin-focused");
 		opt->has_both_style_of_rules = true;
 	}
 	// --mark-ovredir-focused
 	if (lcfg_lookup_bool(&cfg, "mark-ovredir-focused", &opt->mark_ovredir_focused) &&
-	    opt->rules != NULL) {
+	    !list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules("mark-ovredir-focused");
 		opt->has_both_style_of_rules = true;
 	}
 	// --shadow-ignore-shaped
 	if (lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped) &&
-	    opt->rules != NULL) {
+	    !list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules("shadow-ignore-shaped");
 		opt->has_both_style_of_rules = true;
 	}
@@ -965,7 +963,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// --dithered_present
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
 
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		static const char *rule_list[] = {
 		    "transparent-clipping-exclude",
 		    "shadow-exclude",
@@ -987,18 +985,18 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 				opt->has_both_style_of_rules = true;
 			}
 		}
-	} else if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
+	} else if (!parse_cfg_condlst(&opt->transparent_clipping_blacklist, &cfg,
 	                              "transparent-clipping-exclude") ||
-	           !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
-	           !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
-	           !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
-	           !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||
-	           !parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include") ||
-	           !parse_cfg_condlst(&cfg, &opt->blur_background_blacklist,
+	           !parse_cfg_condlst(&opt->shadow_blacklist, &cfg, "shadow-exclude") ||
+	           !parse_cfg_condlst(&opt->shadow_clip_list, &cfg, "clip-shadow-above") ||
+	           !parse_cfg_condlst(&opt->fade_blacklist, &cfg, "fade-exclude") ||
+	           !parse_cfg_condlst(&opt->focus_blacklist, &cfg, "focus-exclude") ||
+	           !parse_cfg_condlst(&opt->invert_color_list, &cfg, "invert-color-include") ||
+	           !parse_cfg_condlst(&opt->blur_background_blacklist, &cfg,
 	                              "blur-background-exclude") ||
-	           !parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
+	           !parse_cfg_condlst(&opt->unredir_if_possible_blacklist, &cfg,
 	                              "unredir-if-possible-exclude") ||
-	           !parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist,
+	           !parse_cfg_condlst(&opt->rounded_corners_blacklist, &cfg,
 	                              "rounded-corners-exclude") ||
 	           !parse_cfg_condlst_with_prefix(
 	               &opt->corner_radius_rules, &cfg, "corner-radius-rules",
@@ -1139,7 +1137,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// Wintype settings
 
 	// XXX ! Refactor all the wintype_* arrays into a struct
-	if (opt->rules == NULL) {
+	if (list_is_empty(&opt->rules)) {
 		for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
 			parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
 			                     &opt->wintype_option_mask[i]);

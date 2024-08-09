@@ -38,18 +38,24 @@
 
 #define C2_MAX_LEVELS 10
 
-typedef struct _c2_b c2_b_t;
-typedef struct _c2_l c2_l_t;
+typedef struct c2_condition_node_branch c2_condition_node_branch;
+typedef struct c2_condition_node_leaf c2_condition_node_leaf;
 
-/// Pointer to a condition tree.
+enum c2_condition_node_type {
+	C2_NODE_TYPE_BRANCH,
+	C2_NODE_TYPE_LEAF,
+	C2_NODE_TYPE_TRUE,
+};
+
+/// Fat, typed pointer to a condition tree node.
 typedef struct {
-	bool isbranch : 1;
-	bool istrue : 1;
+	enum c2_condition_node_type type;
 	union {
-		c2_b_t *b;
-		c2_l_t *l;
+		struct c2_condition_node_branch *b;
+		struct c2_condition_node_leaf *l;
 	};
-} c2_ptr_t;
+	bool neg;
+} c2_condition_node_ptr;
 
 struct c2_tracked_property_key {
 	xcb_atom_t property;
@@ -102,9 +108,8 @@ struct c2_property_value {
 };
 
 /// Initializer for c2_ptr_t.
-static const c2_ptr_t C2_PTR_INIT = {
-    .isbranch = false,
-    .istrue = false,
+static const c2_condition_node_ptr C2_NODE_PTR_INIT = {
+    .type = C2_NODE_TYPE_LEAF,
     .l = NULL,
 };
 
@@ -117,11 +122,10 @@ typedef enum {
 } c2_b_op_t;
 
 /// Structure for branch element in a window condition
-struct _c2_b {
-	bool neg : 1;
+struct c2_condition_node_branch {
 	c2_b_op_t op;
-	c2_ptr_t opr1;
-	c2_ptr_t opr2;
+	c2_condition_node_ptr opr1;
+	c2_condition_node_ptr opr2;
 };
 
 /// Initializer for c2_b_t.
@@ -129,8 +133,7 @@ struct _c2_b {
 	{.neg = false, .op = C2_B_OUNDEFINED, .opr1 = C2_PTR_INIT, .opr2 = C2_PTR_INIT}
 
 /// Structure for leaf element in a window condition
-struct _c2_l {
-	bool neg : 1;
+struct c2_condition_node_leaf {
 	enum {
 		C2_L_OEXISTS = 0,
 		C2_L_OEQ,
@@ -199,8 +202,7 @@ struct _c2_l {
 
 static const unsigned int C2_L_INVALID_TARGET_ID = UINT_MAX;
 /// Initializer for c2_l_t.
-static const c2_l_t C2_L_INIT = {
-    .neg = false,
+static const c2_condition_node_leaf C2_LEAF_NODE_INIT = {
     .op = C2_L_OEXISTS,
     .match = C2_L_MEXACT,
     .match_ignorecase = false,
@@ -216,20 +218,15 @@ static const c2_l_t C2_L_INIT = {
 };
 
 /// Linked list type of conditions.
-struct _c2_lptr {
-	c2_ptr_t ptr;
+struct c2_condition {
+	c2_condition_node_ptr root;
 	void *data;
-	struct _c2_lptr *next;
+	struct list_node siblings;
 };
-
-/// Structure representing a predefined target.
-typedef struct {
-	const char *name;
-} c2_predef_t;
 
 // clang-format off
 // Predefined targets.
-static struct {
+static const struct {
 	const char *name;
 	bool is_string;
 	bool deprecated;
@@ -286,29 +283,13 @@ static inline int strcmp_wd(const char *needle, const char *src) {
 }
 
 /**
- * Return whether a c2_ptr_t is empty.
- */
-static inline attr_unused bool c2_ptr_isempty(const c2_ptr_t p) {
-	return !(p.isbranch ? (bool)p.b : (bool)p.l);
-}
-
-/**
- * Reset a c2_ptr_t.
- */
-static inline void c2_ptr_reset(c2_ptr_t *pp) {
-	if (pp) {
-		*pp = C2_PTR_INIT;
-	}
-}
-
-/**
  * Combine two condition trees.
  */
-static inline c2_ptr_t c2h_comb_tree(c2_b_op_t op, c2_ptr_t p1, c2_ptr_t p2) {
-	c2_ptr_t p = {.isbranch = true, .b = NULL};
-	p.b = cmalloc(c2_b_t);
+static inline c2_condition_node_ptr
+c2h_comb_tree(c2_b_op_t op, c2_condition_node_ptr p1, c2_condition_node_ptr p2) {
+	c2_condition_node_ptr p = {.type = C2_NODE_TYPE_BRANCH, .b = NULL};
+	p.b = cmalloc(struct c2_condition_node_branch);
 
-	p.b->neg = false;
 	p.b->op = op;
 	p.b->opr1 = p1;
 	p.b->opr2 = p2;
@@ -343,49 +324,44 @@ static inline int c2h_b_opcmp(c2_b_op_t op1, c2_b_op_t op2) {
 	return c2h_b_opp(op1) - c2h_b_opp(op2);
 }
 
-static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int level);
-
-static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult);
-
-static int c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult);
-
-static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult);
-
-static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult);
-
-static void c2_free(c2_ptr_t p);
-
-static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len);
-static const char *c2_condition_to_str2(c2_ptr_t ptr);
+static int
+c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, int level);
+static int c2_parse_target(const char *pattern, int offset, c2_condition_node_ptr *presult);
+static int c2_parse_op(const char *pattern, int offset, c2_condition_node_ptr *presult);
+static int c2_parse_pattern(const char *pattern, int offset, c2_condition_node_ptr *presult);
+static int c2_parse_legacy(const char *pattern, int offset, c2_condition_node_ptr *presult);
+static void c2_free(c2_condition_node_ptr p);
+static size_t c2_condition_node_to_str(c2_condition_node_ptr p, char *output, size_t len);
+static const char *c2_condition_node_to_str2(c2_condition_node_ptr ptr);
+static bool
+c2_tree_postprocess(struct c2_state *state, xcb_connection_t *c, c2_condition_node_ptr node);
 
 /**
  * Wrapper of c2_free().
  */
-static inline void c2_freep(c2_ptr_t *pp) {
+static inline void c2_freep(c2_condition_node_ptr *pp) {
 	if (pp) {
 		c2_free(*pp);
-		c2_ptr_reset(pp);
+		*pp = C2_NODE_PTR_INIT;
 	}
 }
-
-static const char *c2h_dump_str_tgt(const c2_l_t *pleaf);
 
 /**
  * Parse a condition string.
  */
-c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
+struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void *data) {
 	if (!pattern) {
 		return NULL;
 	}
 
 	// Parse the pattern
-	c2_ptr_t result = C2_PTR_INIT;
+	auto result = C2_NODE_PTR_INIT;
 	int offset = -1;
 
 	if (strlen(pattern) >= 2 && ':' == pattern[1]) {
 		offset = c2_parse_legacy(pattern, 0, &result);
 	} else {
-		offset = c2_parse_grp(pattern, 0, &result, 0);
+		offset = c2_parse_group(pattern, 0, &result, 0);
 	}
 
 	if (offset < 0) {
@@ -395,15 +371,14 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 
 	// Insert to pcondlst
 	{
-		auto plptr = cmalloc(c2_lptr_t);
-		*plptr = (c2_lptr_t){
-		    .ptr = result,
+		auto plptr = cmalloc(struct c2_condition);
+		*plptr = (struct c2_condition){
+		    .root = result,
 		    .data = data,
-		    .next = NULL,
 		};
-		if (pcondlst) {
-			plptr->next = *pcondlst;
-			*pcondlst = plptr;
+		list_init_head(&plptr->siblings);
+		if (list) {
+			list_insert_after(list, &plptr->siblings);
 		}
 
 #ifdef DEBUG_C2
@@ -419,8 +394,8 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 /**
  * Parse a condition string with a prefix.
  */
-c2_lptr_t *
-c2_parse_with_prefix(c2_lptr_t **pcondlst, const char *pattern,
+c2_condition *
+c2_parse_with_prefix(struct list_node *list, const char *pattern,
                      void *(*parse_prefix)(const char *input, const char **end, void *),
                      void (*free_value)(void *), void *user_data) {
 	char *pattern_start = NULL;
@@ -428,7 +403,7 @@ c2_parse_with_prefix(c2_lptr_t **pcondlst, const char *pattern,
 	if (pattern_start == NULL) {
 		return NULL;
 	}
-	auto ret = c2_parse(pcondlst, pattern_start, val);
+	auto ret = c2_parse(list, pattern_start, val);
 	if (!ret && free_value) {
 		free_value(val);
 	}
@@ -437,17 +412,17 @@ c2_parse_with_prefix(c2_lptr_t **pcondlst, const char *pattern,
 
 TEST_CASE(c2_parse) {
 	char str[1024];
-	c2_lptr_t *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
+	struct c2_condition *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
 	struct atom *atoms = init_mock_atoms();
 	struct c2_state *state = c2_state_new(atoms);
 	TEST_NOTEQUAL(cond, NULL);
-	TEST_TRUE(!cond->ptr.isbranch);
-	TEST_NOTEQUAL(cond->ptr.l, NULL);
-	TEST_EQUAL(cond->ptr.l->op, C2_L_OEQ);
-	TEST_EQUAL(cond->ptr.l->ptntype, C2_L_PTSTRING);
-	TEST_STREQUAL(cond->ptr.l->ptnstr, "xterm");
+	TEST_EQUAL(!cond->root.type, C2_NODE_TYPE_BRANCH);
+	TEST_NOTEQUAL(cond->root.l, NULL);
+	TEST_EQUAL(cond->root.l->op, C2_L_OEQ);
+	TEST_EQUAL(cond->root.l->ptntype, C2_L_PTSTRING);
+	TEST_STREQUAL(cond->root.l->ptnstr, "xterm");
 
-	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	size_t len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "name = \"xterm\"", len);
 
 	struct wm *wm = wm_new();
@@ -457,36 +432,36 @@ TEST_CASE(c2_parse) {
 	    .name = "xterm",
 	    .tree_ref = node,
 	};
-	TEST_TRUE(c2_match(state, &test_win, cond, NULL));
-	c2_list_postprocess(state, NULL, cond);
+	TEST_TRUE(c2_match_one(state, &test_win, cond, NULL));
+	c2_tree_postprocess(state, NULL, cond->root);
 	TEST_EQUAL(HASH_COUNT(state->tracked_properties), 0);
 	c2_state_free(state);
 	destroy_atoms(atoms);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "argb", NULL);
 	TEST_NOTEQUAL(cond, NULL);
-	TEST_TRUE(!cond->ptr.isbranch);
-	TEST_EQUAL(cond->ptr.l->ptntype, C2_L_PTINT);
-	c2_list_free(&cond, NULL);
+	TEST_NOTEQUAL(cond->root.type, C2_NODE_TYPE_BRANCH);
+	TEST_EQUAL(cond->root.l->ptntype, C2_L_PTINT);
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "argb = 'b'", NULL);
 	TEST_EQUAL(cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
 	TEST_NOTEQUAL(cond, NULL);
-	TEST_TRUE(!cond->ptr.isbranch);
-	TEST_NOTEQUAL(cond->ptr.l, NULL);
-	TEST_EQUAL(cond->ptr.l->op, C2_L_OEXISTS);
-	TEST_EQUAL(cond->ptr.l->match, C2_L_MEXACT);
-	TEST_EQUAL(cond->ptr.l->predef, C2_L_PUNDEFINED);
-	TEST_TRUE(cond->ptr.l->target_on_client);
-	TEST_NOTEQUAL(cond->ptr.l->tgt, NULL);
-	TEST_STREQUAL(cond->ptr.l->tgt, "_GTK_FRAME_EXTENTS");
+	TEST_NOTEQUAL(cond->root.type, C2_NODE_TYPE_BRANCH);
+	TEST_NOTEQUAL(cond->root.l, NULL);
+	TEST_EQUAL(cond->root.l->op, C2_L_OEXISTS);
+	TEST_EQUAL(cond->root.l->match, C2_L_MEXACT);
+	TEST_EQUAL(cond->root.l->predef, C2_L_PUNDEFINED);
+	TEST_TRUE(cond->root.l->target_on_client);
+	TEST_NOTEQUAL(cond->root.l->tgt, NULL);
+	TEST_STREQUAL(cond->root.l->tgt, "_GTK_FRAME_EXTENTS");
 
 	atoms = init_mock_atoms();
 	state = c2_state_new(atoms);
-	c2_list_postprocess(state, NULL, cond);
+	c2_tree_postprocess(state, NULL, cond->root);
 	TEST_EQUAL(HASH_COUNT(state->tracked_properties), 1);
 	HASH_ITER2(state->tracked_properties, prop) {
 		TEST_EQUAL(prop->key.property,
@@ -496,65 +471,72 @@ TEST_CASE(c2_parse) {
 	c2_state_free(state);
 	destroy_atoms(atoms);
 
-	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]", len);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
+
+	cond = c2_parse(
+	    NULL, "!(name != \"xterm\" && class_g *= \"XTerm\") || !name != \"yterm\"", NULL);
+	TEST_NOTEQUAL(cond, NULL);
+	TEST_STREQUAL(c2_condition_to_str(cond), "(!(name != \"xterm\" && class_g *= "
+	                                         "\"XTerm\") || name = \"yterm\")");
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "name = \"xterm\" && class_g *= \"XTerm\"", NULL);
 	TEST_NOTEQUAL(cond, NULL);
-	TEST_TRUE(cond->ptr.isbranch);
-	TEST_NOTEQUAL(cond->ptr.b, NULL);
-	TEST_EQUAL(cond->ptr.b->op, C2_B_OAND);
-	TEST_NOTEQUAL(cond->ptr.b->opr1.l, NULL);
-	TEST_NOTEQUAL(cond->ptr.b->opr2.l, NULL);
-	TEST_EQUAL(cond->ptr.b->opr1.l->op, C2_L_OEQ);
-	TEST_EQUAL(cond->ptr.b->opr1.l->match, C2_L_MEXACT);
-	TEST_EQUAL(cond->ptr.b->opr1.l->ptntype, C2_L_PTSTRING);
-	TEST_EQUAL(cond->ptr.b->opr2.l->op, C2_L_OEQ);
-	TEST_EQUAL(cond->ptr.b->opr2.l->match, C2_L_MCONTAINS);
-	TEST_EQUAL(cond->ptr.b->opr2.l->ptntype, C2_L_PTSTRING);
-	TEST_STREQUAL(cond->ptr.b->opr1.l->tgt, "name");
-	TEST_EQUAL(cond->ptr.b->opr1.l->predef, C2_L_PNAME);
-	TEST_STREQUAL(cond->ptr.b->opr2.l->tgt, "class_g");
-	TEST_EQUAL(cond->ptr.b->opr2.l->predef, C2_L_PCLASSG);
+	TEST_EQUAL(cond->root.type, C2_NODE_TYPE_BRANCH);
+	TEST_NOTEQUAL(cond->root.b, NULL);
+	TEST_EQUAL(cond->root.b->op, C2_B_OAND);
+	TEST_NOTEQUAL(cond->root.b->opr1.l, NULL);
+	TEST_NOTEQUAL(cond->root.b->opr2.l, NULL);
+	TEST_EQUAL(cond->root.b->opr1.l->op, C2_L_OEQ);
+	TEST_EQUAL(cond->root.b->opr1.l->match, C2_L_MEXACT);
+	TEST_EQUAL(cond->root.b->opr1.l->ptntype, C2_L_PTSTRING);
+	TEST_EQUAL(cond->root.b->opr2.l->op, C2_L_OEQ);
+	TEST_EQUAL(cond->root.b->opr2.l->match, C2_L_MCONTAINS);
+	TEST_EQUAL(cond->root.b->opr2.l->ptntype, C2_L_PTSTRING);
+	TEST_STREQUAL(cond->root.b->opr1.l->tgt, "name");
+	TEST_EQUAL(cond->root.b->opr1.l->predef, C2_L_PNAME);
+	TEST_STREQUAL(cond->root.b->opr2.l->tgt, "class_g");
+	TEST_EQUAL(cond->root.b->opr2.l->predef, C2_L_PCLASSG);
 
 	atoms = init_mock_atoms();
 	state = c2_state_new(atoms);
-	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "(name = \"xterm\" && class_g *= \"XTerm\")", len);
 	test_win.class_general = "XTerm";
-	TEST_TRUE(c2_match(state, &test_win, cond, NULL));
+	TEST_TRUE(c2_match_one(state, &test_win, cond, NULL));
 	test_win.class_general = "asdf";
-	TEST_TRUE(!c2_match(state, &test_win, cond, NULL));
-	c2_list_free(&cond, NULL);
+	TEST_TRUE(!c2_match_one(state, &test_win, cond, NULL));
+	c2_free_condition(cond, NULL);
 	c2_state_free(state);
 	destroy_atoms(atoms);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
-	TEST_EQUAL(cond->ptr.l->index, 1);
-	TEST_STREQUAL(cond->ptr.l->tgt, "_NET_WM_STATE");
-	TEST_STREQUAL(cond->ptr.l->ptnstr, "_NET_WM_STATE_HIDDEN");
+	TEST_EQUAL(cond->root.l->index, 1);
+	TEST_STREQUAL(cond->root.l->tgt, "_NET_WM_STATE");
+	TEST_STREQUAL(cond->root.l->ptnstr, "_NET_WM_STATE_HIDDEN");
 
-	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "_NET_WM_STATE[1] *= \"_NET_WM_STATE_HIDDEN\"", len);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[*]:32a*='_NET_WM_STATE_HIDDEN'", NULL);
-	TEST_EQUAL(cond->ptr.l->index, -1);
+	TEST_EQUAL(cond->root.l->index, -1);
 
-	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "_NET_WM_STATE[*] *= \"_NET_WM_STATE_HIDDEN\"", len);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "!class_i:0s", NULL);
 	TEST_NOTEQUAL(cond, NULL);
-	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "!class_i", len);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_NOTEQUAL(cond, NULL);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
 
 	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL);
 	TEST_EQUAL(cond, NULL);
@@ -573,9 +555,9 @@ TEST_CASE(c2_parse) {
 	                   "\"\\n\\n\\x8a\\b\\n^\\n*0\\n[\\n[\\n\\n\\b\\n\")";
 	cond = c2_parse(NULL, rule, NULL);
 	TEST_NOTEQUAL(cond, NULL);
-	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, rule, len);
-	c2_list_free(&cond, NULL);
+	c2_free_condition(cond, NULL);
 
 	wm_free_mock_window(wm, test_win.tree_ref);
 	wm_free(wm);
@@ -599,7 +581,8 @@ TEST_CASE(c2_parse) {
  *
  * @return offset of next character in string
  */
-static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int level) {
+static int
+c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, int level) {
 	if (!pattern) {
 		return -1;
 	}
@@ -615,11 +598,11 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 	// For storing branch operators. ops[0] is actually unused
 	c2_b_op_t ops[3] = {};
 	// For storing elements
-	c2_ptr_t eles[2] = {C2_PTR_INIT, C2_PTR_INIT};
+	c2_condition_node_ptr eles[2] = {C2_NODE_PTR_INIT, C2_NODE_PTR_INIT};
 	// Index of next free element slot in eles
 	int elei = 0;
 	// Pointer to the position of next element
-	c2_ptr_t *pele = eles;
+	c2_condition_node_ptr *pele = eles;
 	// Negation flag of next operator
 	bool neg = false;
 	// Whether we are expecting an element immediately, is true at first, or
@@ -683,20 +666,20 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 		assert(!elei || ops[elei]);
 
 		// If we are out of space
-		if (2 == elei) {
+		if (elei == 2) {
 			--elei;
 			// If the first operator has higher or equal precedence, combine
 			// the first two elements
 			if (c2h_b_opcmp(ops[1], ops[2]) >= 0) {
 				eles[0] = c2h_comb_tree(ops[1], eles[0], eles[1]);
-				c2_ptr_reset(&eles[1]);
+				eles[1] = C2_NODE_PTR_INIT;
 				pele = &eles[elei];
 				ops[1] = ops[2];
 			}
 			// Otherwise, combine the second and the incoming one
 			else {
-				eles[1] = c2h_comb_tree(ops[2], eles[1], C2_PTR_INIT);
-				assert(eles[1].isbranch);
+				eles[1] = c2h_comb_tree(ops[2], eles[1], C2_NODE_PTR_INIT);
+				assert(eles[1].type == C2_NODE_TYPE_BRANCH);
 				pele = &eles[1].b->opr2;
 			}
 			// The last operator always needs to be reset
@@ -705,17 +688,16 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 
 		// It's a subgroup if it starts with '('
 		if ('(' == pattern[offset]) {
-			if ((offset = c2_parse_grp(pattern, offset + 1, pele, level + 1)) < 0) {
+			if ((offset = c2_parse_group(pattern, offset + 1, pele, level + 1)) < 0) {
 				goto fail;
 			}
-		}
-		// Otherwise it's a leaf
-		else {
+		} else {
+			// Otherwise it's a leaf
 			if ((offset = c2_parse_target(pattern, offset, pele)) < 0) {
 				goto fail;
 			}
 
-			assert(!pele->isbranch && !c2_ptr_isempty(*pele));
+			assert(pele->type != C2_NODE_TYPE_BRANCH && pele->l != NULL);
 
 			if ((offset = c2_parse_op(pattern, offset, pele)) < 0) {
 				goto fail;
@@ -753,11 +735,7 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 		// Apply negation
 		if (neg) {
 			neg = false;
-			if (pele->isbranch) {
-				pele->b->neg = !pele->b->neg;
-			} else {
-				pele->l->neg = !pele->l->neg;
-			}
+			pele->neg = !pele->neg;
 		}
 
 		next_expected = false;
@@ -782,7 +760,7 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 		assert(2 == elei);
 		assert(ops[1]);
 		eles[0] = c2h_comb_tree(ops[1], eles[0], eles[1]);
-		c2_ptr_reset(&eles[1]);
+		eles[1] = C2_NODE_PTR_INIT;
 	}
 
 	*presult = eles[0];
@@ -803,17 +781,18 @@ fail:
 /**
  * Parse the target part of a rule.
  */
-static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
+static int c2_parse_target(const char *pattern, int offset, c2_condition_node_ptr *presult) {
 	// Initialize leaf
-	presult->isbranch = false;
-	presult->l = cmalloc(c2_l_t);
+	presult->type = C2_NODE_TYPE_LEAF;
+	presult->neg = false;
+	presult->l = cmalloc(c2_condition_node_leaf);
 
-	c2_l_t *const pleaf = presult->l;
-	*pleaf = C2_L_INIT;
+	auto const pleaf = presult->l;
+	*pleaf = C2_LEAF_NODE_INIT;
 
 	// Parse negation marks
 	while ('!' == pattern[offset]) {
-		pleaf->neg = !pleaf->neg;
+		presult->neg = !presult->neg;
 		++offset;
 		C2H_SKIP_SPACES();
 	}
@@ -946,13 +925,13 @@ fail:
 /**
  * Parse the operator part of a leaf.
  */
-static int c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult) {
-	c2_l_t *const pleaf = presult->l;
+static int c2_parse_op(const char *pattern, int offset, c2_condition_node_ptr *presult) {
+	auto const pleaf = presult->l;
 
 	// Parse negation marks
 	C2H_SKIP_SPACES();
 	while ('!' == pattern[offset]) {
-		pleaf->neg = !pleaf->neg;
+		presult->neg = !presult->neg;
 		++offset;
 		C2H_SKIP_SPACES();
 	}
@@ -1013,8 +992,8 @@ fail:
 /**
  * Parse the pattern part of a leaf.
  */
-static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) {
-	c2_l_t *const pleaf = presult->l;
+static int c2_parse_pattern(const char *pattern, int offset, c2_condition_node_ptr *presult) {
+	auto const pleaf = presult->l;
 
 	// Exists operator cannot have pattern
 	if (!pleaf->op) {
@@ -1156,17 +1135,18 @@ fail:
 /**
  * Parse a condition with legacy syntax.
  */
-static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
+static int c2_parse_legacy(const char *pattern, int offset, c2_condition_node_ptr *presult) {
 	if (strlen(pattern + offset) < 4 || pattern[offset + 1] != ':' ||
 	    !strchr(pattern + offset + 2, ':')) {
 		c2_error("Legacy parser: Invalid format.");
 	}
 
 	// Allocate memory for new leaf
-	auto pleaf = cmalloc(c2_l_t);
-	presult->isbranch = false;
+	auto pleaf = cmalloc(c2_condition_node_leaf);
+	presult->type = C2_NODE_TYPE_LEAF;
 	presult->l = pleaf;
-	*pleaf = C2_L_INIT;
+	presult->neg = false;
+	*pleaf = C2_LEAF_NODE_INIT;
 	pleaf->op = C2_L_OEQ;
 	pleaf->ptntype = C2_L_PTSTRING;
 
@@ -1216,7 +1196,8 @@ fail:
 /**
  * Do postprocessing on a condition leaf.
  */
-static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t *pleaf) {
+static bool
+c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_condition_node_leaf *pleaf) {
 	// Get target atom if it's not a predefined one
 	if (pleaf->predef == C2_L_PUNDEFINED) {
 		pleaf->tgtatom = get_atom_with_nul(state->atoms, pleaf->tgt, c);
@@ -1295,85 +1276,78 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 	return true;
 }
 
-static bool c2_tree_postprocess(struct c2_state *state, xcb_connection_t *c, c2_ptr_t node) {
-	if (node.istrue) {
-		return true;
+static bool
+c2_tree_postprocess(struct c2_state *state, xcb_connection_t *c, c2_condition_node_ptr node) {
+	switch (node.type) {
+	case C2_NODE_TYPE_TRUE: return true;
+	case C2_NODE_TYPE_LEAF: return c2_l_postprocess(state, c, node.l);
+	case C2_NODE_TYPE_BRANCH:
+		return c2_tree_postprocess(state, c, node.b->opr1) &&
+		       c2_tree_postprocess(state, c, node.b->opr2);
+	default: unreachable();
 	}
-	if (!node.isbranch) {
-		return c2_l_postprocess(state, c, node.l);
-	}
-
-	return c2_tree_postprocess(state, c, node.b->opr1) &&
-	       c2_tree_postprocess(state, c, node.b->opr2);
 }
 
-bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, c2_lptr_t *list) {
-	c2_lptr_t *head = list;
-	while (head) {
-		if (!c2_tree_postprocess(state, c, head->ptr)) {
+bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, struct list_node *list) {
+	list_foreach(c2_condition, i, list, siblings) {
+		if (!c2_tree_postprocess(state, c, i->root)) {
 			return false;
 		}
-		head = head->next;
 	}
 	return true;
 }
 /**
  * Free a condition tree.
  */
-static void c2_free(c2_ptr_t p) {
+static void c2_free(c2_condition_node_ptr p) {
 	// For a branch element
-	if (p.isbranch) {
-		c2_b_t *const pbranch = p.b;
-
-		if (!pbranch) {
+	switch (p.type) {
+	case C2_NODE_TYPE_BRANCH:
+		if (p.b == NULL) {
 			return;
 		}
 
-		c2_free(pbranch->opr1);
-		c2_free(pbranch->opr2);
-		free(pbranch);
-	}
-	// For a leaf element
-	else {
-		c2_l_t *const pleaf = p.l;
-
-		if (!pleaf) {
+		c2_free(p.b->opr1);
+		c2_free(p.b->opr2);
+		free(p.b);
+		return;
+	case C2_NODE_TYPE_LEAF:
+		// For a leaf element
+		if (!p.l) {
 			return;
 		}
 
-		free(pleaf->tgt);
-		free(pleaf->ptnstr);
+		free(p.l->tgt);
+		free(p.l->ptnstr);
 #ifdef CONFIG_REGEX_PCRE
-		pcre2_code_free(pleaf->regex_pcre);
-		pcre2_match_data_free(pleaf->regex_pcre_match);
+		pcre2_code_free(p.l->regex_pcre);
+		pcre2_match_data_free(p.l->regex_pcre_match);
 #endif
-		free(pleaf);
+		free(p.l);
+	default: return;
 	}
 }
 
 /**
  * Free a condition tree in c2_lptr_t.
  */
-c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f) {
+void c2_free_condition(c2_condition *lp, c2_userdata_free f) {
 	if (!lp) {
-		return NULL;
+		return;
 	}
 
-	c2_lptr_t *pnext = lp->next;
 	if (f) {
 		f(lp->data);
 	}
 	lp->data = NULL;
-	c2_free(lp->ptr);
+	c2_free(lp->root);
 	free(lp);
-
-	return pnext;
 }
 
 /**
  * Get a string representation of a rule target.
  */
-static const char *c2h_dump_str_tgt(const c2_l_t *pleaf) {
+static const char *c2h_dump_str_tgt(const c2_condition_node_leaf *pleaf) {
 	if (pleaf->predef != C2_L_PUNDEFINED) {
 		return C2_PREDEFS[pleaf->predef].name;
 	}
@@ -1386,7 +1360,8 @@ static const char *c2h_dump_str_tgt(const c2_l_t *pleaf) {
  * the null terminator.
  * null terminator will not be written to the output.
  */
-static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
+static size_t
+c2_condition_node_to_str(const c2_condition_node_ptr p, char *output, size_t len) {
 #define push_char(c)                                                                     \
 	if (offset < len)                                                                \
 		output[offset] = (c);                                                    \
@@ -1402,27 +1377,27 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 		offset += strlen(str);                                                   \
 	} while (false)
 	size_t offset = 0;
-	if (p.isbranch) {
+	char number[128];
+	switch (p.type) {
+	case C2_NODE_TYPE_BRANCH:
 		// Branch, i.e. logical operators &&, ||, XOR
-		const c2_b_t *const pbranch = p.b;
-
-		if (!pbranch) {
+		if (p.b == NULL) {
 			return 0;
 		}
 
-		if (pbranch->neg) {
+		if (p.neg) {
 			push_char('!');
 		}
 
 		push_char('(');
 		if (len > offset) {
-			offset += c2_condition_to_str(pbranch->opr1, output + offset,
-			                              len - offset);
+			offset += c2_condition_node_to_str(p.b->opr1, output + offset,
+			                                   len - offset);
 		} else {
-			offset += c2_condition_to_str(pbranch->opr1, NULL, 0);
+			offset += c2_condition_node_to_str(p.b->opr1, NULL, 0);
 		}
 
-		switch (pbranch->op) {
+		switch (p.b->op) {
 		case C2_B_OAND: push_str(" && "); break;
 		case C2_B_OOR: push_str(" || "); break;
 		case C2_B_OXOR: push_str(" XOR "); break;
@@ -1430,52 +1405,50 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 		}
 
 		if (len > offset) {
-			offset += c2_condition_to_str(pbranch->opr2, output + offset,
-			                              len - offset);
+			offset += c2_condition_node_to_str(p.b->opr2, output + offset,
+			                                   len - offset);
 		} else {
-			offset += c2_condition_to_str(pbranch->opr2, NULL, 0);
+			offset += c2_condition_node_to_str(p.b->opr2, NULL, 0);
 		}
 		push_str(")");
-	} else {
+		break;
+	case C2_NODE_TYPE_LEAF:
 		// Leaf node
-		const c2_l_t *const pleaf = p.l;
-		char number[128];
-
-		if (!pleaf) {
+		if (!p.l) {
 			return 0;
 		}
 
-		if (C2_L_OEXISTS == pleaf->op && pleaf->neg) {
+		if (C2_L_OEXISTS == p.l->op && p.neg) {
 			push_char('!');
 		}
 
 		// Print target name, type, and format
-		const char *target_str = c2h_dump_str_tgt(pleaf);
+		const char *target_str = c2h_dump_str_tgt(p.l);
 		push_str(target_str);
-		if (pleaf->target_on_client) {
+		if (p.l->target_on_client) {
 			push_char('@');
 		}
-		if (pleaf->predef == C2_L_PUNDEFINED) {
-			if (pleaf->index < 0) {
+		if (p.l->predef == C2_L_PUNDEFINED) {
+			if (p.l->index < 0) {
 				push_str("[*]");
 			} else {
-				sprintf(number, "[%d]", pleaf->index);
+				sprintf(number, "[%d]", p.l->index);
 				push_str(number);
 			}
 		}
 
-		if (C2_L_OEXISTS == pleaf->op) {
+		if (C2_L_OEXISTS == p.l->op) {
 			return offset;
 		}
 
 		// Print operator
 		push_char(' ');
 
-		if (C2_L_OEXISTS != pleaf->op && pleaf->neg) {
+		if (C2_L_OEXISTS != p.l->op && p.neg) {
 			push_char('!');
 		}
 
-		switch (pleaf->match) {
+		switch (p.l->match) {
 		case C2_L_MEXACT: break;
 		case C2_L_MCONTAINS: push_char('*'); break;
 		case C2_L_MSTART: push_char('^'); break;
@@ -1483,11 +1456,11 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 		case C2_L_MWILDCARD: push_char('%'); break;
 		}
 
-		if (pleaf->match_ignorecase) {
+		if (p.l->match_ignorecase) {
 			push_char('?');
 		}
 
-		switch (pleaf->op) {
+		switch (p.l->op) {
 		case C2_L_OEXISTS: break;
 		case C2_L_OEQ: push_str("="); break;
 		case C2_L_OGT: push_str(">"); break;
@@ -1498,16 +1471,16 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 
 		// Print pattern
 		push_char(' ');
-		switch (pleaf->ptntype) {
+		switch (p.l->ptntype) {
 		case C2_L_PTINT:
-			sprintf(number, "%ld", pleaf->ptnint);
+			sprintf(number, "%ld", p.l->ptnint);
 			push_str(number);
 			break;
 		case C2_L_PTSTRING:
 			// TODO(yshui) Escape string before printing out?
 			push_char('"');
-			for (int i = 0; pleaf->ptnstr[i]; i++) {
-				switch (pleaf->ptnstr[i]) {
+			for (int i = 0; p.l->ptnstr[i]; i++) {
+				switch (p.l->ptnstr[i]) {
 				case '\\': push_str("\\\\"); break;
 				case '"': push_str("\\\""); break;
 				case '\a': push_str("\\a"); break;
@@ -1518,11 +1491,11 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 				case '\t': push_str("\\t"); break;
 				case '\n': push_str("\\n"); break;
 				default:
-					if (isprint(pleaf->ptnstr[i])) {
-						push_char(pleaf->ptnstr[i]);
+					if (isprint(p.l->ptnstr[i])) {
+						push_char(p.l->ptnstr[i]);
 					} else {
 						sprintf(number, "\\x%02x",
-						        (unsigned char)pleaf->ptnstr[i]);
+						        (unsigned char)p.l->ptnstr[i]);
 						push_str(number);
 					}
 					break;
@@ -1532,6 +1505,9 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 			break;
 		default: assert(0); break;
 		}
+		break;
+	case C2_NODE_TYPE_TRUE: push_str("true"); break;
+	default: unreachable();
 	}
 #undef push_char
 #undef push_str
@@ -1541,9 +1517,9 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 /// Wrapper of c2_condition_to_str which uses an internal static buffer, and
 /// returns a nul terminated string. The returned string is only valid until the
 /// next call to this function, and should not be freed.
-static const char *c2_condition_to_str2(c2_ptr_t ptr) {
+static const char *c2_condition_node_to_str2(c2_condition_node_ptr ptr) {
 	static thread_local char buf[4096];
-	auto len = c2_condition_to_str(ptr, buf, sizeof(buf));
+	auto len = c2_condition_node_to_str(ptr, buf, sizeof(buf));
 	if (len >= sizeof(buf)) {
 		// Resulting string is too long, clobber the last character with a nul.
 		buf[sizeof(buf) - 1] = '\0';
@@ -1553,8 +1529,8 @@ static const char *c2_condition_to_str2(c2_ptr_t ptr) {
 	return buf;
 }
 
-const char *c2_lptr_to_str(const c2_lptr_t *ptr) {
-	return c2_condition_to_str2(ptr->ptr);
+const char *c2_condition_to_str(const c2_condition *ptr) {
+	return c2_condition_node_to_str2(ptr->root);
 }
 
 /// Get the list of target number values from a struct c2_property_value
@@ -1576,7 +1552,7 @@ c2_values_get_number_targets(const struct c2_property_value *values, int index, 
 	return NULL;
 }
 
-static inline bool c2_int_op(const c2_l_t *leaf, int64_t target) {
+static inline bool c2_int_op(const c2_condition_node_leaf *leaf, int64_t target) {
 	switch (leaf->op) {
 	case C2_L_OEXISTS: return leaf->predef != C2_L_PUNDEFINED ? target : true;
 	case C2_L_OEQ: return target == leaf->ptnint;
@@ -1588,7 +1564,7 @@ static inline bool c2_int_op(const c2_l_t *leaf, int64_t target) {
 	unreachable();
 }
 
-static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
+static bool c2_match_once_leaf_int(const struct win *w, const c2_condition_node_leaf *leaf) {
 	// Get the value
 	if (leaf->predef != C2_L_PUNDEFINED) {
 		// A predefined target
@@ -1663,7 +1639,7 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_l_t *leaf) {
 	return false;
 }
 
-static bool c2_string_op(const c2_l_t *leaf, const char *target) {
+static bool c2_string_op(const c2_condition_node_leaf *leaf, const char *target) {
 	if (leaf->op == C2_L_OEXISTS) {
 		return true;
 	}
@@ -1706,9 +1682,8 @@ static bool c2_string_op(const c2_l_t *leaf, const char *target) {
 	unreachable();
 }
 
-static bool
-c2_match_once_leaf_string(struct atom *atoms, const struct win *w, const c2_l_t *leaf) {
-
+static bool c2_match_once_leaf_string(struct atom *atoms, const struct win *w,
+                                      const c2_condition_node_leaf *leaf) {
 	// A predefined target
 	const char *predef_target = NULL;
 	if (leaf->predef != C2_L_PUNDEFINED) {
@@ -1800,30 +1775,32 @@ c2_match_once_leaf_string(struct atom *atoms, const struct win *w, const c2_l_t 
  *
  * For internal use.
  */
-static inline bool
-c2_match_once_leaf(const struct c2_state *state, const struct win *w, const c2_l_t *leaf) {
-	assert(leaf);
+static inline bool c2_match_once_leaf(const struct c2_state *state, const struct win *w,
+                                      const c2_condition_node_ptr leaf) {
+	assert(leaf.type == C2_NODE_TYPE_LEAF);
+	assert(leaf.l);
 
 	const xcb_window_t wid =
-	    (leaf->target_on_client ? win_client_id(w, /*fallback_to_self=*/true) : win_id(w));
+	    (leaf.l->target_on_client ? win_client_id(w, /*fallback_to_self=*/true)
+	                              : win_id(w));
 
 	// Return if wid is missing
-	if (leaf->predef == C2_L_PUNDEFINED && !wid) {
+	if (leaf.l->predef == C2_L_PUNDEFINED && !wid) {
 		log_debug("Window ID missing.");
 		return false;
 	}
 
 	log_verbose("Matching window %#010x (%s) against condition %s", wid, w->name,
-	            c2_condition_to_str2((c2_ptr_t){.l = (c2_l_t *)leaf, .isbranch = false}));
+	            c2_condition_node_to_str2(leaf));
 
-	unsigned int pattern_type = leaf->ptntype;
+	unsigned int pattern_type = leaf.l->ptntype;
 	if (pattern_type == C2_L_PTUNDEFINED) {
-		if (leaf->target_id == C2_L_INVALID_TARGET_ID) {
+		if (leaf.l->target_id == C2_L_INVALID_TARGET_ID) {
 			log_debug("Leaf target ID is invalid, skipping. Most likely a "
 			          "list postprocessing failure.");
 			return false;
 		}
-		auto values = &w->c2_state.values[leaf->target_id];
+		auto values = &w->c2_state.values[leaf.l->target_id];
 		if (values->type == C2_PROPERTY_TYPE_STRING) {
 			pattern_type = C2_L_PTSTRING;
 		} else {
@@ -1833,9 +1810,9 @@ c2_match_once_leaf(const struct c2_state *state, const struct win *w, const c2_l
 
 	switch (pattern_type) {
 	// Deal with integer patterns
-	case C2_L_PTINT: return c2_match_once_leaf_int(w, leaf);
+	case C2_L_PTINT: return c2_match_once_leaf_int(w, leaf.l);
 	// String patterns
-	case C2_L_PTSTRING: return c2_match_once_leaf_string(state->atoms, w, leaf);
+	case C2_L_PTSTRING: return c2_match_once_leaf_string(state->atoms, w, leaf.l);
 	default: unreachable();
 	}
 }
@@ -1845,67 +1822,69 @@ c2_match_once_leaf(const struct c2_state *state, const struct win *w, const c2_l
  *
  * @return true if matched, false otherwise.
  */
-static bool
-c2_match_once(const struct c2_state *state, const struct win *w, const c2_ptr_t cond) {
+static bool c2_match_once(const struct c2_state *state, const struct win *w,
+                          const c2_condition_node_ptr node) {
 	bool result = false;
 
-	if (cond.isbranch) {
+	switch (node.type) {
+	case C2_NODE_TYPE_BRANCH:
 		// Handle a branch (and/or/xor operation)
-		const c2_b_t *pb = cond.b;
-
-		if (!pb) {
+		if (!node.b) {
 			return false;
 		}
 
 		log_verbose("Matching window %#010x (%s) against condition %s", win_id(w),
-		            w->name, c2_condition_to_str2(cond));
+		            w->name, c2_condition_node_to_str2(node));
 
-		switch (pb->op) {
+		switch (node.b->op) {
 		case C2_B_OAND:
-			result = (c2_match_once(state, w, pb->opr1) &&
-			          c2_match_once(state, w, pb->opr2));
+			result = (c2_match_once(state, w, node.b->opr1) &&
+			          c2_match_once(state, w, node.b->opr2));
 			break;
 		case C2_B_OOR:
-			result = (c2_match_once(state, w, pb->opr1) ||
-			          c2_match_once(state, w, pb->opr2));
+			result = (c2_match_once(state, w, node.b->opr1) ||
+			          c2_match_once(state, w, node.b->opr2));
 			break;
 		case C2_B_OXOR:
-			result = (c2_match_once(state, w, pb->opr1) !=
-			          c2_match_once(state, w, pb->opr2));
+			result = (c2_match_once(state, w, node.b->opr1) !=
+			          c2_match_once(state, w, node.b->opr2));
 			break;
 		default: unreachable();
 		}
 
 		log_debug("(%#010x): branch: result = %d, pattern = %s", win_id(w),
-		          result, c2_condition_to_str2(cond));
-	} else if (cond.istrue) {
-		return true;
-	} else {
+		          result, c2_condition_node_to_str2(node));
+		break;
+	case C2_NODE_TYPE_TRUE: return true;
+	case C2_NODE_TYPE_LEAF:
 		// A leaf
-		const c2_l_t *pleaf = cond.l;
-
-		if (!pleaf) {
+		if (node.l == NULL) {
 			return false;
 		}
 
-		result = c2_match_once_leaf(state, w, pleaf);
+		result = c2_match_once_leaf(state, w, node);
 
 		log_debug("(%#010x): leaf: result = %d, client = %#010x,  pattern = %s",
 		          win_id(w), result, win_client_id(w, false),
-		          c2_condition_to_str2(cond));
+		          c2_condition_node_to_str2(node));
+		break;
+	default: unreachable();
 	}
 
 	// Postprocess the result
-	if (cond.isbranch ? cond.b->neg : cond.l->neg) {
+	if (node.neg) {
 		result = !result;
 	}
 
 	return result;
 }
 
-c2_lptr_t *c2_new_true(void) {
-	auto ret = ccalloc(1, c2_lptr_t);
-	ret->ptr = (c2_ptr_t){.istrue = true};
+c2_condition *c2_new_true(struct list_node *list) {
+	auto ret = ccalloc(1, c2_condition);
+	ret->root = (c2_condition_node_ptr){.type = C2_NODE_TYPE_TRUE};
+	if (list) {
+		list_insert_after(list, &ret->siblings);
+	}
 	return ret;
 }
 
@@ -1916,13 +1895,13 @@ c2_lptr_t *c2_new_true(void) {
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
-              void **pdata) {
+bool c2_match(struct c2_state *state, const struct win *w,
+              const struct list_node *conditions, void **pdata) {
 	// Then go through the whole linked list
-	for (; condlst; condlst = condlst->next) {
-		if (c2_match_once(state, w, condlst->ptr)) {
+	list_foreach(c2_condition, i, conditions, siblings) {
+		if (c2_match_once(state, w, i->root)) {
 			if (pdata) {
-				*pdata = condlst->data;
+				*pdata = i->data;
 			}
 			return true;
 		}
@@ -1933,42 +1912,52 @@ bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *cond
 
 /// Match a window against the first condition in a condition linked list.
 bool c2_match_one(const struct c2_state *state, const struct win *w,
-                  const c2_lptr_t *condlst, void **pdata) {
-	if (!condlst) {
+                  const c2_condition *condition, void **pdata) {
+	if (!condition) {
 		return false;
 	}
-	if (c2_match_once(state, w, condlst->ptr)) {
+	if (c2_match_once(state, w, condition->root)) {
 		if (pdata) {
-			*pdata = condlst->data;
+			*pdata = condition->data;
 		}
 		return true;
 	}
 	return false;
 }
 
-/// Iterate over all conditions in a condition linked list. Call the callback for
-/// each of the conditions. If the callback returns true, the iteration stops
-/// early.
-///
-/// Returns whether the iteration was stopped early.
-bool c2_list_foreach(const c2_lptr_t *condlist, c2_list_foreach_cb_t cb, void *data) {
-	for (auto i = condlist; i; i = i->next) {
-		if (cb(i, data)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 /// Return user data stored in a condition.
-void *c2_list_get_data(const c2_lptr_t *condlist) {
-	return condlist->data;
+void *c2_condition_get_data(const c2_condition *condition) {
+	return condition->data;
 }
 
-void *c2_list_set_data(c2_lptr_t *condlist, void *data) {
-	void *old = condlist->data;
-	condlist->data = data;
+void *c2_condition_set_data(c2_condition *condition, void *data) {
+	void *old = condition->data;
+	condition->data = data;
 	return old;
+}
+
+c2_condition *c2_condition_list_entry(struct list_node *list) {
+	return list == NULL ? NULL : list_entry(list, c2_condition, siblings);
+}
+
+c2_condition *c2_condition_list_next(struct list_node *list, c2_condition *condition) {
+	if (condition == NULL) {
+		return NULL;
+	}
+	if (condition->siblings.next == list) {
+		return NULL;
+	}
+	return c2_condition_list_entry(condition->siblings.next);
+}
+
+c2_condition *c2_condition_list_prev(struct list_node *list, c2_condition *condition) {
+	if (condition == NULL) {
+		return NULL;
+	}
+	if (condition->siblings.prev == list) {
+		return NULL;
+	}
+	return c2_condition_list_entry(condition->siblings.prev);
 }
 
 struct c2_state *c2_state_new(struct atom *atoms) {
@@ -2220,10 +2209,4 @@ bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
 	key.is_on_client = false;
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	return p != NULL;
-}
-
-void c2_condlist_insert(c2_lptr_t **pcondlst, c2_lptr_t *pnew) {
-	c2_lptr_t *pcur = *pcondlst;
-	pnew->next = pcur;
-	*pcondlst = pnew;
 }
