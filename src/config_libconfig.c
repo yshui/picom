@@ -480,7 +480,7 @@ void generate_fading_config(struct options *opt) {
 		          opt->fade_in_step, opt->fade_delta);
 	}
 
-	duration = 1.0 / opt->fade_out_step * opt->fade_delta;
+	duration = 1.0 / opt->fade_out_step * opt->fade_delta / 1000.0;
 	if (!safe_isinf(duration) && !safe_isnan(duration) && duration > 0) {
 		scoped_charp duration_str = NULL;
 		dtostr(duration, &duration_str);
