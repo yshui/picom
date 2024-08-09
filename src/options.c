@@ -59,6 +59,7 @@ struct picom_option {
 	int has_arg;
 	struct picom_arg arg;
 	const char *help;
+	const char *argv0;
 };
 
 static bool set_flag(const struct picom_option * /*opt*/, const struct picom_arg *arg,
@@ -70,7 +71,7 @@ static bool set_flag(const struct picom_option * /*opt*/, const struct picom_arg
 static bool set_rule_flag(const struct picom_option *arg_opt, const struct picom_arg *arg,
                           const char * /*arg_str*/, void *output) {
 	auto opt = (struct options *)output;
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules(arg_opt->long_name);
 		opt->has_both_style_of_rules = true;
 		return true;
@@ -114,7 +115,7 @@ static bool store_float(const struct picom_option *opt, const struct picom_arg *
 static bool store_rule_float(const struct picom_option *arg_opt, const struct picom_arg *arg,
                              const char *arg_str, void *output) {
 	auto opt = (struct options *)output;
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules(arg_opt->long_name);
 		opt->has_both_style_of_rules = true;
 		return true;
@@ -147,12 +148,12 @@ static bool store_rules(const struct picom_option *arg_opt, const struct picom_a
                         const char *arg_str, void *output) {
 	const struct picom_rules_parser *parser = arg->user_data;
 	struct options *opt = (struct options *)output;
-	if (opt->rules != NULL) {
+	if (!list_is_empty(&opt->rules)) {
 		log_warn_both_style_of_rules(arg_opt->long_name);
 		opt->has_both_style_of_rules = true;
 		return true;
 	}
-	auto rules = (c2_lptr_t **)(output + arg->offset);
+	auto rules = (struct list_node *)(output + arg->offset);
 	if (!parser->parse_prefix) {
 		return c2_parse(rules, arg_str, NULL) != NULL;
 	}
@@ -452,6 +453,8 @@ static const struct picom_option picom_options[] = {
                                                                              "window is fullscreen based only on its size and coordinates."},
     [804] = {"realtime"                 , ENABLE(use_realtime_scheduling)  , "Enable realtime scheduling. This might reduce latency, but might also cause "
                                                                              "other issues. Disable this if you see the compositor being killed."},
+    [805] = {"monitor"                  , ENABLE(inspect_monitor)          , "For picom-inspect, run in a loop and dump information every time something "
+                                                                             "changed about a window.", "picom-inspect"},
 
     // Flags that takes an argument
     ['r'] = {"shadow-radius"               , INTEGER(shadow_radius, 0, INT_MAX)             , "The blur radius for shadows. (default 12)"},
@@ -634,10 +637,17 @@ static void usage(const char *argv0, int ret) {
 		line_wrap = window_size.ws_col;
 	}
 
+	const char *basename = strrchr(argv0, '/') ? strrchr(argv0, '/') + 1 : argv0;
+
 	size_t help_indent = 0;
 	for (size_t i = 0; i < ARR_SIZE(picom_options); i++) {
 		if (picom_options[i].help == NULL) {
 			// Hide options with no help message.
+			continue;
+		}
+		if (picom_options[i].argv0 != NULL &&
+		    strcmp(picom_options[i].argv0, basename) != 0) {
+			// Hide options that are not for this program.
 			continue;
 		}
 		auto option_len = strlen(picom_options[i].long_name) + 2 + 4;
@@ -652,6 +662,11 @@ static void usage(const char *argv0, int ret) {
 
 	for (size_t i = 0; i < ARR_SIZE(picom_options); i++) {
 		if (picom_options[i].help == NULL) {
+			continue;
+		}
+		if (picom_options[i].argv0 != NULL &&
+		    strcmp(picom_options[i].argv0, basename) != 0) {
+			// Hide options that are not for this program.
 			continue;
 		}
 		size_t option_len = 8;
@@ -841,7 +856,7 @@ static bool sanitize_options(struct options *opt) {
 			dynarr_clear(opt->all_scripts, script_ptr_deinit);
 		}
 
-		if (opt->window_shader_fg || opt->window_shader_fg_rules) {
+		if (opt->window_shader_fg || !list_is_empty(&opt->window_shader_fg_rules)) {
 			log_warn("The new shader interface is not supported by the "
 			         "legacy glx backend. You may want to use "
 			         "--glx-fshader-win instead.");
@@ -943,9 +958,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 	int o = 0, longopt_idx = -1;
 	bool failed = false;
 	optind = 1;
+	const char *basename = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		if (o == '?' || o == ':' || picom_options[o].arg.handler == NULL) {
 			usage(argv[0], 1);
+			failed = true;
+		} else if (picom_options[o].argv0 != NULL &&
+		           strcmp(picom_options[o].argv0, basename) != 0) {
+			log_error("Invalid option %s", argv[optind - 1]);
 			failed = true;
 		} else if (!picom_options[o].arg.handler(
 		               &picom_options[o], &picom_options[o].arg, optarg, opt)) {
@@ -1008,27 +1028,27 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 
 void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c,
                                   struct options *option) {
-	if (option->rules) {
-		if (!c2_list_postprocess(state, c->c, option->rules)) {
+	if (!list_is_empty(&option->rules)) {
+		if (!c2_list_postprocess(state, c->c, &option->rules)) {
 			log_error("Post-processing of rules failed, some of your rules "
 			          "might not work");
 		}
 		return;
 	}
 
-	if (!(c2_list_postprocess(state, c->c, option->unredir_if_possible_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->paint_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->shadow_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->shadow_clip_list) &&
-	      c2_list_postprocess(state, c->c, option->fade_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->blur_background_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->invert_color_list) &&
-	      c2_list_postprocess(state, c->c, option->window_shader_fg_rules) &&
-	      c2_list_postprocess(state, c->c, option->opacity_rules) &&
-	      c2_list_postprocess(state, c->c, option->rounded_corners_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->corner_radius_rules) &&
-	      c2_list_postprocess(state, c->c, option->focus_blacklist) &&
-	      c2_list_postprocess(state, c->c, option->transparent_clipping_blacklist))) {
+	if (!(c2_list_postprocess(state, c->c, &option->unredir_if_possible_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->paint_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->shadow_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->shadow_clip_list) &&
+	      c2_list_postprocess(state, c->c, &option->fade_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->blur_background_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->invert_color_list) &&
+	      c2_list_postprocess(state, c->c, &option->window_shader_fg_rules) &&
+	      c2_list_postprocess(state, c->c, &option->opacity_rules) &&
+	      c2_list_postprocess(state, c->c, &option->rounded_corners_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->corner_radius_rules) &&
+	      c2_list_postprocess(state, c->c, &option->focus_blacklist) &&
+	      c2_list_postprocess(state, c->c, &option->transparent_clipping_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your "
 		          "rules might not work");
 	}

@@ -8,7 +8,9 @@
 #include <stddef.h>
 #include <xcb/xproto.h>
 
-typedef struct _c2_lptr c2_lptr_t;
+#include "utils/list.h"
+
+typedef struct c2_condition c2_condition;
 typedef struct session session_t;
 struct c2_state;
 /// Per-window state used for c2 condition matching.
@@ -19,19 +21,20 @@ struct c2_window_state {
 };
 struct atom;
 struct win;
+struct list_node;
 
 typedef void (*c2_userdata_free)(void *);
-c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data);
+struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void *data);
 
 /// Parse a condition that has a prefix. The prefix is parsed by `parse_prefix`. If
 /// `free_value` is not NULL, it will be called to free the value returned by
 /// `parse_prefix` when error occurs.
-c2_lptr_t *
-c2_parse_with_prefix(c2_lptr_t **pcondlst, const char *pattern,
+c2_condition *
+c2_parse_with_prefix(struct list_node *list, const char *pattern,
                      void *(*parse_prefix)(const char *input, const char **end, void *),
                      void (*free_value)(void *), void *user_data);
 
-c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f);
+void c2_free_condition(c2_condition *lp, c2_userdata_free f);
 
 /// Create a new c2_state object. This is used for maintaining the internal state
 /// used for c2 condition matching. This state object holds a reference to the
@@ -50,30 +53,46 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
                             xcb_connection_t *c, xcb_window_t client_win,
                             xcb_window_t frame_win);
 
-bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
-              void **pdata);
-bool c2_match_one(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
-                  void **pdata);
+bool c2_match(struct c2_state *state, const struct win *w,
+              const struct list_node *conditions, void **pdata);
+bool c2_match_one(const struct c2_state *state, const struct win *w,
+                  const c2_condition *condlst, void **pdata);
 
-bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, c2_lptr_t *list);
-typedef bool (*c2_list_foreach_cb_t)(const c2_lptr_t *cond, void *data);
-bool c2_list_foreach(const c2_lptr_t *list, c2_list_foreach_cb_t cb, void *data);
+bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, struct list_node *list);
 /// Return user data stored in a condition.
-void *c2_list_get_data(const c2_lptr_t *condlist);
+void *c2_condition_get_data(const c2_condition *condition);
 /// Set user data stored in a condition. Return the old user data.
-void *c2_list_set_data(c2_lptr_t *condlist, void *data);
-/// Convert a c2_lptr_t to string. The returned string is only valid until the
+void *c2_condition_set_data(c2_condition *condlist, void *data);
+/// Convert a c2_condition to string. The returned string is only valid until the
 /// next call to this function, and should not be freed.
-const char *c2_lptr_to_str(const c2_lptr_t *);
-void c2_condlist_insert(c2_lptr_t **pcondlst, c2_lptr_t *pnew);
+const char *c2_condition_to_str(const c2_condition *);
+c2_condition *c2_condition_list_next(struct list_node *list, c2_condition *condition);
+c2_condition *c2_condition_list_prev(struct list_node *list, c2_condition *condition);
+c2_condition *c2_condition_list_entry(struct list_node *list);
 /// Create a new condition list with a single condition that is always true.
-c2_lptr_t *c2_new_true(void);
+c2_condition *c2_new_true(struct list_node *list);
+
+#define c2_condition_list_foreach(list, i)                                               \
+	for (c2_condition *i =                                                           \
+	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->next);   \
+	     i; i = c2_condition_list_next(list, i))
+#define c2_condition_list_foreach_rev(list, i)                                           \
+	for (c2_condition *i =                                                           \
+	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->prev);   \
+	     i; i = c2_condition_list_prev(list, i))
+
+#define c2_condition_list_foreach_safe(list, i, n)                                       \
+	for (c2_condition *i =                                                           \
+	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->next),   \
+	                  *n = c2_condition_list_next(list, i);                          \
+	     i; i = n, n = c2_condition_list_next(list, i))
 
 /**
  * Destroy a condition list.
  */
-static inline void c2_list_free(c2_lptr_t **pcondlst, c2_userdata_free f) {
-	while ((*pcondlst = c2_free_lptr(*pcondlst, f))) {
+static inline void c2_list_free(struct list_node *list, c2_userdata_free f) {
+	c2_condition_list_foreach_safe(list, i, ni) {
+		c2_free_condition(i, f);
 	}
-	*pcondlst = NULL;
+	list_init_head(list);
 }

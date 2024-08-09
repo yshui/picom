@@ -59,8 +59,6 @@ typedef struct win_option {
 	bool clip_shadow_above;
 } win_option_t;
 
-typedef struct _c2_lptr c2_lptr_t;
-
 enum vblank_scheduler_type {
 	/// X Present extension based vblank events
 	VBLANK_SCHEDULER_PRESENT,
@@ -241,6 +239,9 @@ typedef struct options {
 	bool print_diagnostics;
 	/// Render to a separate window instead of taking over the screen
 	bool debug_mode;
+	/// For picom-inspect only, dump windows in a loop
+	bool inspect_monitor;
+	xcb_window_t inspect_win;
 	// === General ===
 	/// Use the legacy backends?
 	bool use_legacy_backends;
@@ -273,7 +274,7 @@ typedef struct options {
 	bool unredir_if_possible;
 	/// List of conditions of windows to ignore as a full-screen window
 	/// when determining if a window could be unredirected.
-	c2_lptr_t *unredir_if_possible_blacklist;
+	struct list_node unredir_if_possible_blacklist;
 	/// Delay before unredirecting screen, in milliseconds.
 	int unredir_if_possible_delay;
 	/// Forced redirection setting through D-Bus.
@@ -289,7 +290,7 @@ typedef struct options {
 	/// Window to constantly repaint in benchmark mode. 0 for full-screen.
 	xcb_window_t benchmark_wid;
 	/// A list of conditions of windows not to paint.
-	c2_lptr_t *paint_blacklist;
+	struct list_node paint_blacklist;
 	/// Whether to show all X errors.
 	bool show_all_xerrors;
 	/// Whether to avoid acquiring X Selection.
@@ -318,13 +319,13 @@ typedef struct options {
 	int shadow_offset_x, shadow_offset_y;
 	double shadow_opacity;
 	/// Shadow blacklist. A linked list of conditions.
-	c2_lptr_t *shadow_blacklist;
+	struct list_node shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
 	bool shadow_ignore_shaped;
 	/// Whether to crop shadow to the very X RandR monitor.
 	bool crop_shadow_to_monitor;
 	/// Don't draw shadow over these windows. A linked list of conditions.
-	c2_lptr_t *shadow_clip_list;
+	struct list_node shadow_clip_list;
 	bool shadow_enable;
 
 	// === Fading ===
@@ -339,7 +340,7 @@ typedef struct options {
 	/// Whether to disable fading on ARGB managed destroyed windows.
 	bool no_fading_destroyed_argb;
 	/// Fading blacklist. A linked list of conditions.
-	c2_lptr_t *fade_blacklist;
+	struct list_node fade_blacklist;
 	bool fading_enable;
 
 	// === Opacity ===
@@ -374,7 +375,7 @@ typedef struct options {
 	/// to window opacity.
 	bool blur_background_fixed;
 	/// Background blur blacklist. A linked list of conditions.
-	c2_lptr_t *blur_background_blacklist;
+	struct list_node blur_background_blacklist;
 	/// Blur convolution kernel.
 	struct conv **blur_kerns;
 	/// Number of convolution kernels
@@ -382,24 +383,24 @@ typedef struct options {
 	/// Custom fragment shader for painting windows
 	char *window_shader_fg;
 	/// Rules to change custom fragment shader for painting windows.
-	c2_lptr_t *window_shader_fg_rules;
+	struct list_node window_shader_fg_rules;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
 	/// based on window opacity.
 	bool inactive_dim_fixed;
 	/// Conditions of windows to have inverted colors.
-	c2_lptr_t *invert_color_list;
+	struct list_node invert_color_list;
 	/// Rules to change window opacity.
-	c2_lptr_t *opacity_rules;
+	struct list_node opacity_rules;
 	/// Limit window brightness
 	double max_brightness;
 	// Radius of rounded window corners
 	int corner_radius;
 	/// Rounded corners blacklist. A linked list of conditions.
-	c2_lptr_t *rounded_corners_blacklist;
+	struct list_node rounded_corners_blacklist;
 	/// Rounded corner rules. A linked list of conditions.
-	c2_lptr_t *corner_radius_rules;
+	struct list_node corner_radius_rules;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.
@@ -409,7 +410,7 @@ typedef struct options {
 	/// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
 	bool use_ewmh_active_win;
 	/// A list of windows always to be considered focused.
-	c2_lptr_t *focus_blacklist;
+	struct list_node focus_blacklist;
 	/// Whether to do window grouping with <code>WM_TRANSIENT_FOR</code>.
 	bool detect_transient;
 	/// Whether to do window grouping with <code>WM_CLIENT_LEADER</code>.
@@ -427,7 +428,7 @@ typedef struct options {
 	bool transparent_clipping;
 	/// A list of conditions of windows to which transparent clipping
 	/// should not apply
-	c2_lptr_t *transparent_clipping_blacklist;
+	struct list_node transparent_clipping_blacklist;
 
 	bool dithered_present;
 	// === Animation ===
@@ -435,7 +436,7 @@ typedef struct options {
 	/// Array of all the scripts used in `animations`. This is a dynarr.
 	struct script **all_scripts;
 
-	c2_lptr_t *rules;
+	struct list_node rules;
 	bool has_both_style_of_rules;
 } options_t;
 
