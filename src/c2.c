@@ -1801,7 +1801,7 @@ c2_match_once_leaf_string(struct atom *atoms, const struct win *w, const c2_l_t 
  * For internal use.
  */
 static inline bool
-c2_match_once_leaf(struct c2_state *state, const struct win *w, const c2_l_t *leaf) {
+c2_match_once_leaf(const struct c2_state *state, const struct win *w, const c2_l_t *leaf) {
 	assert(leaf);
 
 	const xcb_window_t wid =
@@ -1845,7 +1845,8 @@ c2_match_once_leaf(struct c2_state *state, const struct win *w, const c2_l_t *le
  *
  * @return true if matched, false otherwise.
  */
-static bool c2_match_once(struct c2_state *state, const struct win *w, const c2_ptr_t cond) {
+static bool
+c2_match_once(const struct c2_state *state, const struct win *w, const c2_ptr_t cond) {
 	bool result = false;
 
 	if (cond.isbranch) {
@@ -1931,8 +1932,8 @@ bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *cond
 }
 
 /// Match a window against the first condition in a condition linked list.
-bool c2_match_one(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
-                  void **pdata) {
+bool c2_match_one(const struct c2_state *state, const struct win *w,
+                  const c2_lptr_t *condlst, void **pdata) {
 	if (!condlst) {
 		return false;
 	}

@@ -2193,6 +2193,15 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		return NULL;
 	}
 
+	const char *basename = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
+
+	if (strcmp(basename, "picom-inspect") == 0) {
+		ps->o.backend = backend_find("dummy");
+		ps->o.print_diagnostics = false;
+		ps->o.dbus = false;
+		ps->o.inspect_win = inspect_select_window(&ps->c);
+	}
+
 	ps->window_options_default = win_options_from_config(&ps->o);
 
 	if (ps->o.window_shader_fg) {
@@ -2732,11 +2741,6 @@ int PICOM_MAIN(int argc, char **argv) {
 	bool all_xerrors = false, need_fork = false;
 	if (get_early_config(argc, argv, &config_file, &all_xerrors, &need_fork, &exit_code)) {
 		return exit_code;
-	}
-
-	char *exe_name = basename(argv[0]);
-	if (strcmp(exe_name, "picom-inspect") == 0) {
-		return inspect_main(argc, argv, config_file);
 	}
 
 	int pfds[2];

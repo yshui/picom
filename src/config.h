@@ -241,6 +241,7 @@ typedef struct options {
 	bool print_diagnostics;
 	/// Render to a separate window instead of taking over the screen
 	bool debug_mode;
+	xcb_window_t inspect_win;
 	// === General ===
 	/// Use the legacy backends?
 	bool use_legacy_backends;

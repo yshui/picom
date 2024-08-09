@@ -52,8 +52,8 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
 
 bool c2_match(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
               void **pdata);
-bool c2_match_one(struct c2_state *state, const struct win *w, const c2_lptr_t *condlst,
-                  void **pdata);
+bool c2_match_one(const struct c2_state *state, const struct win *w,
+                  const c2_lptr_t *condlst, void **pdata);
 
 bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, c2_lptr_t *list);
 typedef bool (*c2_list_foreach_cb_t)(const c2_lptr_t *cond, void *data);

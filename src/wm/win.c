@@ -24,6 +24,7 @@
 #include "compiler.h"
 #include "config.h"
 #include "dbus.h"
+#include "inspect.h"
 #include "log.h"
 #include "picom.h"
 #include "region.h"
@@ -1114,6 +1115,13 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	    (win_id(w) == ps->debug_window ||
 	     (win_client_id(w, /*fallback_to_self=*/false) == ps->debug_window))) {
 		w->options.paint = TRI_FALSE;
+	}
+
+	if ((ps->o.inspect_win != XCB_NONE && win_id(w) == ps->o.inspect_win) ||
+	    ps->o.inspect_monitor) {
+		inspect_dump_window(ps->c2_state, &ps->o, w);
+		printf("\n");
+		quit(ps);
 	}
 }
 
