@@ -727,6 +727,21 @@ bool parse_config(options_t *opt, const char *config_file) {
 	// clang-format on
 
 	list_init_head(&opt->included_config_files);
+	list_init_head(&opt->unredir_if_possible_blacklist);
+	list_init_head(&opt->paint_blacklist);
+	list_init_head(&opt->shadow_blacklist);
+	list_init_head(&opt->shadow_clip_list);
+	list_init_head(&opt->fade_blacklist);
+	list_init_head(&opt->blur_background_blacklist);
+	list_init_head(&opt->invert_color_list);
+	list_init_head(&opt->window_shader_fg_rules);
+	list_init_head(&opt->opacity_rules);
+	list_init_head(&opt->rounded_corners_blacklist);
+	list_init_head(&opt->corner_radius_rules);
+	list_init_head(&opt->focus_blacklist);
+	list_init_head(&opt->transparent_clipping_blacklist);
+	list_init_head(&opt->rules);
+
 	opt->all_scripts = dynarr_new(struct script *, 4);
 	return parse_config_libconfig(opt, config_file);
 }

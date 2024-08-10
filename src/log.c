@@ -17,6 +17,7 @@
 
 #include "compiler.h"
 #include "log.h"
+#include "utils/console.h"
 #include "utils/misc.h"
 
 thread_local struct log *tls_logger;
@@ -274,7 +275,6 @@ static void file_logger_destroy(struct log_target *tgt) {
 	free(tgt);
 }
 
-#define ANSI(x) "\033[" x "m"
 static const char *terminal_colorize_begin(enum log_level level) {
 	switch (level) {
 	case LOG_LEVEL_TRACE: return ANSI("30;2");

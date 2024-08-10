@@ -1994,10 +1994,6 @@ err:
 	return true;
 }
 
-static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) {
-	return load_shader_source(data, c2_list_get_data(cond));
-}
-
 static struct window_options win_options_from_config(const struct options *opts) {
 	struct window_options ret = {
 	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
@@ -2201,6 +2197,17 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		return NULL;
 	}
 
+	const char *basename = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
+
+	if (strcmp(basename, "picom-inspect") == 0) {
+		ps->o.backend = backend_find("dummy");
+		ps->o.print_diagnostics = false;
+		ps->o.dbus = false;
+		if (!ps->o.inspect_monitor) {
+			ps->o.inspect_win = inspect_select_window(&ps->c);
+		}
+	}
+
 	ps->window_options_default = win_options_from_config(&ps->o);
 
 	if (ps->o.window_shader_fg) {
@@ -2235,9 +2242,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	options_postprocess_c2_lists(ps->c2_state, &ps->c, &ps->o);
 
 	// Load shader source file specified in the shader rules
-	if (c2_list_foreach(ps->o.window_shader_fg_rules, load_shader_source_for_condition, ps)) {
-		log_error("Failed to load shader source file for some of the window "
-		          "shader rules");
+	c2_condition_list_foreach(&ps->o.window_shader_fg_rules, i) {
+		if (!load_shader_source(ps, c2_condition_get_data(i))) {
+			log_error("Failed to load shader source file for some of the "
+			          "window shader rules");
+		}
 	}
 	if (load_shader_source(ps, ps->o.window_shader_fg)) {
 		log_error("Failed to load window shader source file");
@@ -2752,11 +2761,6 @@ int PICOM_MAIN(int argc, char **argv) {
 	bool all_xerrors = false, need_fork = false;
 	if (get_early_config(argc, argv, &config_file, &all_xerrors, &need_fork, &exit_code)) {
 		return exit_code;
-	}
-
-	char *exe_name = basename(argv[0]);
-	if (strcmp(exe_name, "picom-inspect") == 0) {
-		return inspect_main(argc, argv, config_file);
 	}
 
 	int pfds[2];
