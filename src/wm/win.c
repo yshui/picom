@@ -1767,6 +1767,32 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 }
 
 #define WSTATE_PAIR(a, b) ((int)(a) * NUM_OF_WSTATES + (int)(b))
+/// Advance the animation of a window.
+///
+/// Returns true if animation was running before this function is called, and is no
+/// longer running now. Returns false if animation is still running, or if there was no
+/// animation running when this is called.
+static bool win_advance_animation(struct win *w, double delta_t,
+                                  const struct win_script_context *win_ctx) {
+	// No state changes, if there's a animation running, we just continue it.
+	if (w->running_animation_instance == NULL) {
+		return false;
+	}
+	log_verbose("Advance animation for %#010x (%s) %f seconds", win_id(w), w->name, delta_t);
+	if (!script_instance_is_finished(w->running_animation_instance)) {
+		auto elapsed_slot =
+		    script_elapsed_slot(w->running_animation_instance->script);
+		w->running_animation_instance->memory[elapsed_slot] += delta_t;
+		auto result =
+		    script_instance_evaluate(w->running_animation_instance, (void *)win_ctx);
+		if (result != SCRIPT_EVAL_OK) {
+			log_error("Failed to run animation script: %d", result);
+			return true;
+		}
+		return false;
+	}
+	return true;
+}
 
 bool win_process_animation_and_state_change(struct session *ps, struct win *w, double delta_t) {
 	// If the window hasn't ever been damaged yet, it won't be rendered in this frame.
@@ -1792,26 +1818,8 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	auto win_ctx = win_script_context_prepare(ps, w);
 	w->previous.opacity = w->opacity;
 	if (w->previous.state == w->state && win_ctx.opacity_before == win_ctx.opacity) {
-	advance_animation:
 		// No state changes, if there's a animation running, we just continue it.
-		if (w->running_animation_instance == NULL) {
-			return false;
-		}
-		log_verbose("Advance animation for %#010x (%s) %f seconds", win_id(w),
-		            w->name, delta_t);
-		if (!script_instance_is_finished(w->running_animation_instance)) {
-			auto elapsed_slot =
-			    script_elapsed_slot(w->running_animation_instance->script);
-			w->running_animation_instance->memory[elapsed_slot] += delta_t;
-			auto result = script_instance_evaluate(
-			    w->running_animation_instance, &win_ctx);
-			if (result != SCRIPT_EVAL_OK) {
-				log_error("Failed to run animation script: %d", result);
-				return true;
-			}
-			return false;
-		}
-		return true;
+		return win_advance_animation(w, delta_t, &win_ctx);
 	}
 
 	// Try to determine the right animation trigger based on state changes. Note there
@@ -1882,7 +1890,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], win_id(w), w->name);
-		goto advance_animation;
+		return win_advance_animation(w, delta_t, &win_ctx);
 	}
 
 	auto wopts = win_options(w);
