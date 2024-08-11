@@ -264,6 +264,9 @@ struct win {
 	struct win_state_change previous;
 	struct script_instance *running_animation_instance;
 	struct win_script running_animation;
+
+	/// Number of times each animation trigger is blocked
+	unsigned int animation_block[ANIMATION_TRIGGER_COUNT];
 };
 
 struct win_script_context {

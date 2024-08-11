@@ -525,5 +525,6 @@ static inline void log_warn_both_style_of_rules(const char *option_name) {
 	         "precedence, and \"%s\" will have no effect.",
 	         option_name, option_name);
 }
+enum animation_trigger parse_animation_trigger(const char *trigger);
 
 // vim: set noet sw=8 ts=8 :

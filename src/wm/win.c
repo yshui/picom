@@ -1903,10 +1903,15 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], win_id(w), w->name);
 		return win_advance_animation(w, delta_t, &win_ctx);
+	} else if (w->animation_block[trigger] > 0) {
+		log_debug("Not starting animation %s for window %#010x (%s) because it "
+		          "is blocked.",
+		          animation_trigger_names[trigger], win_id(w), w->name);
+		return win_advance_animation(w, delta_t, &win_ctx);
 	}
 
 	auto wopts = win_options(w);
-	if (trigger == ANIMATION_TRIGGER_INVALID || wopts.animations[trigger].script == NULL) {
+	if (wopts.animations[trigger].script == NULL) {
 		return true;
 	}
 
