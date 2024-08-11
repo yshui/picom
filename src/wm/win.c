@@ -1939,6 +1939,10 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 
 	auto new_animation = script_instance_new(wopts.animations[trigger].script);
 	if (w->running_animation_instance) {
+		// Interrupt the old animation and start the new animation from where the
+		// old has left off. Note we still need to advance the old animation for
+		// the last interval.
+		win_advance_animation(w, delta_t, &win_ctx);
 		if (geometry_changed) {
 			// If the window has moved, we need to adjust scripts
 			// outputs so that the window will stay in the same position and
