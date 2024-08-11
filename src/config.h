@@ -70,7 +70,6 @@ enum vblank_scheduler_type {
 };
 
 enum animation_trigger {
-	ANIMATION_TRIGGER_INVALID = -1,
 	/// When a hidden window is shown
 	ANIMATION_TRIGGER_SHOW = 0,
 	/// When a window is hidden
@@ -83,7 +82,11 @@ enum animation_trigger {
 	ANIMATION_TRIGGER_OPEN,
 	/// When a window is closed
 	ANIMATION_TRIGGER_CLOSE,
-	ANIMATION_TRIGGER_LAST = ANIMATION_TRIGGER_CLOSE,
+	/// When a window's geometry changes
+	ANIMATION_TRIGGER_GEOMETRY,
+
+	ANIMATION_TRIGGER_INVALID,
+	ANIMATION_TRIGGER_COUNT = ANIMATION_TRIGGER_INVALID,
 };
 
 static const char *animation_trigger_names[] attr_unused = {
@@ -93,6 +96,7 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_DECREASE_OPACITY] = "decrease-opacity",
     [ANIMATION_TRIGGER_OPEN] = "open",
     [ANIMATION_TRIGGER_CLOSE] = "close",
+    [ANIMATION_TRIGGER_GEOMETRY] = "geometry",
 };
 
 struct script;
@@ -192,7 +196,7 @@ struct window_maybe_options {
 	enum tristate full_shadow;
 
 	/// Window specific animations
-	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
+	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 };
 
 // Make sure `window_options` has no implicit padding.
@@ -214,7 +218,7 @@ struct window_options {
 	bool paint;
 	bool full_shadow;
 
-	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
+	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 };
 #pragma GCC diagnostic pop
 
@@ -432,7 +436,7 @@ typedef struct options {
 
 	bool dithered_present;
 	// === Animation ===
-	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
+	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 	/// Array of all the scripts used in `animations`. This is a dynarr.
 	struct script **all_scripts;
 

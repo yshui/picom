@@ -555,9 +555,7 @@ cdbus_process_list_win(session_t *ps, DBusMessage *msg attr_unused, DBusMessage 
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
-/**
- * Process a win_get D-Bus request.
- */
+/// Process a property Get D-Bus request.
 static DBusHandlerResult
 cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_t wid,
                                   DBusMessage *reply, DBusError *e) {

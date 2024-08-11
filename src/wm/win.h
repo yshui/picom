@@ -90,9 +90,13 @@ struct win_geometry {
 
 /// These are changes of window state that might trigger an animation. We separate them
 /// out and delay their application so determining which animation to run is easier.
+///
+/// These values are only hold for an instant, and once the animation is started they are
+/// updated to reflect the latest state.
 struct win_state_change {
 	winstate_t state;
 	double opacity;
+	struct win_geometry g;
 };
 
 struct win {
@@ -264,6 +268,7 @@ struct win {
 
 struct win_script_context {
 	double x, y, width, height;
+	double x_before, y_before, width_before, height_before;
 	double opacity_before, opacity;
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
@@ -276,6 +281,10 @@ static const struct script_context_info win_script_context_info[] = {
     {"window-y", offsetof(struct win_script_context, y)},
     {"window-width", offsetof(struct win_script_context, width)},
     {"window-height", offsetof(struct win_script_context, height)},
+    {"window-x-before", offsetof(struct win_script_context, x_before)},
+    {"window-y-before", offsetof(struct win_script_context, y_before)},
+    {"window-width-before", offsetof(struct win_script_context, width_before)},
+    {"window-height-before", offsetof(struct win_script_context, height_before)},
     {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
     {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
     {"window-monitor-x", offsetof(struct win_script_context, monitor_x)},
@@ -320,7 +329,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
 
 static inline void win_script_fold(const struct win_script *upper,
                                    const struct win_script *lower, struct win_script *output) {
-	for (size_t i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+	for (size_t i = 0; i < ANIMATION_TRIGGER_COUNT; i++) {
 		output[i] = upper[i].script ? upper[i] : lower[i];
 	}
 }
@@ -376,6 +385,12 @@ static inline struct window_options __attribute__((always_inline))
 win_options(const struct win *w) {
 	return win_maybe_options_or(
 	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);
+}
+
+/// Check if win_geometry `a` and `b` have the same sizes and positions. Border width is
+/// not considered.
+static inline bool win_geometry_eq(struct win_geometry a, struct win_geometry b) {
+	return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
 }
 
 /// Process pending updates/images flags on a window. Has to be called in X critical

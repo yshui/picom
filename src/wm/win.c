@@ -397,6 +397,7 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		}
 
 		// Update window geometry
+		w->previous.g = w->g;
 		w->g = w->pending_g;
 
 		// Whether a window is fullscreen changes based on its geometry
@@ -1732,6 +1733,10 @@ struct win_script_context win_script_context_prepare(struct session *ps, struct 
 	    .width = w->widthb,
 	    .height = w->heightb,
 	    .opacity = w->opacity,
+	    .x_before = w->previous.g.x,
+	    .y_before = w->previous.g.y,
+	    .width_before = w->previous.g.width + w->previous.g.border_width * 2,
+	    .height_before = w->previous.g.height + w->previous.g.border_width * 2,
 	    .opacity_before = w->previous.opacity,
 	    .monitor_x = monitor.x1,
 	    .monitor_y = monitor.y1,
@@ -1817,10 +1822,9 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 
 	auto win_ctx = win_script_context_prepare(ps, w);
 	w->previous.opacity = w->opacity;
-	if (w->previous.state == w->state && win_ctx.opacity_before == win_ctx.opacity) {
-		// No state changes, if there's a animation running, we just continue it.
-		return win_advance_animation(w, delta_t, &win_ctx);
-	}
+
+	bool geometry_changed = !win_geometry_eq(w->previous.g, w->g);
+	w->previous.g = w->g;
 
 	// Try to determine the right animation trigger based on state changes. Note there
 	// is some complications here. X automatically unmaps windows before destroying
@@ -1831,13 +1835,10 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	// gap between the UnmapNotify and DestroyNotify. There is no way on our end of
 	// fixing this without using hacks.
 	enum animation_trigger trigger = ANIMATION_TRIGGER_INVALID;
-	if (w->previous.state == w->state) {
-		// Only opacity changed
-		assert(w->state == WSTATE_MAPPED);
-		trigger = win_ctx.opacity > win_ctx.opacity_before
-		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
-		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
-	} else {
+
+	// Animation trigger priority:
+	//   state > geometry > opacity
+	if (w->previous.state != w->state) {
 		// Send D-Bus signal
 		if (ps->o.dbus) {
 			switch (w->state) {
@@ -1883,10 +1884,21 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			assert(false);
 			return true;
 		}
+	} else if (geometry_changed) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = ANIMATION_TRIGGER_GEOMETRY;
+	} else if (win_ctx.opacity_before != win_ctx.opacity) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = win_ctx.opacity > win_ctx.opacity_before
+		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
+		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
 	}
 
-	if (trigger != ANIMATION_TRIGGER_INVALID && w->running_animation_instance &&
-	    (w->running_animation.suppressions & (1 << trigger)) != 0) {
+	if (trigger == ANIMATION_TRIGGER_INVALID) {
+		// No state changes, if there's a animation running, we just continue it.
+		return win_advance_animation(w, delta_t, &win_ctx);
+	} else if (w->running_animation_instance &&
+	           (w->running_animation.suppressions & (1 << trigger)) != 0) {
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], win_id(w), w->name);
@@ -1927,6 +1939,45 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 
 	auto new_animation = script_instance_new(wopts.animations[trigger].script);
 	if (w->running_animation_instance) {
+		if (geometry_changed) {
+			// If the window has moved, we need to adjust scripts
+			// outputs so that the window will stay in the same position and
+			// size after applying the animation. This way the window's size
+			// and position won't change discontinuously.
+			auto memory = w->running_animation_instance->memory;
+			auto output_indices = w->running_animation.output_indices;
+			struct {
+				int output;
+				double delta;
+			} adjustments[] = {
+			    {WIN_SCRIPT_OFFSET_X, win_ctx.x_before - win_ctx.x},
+			    {WIN_SCRIPT_OFFSET_Y, win_ctx.y_before - win_ctx.y},
+			    {WIN_SCRIPT_SHADOW_OFFSET_X, win_ctx.x_before - win_ctx.x},
+			    {WIN_SCRIPT_SHADOW_OFFSET_Y, win_ctx.y_before - win_ctx.y},
+			};
+			for (size_t i = 0; i < ARR_SIZE(adjustments); i++) {
+				if (output_indices[adjustments[i].output] >= 0) {
+					memory[output_indices[adjustments[i].output]] +=
+					    adjustments[i].delta;
+				}
+			}
+
+			struct {
+				int output;
+				double factor;
+			} factors[] = {
+			    {WIN_SCRIPT_SCALE_X, win_ctx.width_before / win_ctx.width},
+			    {WIN_SCRIPT_SCALE_Y, win_ctx.height_before / win_ctx.height},
+			    {WIN_SCRIPT_SHADOW_SCALE_X, win_ctx.width_before / win_ctx.width},
+			    {WIN_SCRIPT_SHADOW_SCALE_Y, win_ctx.height_before / win_ctx.height},
+			};
+			for (size_t i = 0; i < ARR_SIZE(factors); i++) {
+				if (output_indices[factors[i].output] >= 0) {
+					memory[output_indices[factors[i].output]] *=
+					    factors[i].factor;
+				}
+			}
+		}
 		script_instance_resume_from(w->running_animation_instance, new_animation);
 		free(w->running_animation_instance);
 	}

@@ -218,7 +218,7 @@ void inspect_dump_window_maybe_options(struct window_maybe_options wopts) {
 	}
 
 	char **animation_triggers = dynarr_new(char *, 0);
-	for (int i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+	for (int i = 0; i < ANIMATION_TRIGGER_COUNT; i++) {
 		if (wopts.animations[i].script != NULL) {
 			char *name = NULL;
 			casprintf(&name, "\"%s\"", animation_trigger_names[i]);

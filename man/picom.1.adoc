@@ -515,6 +515,10 @@ animations = ({
 
 	  _decrease-opacity_:: When the opacity of a window is decreased.
 
+	  _geometry_:: When the geometry of a window is changed. (EXPERIMENTAL)
++
+WARNING: The _geometry_ trigger is experimental. Using this means you accept the caveat that geometry animations will also trigger when you manually resize or move a window, like when you drag the window around with your mouse.
+
   _suppressions_:::
 	Which other animations should be suppressed when this animation is running. Normally, if another trigger is activated while an animation is already running, the animation in progress will be interrupted and the new animation will start. If you want to prevent this, you can set the `suppressions` option to a list of triggers that should be suppressed. This is optional, the default value for this is an empty list.
 
@@ -712,6 +716,8 @@ Currently, these context variables are defined: :::
   _window-x_, _window-y_:: The coordinates of the top-left corner of the window.
 
   _window-width_, _window-height_:: The size of the window.
+
+  _window-x-before_, _window-y-before_, _window-width-before_, _window-height-before_:: The size and coordinates of the window before the animation is triggered. This is only meaningfully different from the normal window geometry variables for the _geometry_ trigger.
 
   _window-monitor-x_, _window-monitor-y_, _window-monitor-width_, _window-monitor-height_:: Defines the rectangle which reflects the monitor the window is on. If the window is not fully contained in any monitor, the rectangle will reflect the entire virtual screen.
 
