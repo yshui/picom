@@ -90,9 +90,13 @@ struct win_geometry {
 
 /// These are changes of window state that might trigger an animation. We separate them
 /// out and delay their application so determining which animation to run is easier.
+///
+/// These values are only hold for an instant, and once the animation is started they are
+/// updated to reflect the latest state.
 struct win_state_change {
 	winstate_t state;
 	double opacity;
+	struct win_geometry g;
 };
 
 struct win {
@@ -101,6 +105,12 @@ struct win {
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	image_handle win_image;
+	/// The old window image before the window image is refreshed. This is used for
+	/// animation, and is only kept alive for the duration of the animation.
+	image_handle saved_win_image;
+	/// How much to scale the saved_win_image, so that it is the same size as the
+	/// current window image.
+	vec2 saved_win_image_scale;
 	image_handle shadow_image;
 	image_handle mask_image;
 	// TODO(yshui) only used by legacy backends, remove.
@@ -254,10 +264,14 @@ struct win {
 	struct win_state_change previous;
 	struct script_instance *running_animation_instance;
 	struct win_script running_animation;
+
+	/// Number of times each animation trigger is blocked
+	unsigned int animation_block[ANIMATION_TRIGGER_COUNT];
 };
 
 struct win_script_context {
 	double x, y, width, height;
+	double x_before, y_before, width_before, height_before;
 	double opacity_before, opacity;
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
@@ -270,6 +284,10 @@ static const struct script_context_info win_script_context_info[] = {
     {"window-y", offsetof(struct win_script_context, y)},
     {"window-width", offsetof(struct win_script_context, width)},
     {"window-height", offsetof(struct win_script_context, height)},
+    {"window-x-before", offsetof(struct win_script_context, x_before)},
+    {"window-y-before", offsetof(struct win_script_context, y_before)},
+    {"window-width-before", offsetof(struct win_script_context, width_before)},
+    {"window-height-before", offsetof(struct win_script_context, height_before)},
     {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
     {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
     {"window-monitor-x", offsetof(struct win_script_context, monitor_x)},
@@ -295,6 +313,7 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_CROP_Y] = {"crop-y"},
     [WIN_SCRIPT_CROP_WIDTH] = {"crop-width"},
     [WIN_SCRIPT_CROP_HEIGHT] = {"crop-height"},
+    [WIN_SCRIPT_SAVED_IMAGE_BLEND] = {"saved-image-blend"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
@@ -314,7 +333,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
 
 static inline void win_script_fold(const struct win_script *upper,
                                    const struct win_script *lower, struct win_script *output) {
-	for (size_t i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+	for (size_t i = 0; i < ANIMATION_TRIGGER_COUNT; i++) {
 		output[i] = upper[i].script ? upper[i] : lower[i];
 	}
 }
@@ -370,6 +389,12 @@ static inline struct window_options __attribute__((always_inline))
 win_options(const struct win *w) {
 	return win_maybe_options_or(
 	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);
+}
+
+/// Check if win_geometry `a` and `b` have the same sizes and positions. Border width is
+/// not considered.
+static inline bool win_geometry_eq(struct win_geometry a, struct win_geometry b) {
+	return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
 }
 
 /// Process pending updates/images flags on a window. Has to be called in X critical

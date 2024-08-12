@@ -11,6 +11,7 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
+#include "renderer/layout.h"
 #include "wm/win.h"
 #include "x.h"
 
@@ -93,6 +94,9 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 			if (!pixman_region32_not_empty(cmd->blit.target_mask)) {
 				continue;
 			}
+			if (cmd->blit.opacity < 1. / MAX_ALPHA) {
+				continue;
+			}
 			succeeded =
 			    backend->ops.blit(backend, cmd->origin, target, &cmd->blit);
 			break;
@@ -121,6 +125,7 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 static inline const char *render_command_source_name(enum backend_command_source source) {
 	switch (source) {
 	case BACKEND_COMMAND_SOURCE_WINDOW: return "window";
+	case BACKEND_COMMAND_SOURCE_WINDOW_SAVED: return "window_saved";
 	case BACKEND_COMMAND_SOURCE_SHADOW: return "shadow";
 	case BACKEND_COMMAND_SOURCE_BACKGROUND: return "background";
 	}

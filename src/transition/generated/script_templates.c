@@ -81,11 +81,11 @@ static struct script *script_template__disappear(int *output_slots) {
 	    {.type = INST_STORE, .slot = 10},
 	    {.type = INST_BRANCH_ONCE, .rel = 15},
 	    {.type = INST_HALT},
-	    {.type = INST_LOAD_CTX, .ctx = 32},
+	    {.type = INST_LOAD_CTX, .ctx = 64},
 	    {.type = INST_STORE_OVER_NAN, .slot = 13},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
 	    {.type = INST_STORE, .slot = 15},
-	    {.type = INST_LOAD_CTX, .ctx = 40},
+	    {.type = INST_LOAD_CTX, .ctx = 72},
 	    {.type = INST_STORE, .slot = 14},
 	    {.type = INST_IMM, .imm = 0x1p+0},
 	    {.type = INST_STORE_OVER_NAN, .slot = 16},
@@ -209,6 +209,7 @@ static struct script *script_template__disappear(int *output_slots) {
 	output_slots[12] = -1;
 	output_slots[13] = -1;
 	output_slots[14] = -1;
+	output_slots[15] = -1;
 	return ret;
 }
 
@@ -299,11 +300,11 @@ static struct script *script_template__appear(int *output_slots) {
 	    {.type = INST_STORE, .slot = 10},
 	    {.type = INST_BRANCH_ONCE, .rel = 13},
 	    {.type = INST_HALT},
-	    {.type = INST_LOAD_CTX, .ctx = 32},
+	    {.type = INST_LOAD_CTX, .ctx = 64},
 	    {.type = INST_STORE_OVER_NAN, .slot = 13},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
 	    {.type = INST_STORE, .slot = 15},
-	    {.type = INST_LOAD_CTX, .ctx = 40},
+	    {.type = INST_LOAD_CTX, .ctx = 72},
 	    {.type = INST_STORE, .slot = 14},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741828},
 	    {.type = INST_STORE_OVER_NAN, .slot = 16},
@@ -425,6 +426,7 @@ static struct script *script_template__appear(int *output_slots) {
 	output_slots[12] = -1;
 	output_slots[13] = -1;
 	output_slots[14] = -1;
+	output_slots[15] = -1;
 	return ret;
 }
 
@@ -619,6 +621,7 @@ static struct script *script_template__slide_out(int *output_slots) {
 	output_slots[12] = 6;
 	output_slots[13] = 7;
 	output_slots[14] = 8;
+	output_slots[15] = -1;
 	return ret;
 }
 
@@ -819,6 +822,7 @@ static struct script *script_template__slide_in(int *output_slots) {
 	output_slots[12] = 6;
 	output_slots[13] = 7;
 	output_slots[14] = 8;
+	output_slots[15] = -1;
 	return ret;
 }
 
@@ -1016,6 +1020,7 @@ static struct script *script_template__fly_out(int *output_slots) {
 	output_slots[12] = -1;
 	output_slots[13] = -1;
 	output_slots[14] = -1;
+	output_slots[15] = -1;
 	return ret;
 }
 
@@ -1204,6 +1209,7 @@ static struct script *script_template__fly_in(int *output_slots) {
 	output_slots[12] = -1;
 	output_slots[13] = -1;
 	output_slots[14] = -1;
+	output_slots[15] = -1;
 	return ret;
 }
 
@@ -1251,6 +1257,304 @@ static bool win_script_preset__fly_in(struct win_script *output, config_setting_
 	script_specialize(output->script, spec, ARR_SIZE(spec));
 	return true;
 }
+static struct script *script_template__geometry_change(int *output_slots) {
+	static const struct instruction instrs[] = {
+	    {.type = INST_BRANCH_ONCE, .rel = 76},
+	    {.type = INST_IMM, .imm = 0x1p+0},
+	    {.type = INST_LOAD, .slot = 11},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 12},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_CUBIC_BEZIER,
+	                  .bezier = {.ax = 0x1.35c28f5c28f5cp+0,
+	                             .bx = -0x1.ae147ae147ae2p-2,
+	                             .cx = 0x1.ae147ae147ae2p-3,
+	                             .ay = -0x1.999999999996p-5,
+	                             .by = -0x1.cccccccccccd4p-1,
+	                             .cy = 0x1.f333333333335p+0}},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 11},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 0},
+	    {.type = INST_IMM, .imm = 0x1p+0},
+	    {.type = INST_LOAD, .slot = 13},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 14},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_CUBIC_BEZIER,
+	                  .bezier = {.ax = 0x1.35c28f5c28f5cp+0,
+	                             .bx = -0x1.ae147ae147ae2p-2,
+	                             .cx = 0x1.ae147ae147ae2p-3,
+	                             .ay = -0x1.999999999996p-5,
+	                             .by = -0x1.cccccccccccd4p-1,
+	                             .cy = 0x1.f333333333335p+0}},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 13},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 1},
+	    {.type = INST_LOAD, .slot = 0},
+	    {.type = INST_STORE, .slot = 2},
+	    {.type = INST_LOAD, .slot = 1},
+	    {.type = INST_STORE, .slot = 3},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_LOAD, .slot = 15},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 16},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_CUBIC_BEZIER,
+	                  .bezier = {.ax = 0x1.35c28f5c28f5cp+0,
+	                             .bx = -0x1.ae147ae147ae2p-2,
+	                             .cx = 0x1.ae147ae147ae2p-3,
+	                             .ay = -0x1.999999999996p-5,
+	                             .by = -0x1.cccccccccccd4p-1,
+	                             .cy = 0x1.f333333333335p+0}},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 15},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 4},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_LOAD, .slot = 17},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 18},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_CUBIC_BEZIER,
+	                  .bezier = {.ax = 0x1.35c28f5c28f5cp+0,
+	                             .bx = -0x1.ae147ae147ae2p-2,
+	                             .cx = 0x1.ae147ae147ae2p-3,
+	                             .ay = -0x1.999999999996p-5,
+	                             .by = -0x1.cccccccccccd4p-1,
+	                             .cy = 0x1.f333333333335p+0}},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 17},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 5},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_LOAD, .slot = 19},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 20},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_LINEAR},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 19},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 6},
+	    {.type = INST_LOAD, .slot = 4},
+	    {.type = INST_STORE, .slot = 7},
+	    {.type = INST_LOAD, .slot = 5},
+	    {.type = INST_STORE, .slot = 8},
+	    {.type = INST_BRANCH_ONCE, .rel = 31},
+	    {.type = INST_HALT},
+	    {.type = INST_LOAD_CTX, .ctx = 48},
+	    {.type = INST_LOAD_CTX, .ctx = 16},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {.type = INST_STORE_OVER_NAN, .slot = 11},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 12},
+	    {.type = INST_LOAD_CTX, .ctx = 56},
+	    {.type = INST_LOAD_CTX, .ctx = 24},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {.type = INST_STORE_OVER_NAN, .slot = 13},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 14},
+	    {.type = INST_LOAD_CTX, .ctx = 32},
+	    {.type = INST_LOAD_CTX, .ctx = 0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_STORE_OVER_NAN, .slot = 15},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 16},
+	    {.type = INST_LOAD_CTX, .ctx = 40},
+	    {.type = INST_LOAD_CTX, .ctx = 8},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_STORE_OVER_NAN, .slot = 17},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 18},
+	    {.type = INST_IMM, .imm = 0x1p+0},
+	    {.type = INST_STORE_OVER_NAN, .slot = 19},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 20},
+	    {.type = INST_BRANCH, .rel = -103},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_STORE, .slot = 10},
+	    {.type = INST_LOAD, .slot = 12},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 10},
+	    {.type = INST_LOAD, .slot = 14},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 10},
+	    {.type = INST_LOAD, .slot = 16},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 10},
+	    {.type = INST_LOAD, .slot = 18},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 10},
+	    {.type = INST_LOAD, .slot = 20},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 10},
+	    {.type = INST_HALT},
+	};
+	struct script *ret = malloc(offsetof(struct script, instrs) + sizeof(instrs));
+	ret->len = ARR_SIZE(instrs);
+	ret->elapsed_slot = 9;
+	ret->n_slots = 21;
+	ret->stack_size = 3;
+	ret->vars = NULL;
+	ret->overrides = NULL;
+	memcpy(ret->instrs, instrs, sizeof(instrs));
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("scale-x"), .slot = 0, .index = 0};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("scale-y"), .slot = 1, .index = 1};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("shadow-scale-x"), .slot = 2, .index = 2};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("shadow-scale-y"), .slot = 3, .index = 3};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("offset-x"), .slot = 4, .index = 4};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("offset-y"), .slot = 5, .index = 5};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("saved-image-blend"), .slot = 6, .index = 6};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("shadow-offset-x"), .slot = 7, .index = 7};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct variable_allocation *var = malloc(sizeof(*var));
+		*var = (struct variable_allocation){
+		    .name = strdup("shadow-offset-y"), .slot = 8, .index = 8};
+		HASH_ADD_STR(ret->vars, name, var);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("scale-x"), .slot = 11};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("scale-y"), .slot = 13};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("offset-x"), .slot = 15};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("offset-y"), .slot = 17};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("saved-image-blend"),
+		                                      .slot = 19};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	output_slots[0] = 4;
+	output_slots[1] = 5;
+	output_slots[2] = 7;
+	output_slots[3] = 8;
+	output_slots[4] = -1;
+	output_slots[5] = -1;
+	output_slots[6] = -1;
+	output_slots[7] = 0;
+	output_slots[8] = 1;
+	output_slots[9] = 2;
+	output_slots[10] = 3;
+	output_slots[11] = -1;
+	output_slots[12] = -1;
+	output_slots[13] = -1;
+	output_slots[14] = -1;
+	output_slots[15] = 6;
+	return ret;
+}
+
+static bool
+win_script_preset__geometry_change(struct win_script *output, config_setting_t *setting) {
+	output->script = script_template__geometry_change(output->output_indices);
+	double knob_duration = 0x1.999999999999ap-2;
+	config_setting_lookup_float(setting, "duration", &knob_duration);
+	struct script_specialization_context spec[] = {
+	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 0, .value = knob_duration},
+	};
+	script_specialize(output->script, spec, ARR_SIZE(spec));
+	return true;
+}
 struct {
 	const char *name;
 	bool (*func)(struct win_script *output, config_setting_t *setting);
@@ -1261,5 +1565,6 @@ struct {
     {"slide-in", win_script_preset__slide_in},
     {"fly-out", win_script_preset__fly_out},
     {"fly-in", win_script_preset__fly_in},
+    {"geometry-change", win_script_preset__geometry_change},
     {NULL, NULL},
 };

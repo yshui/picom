@@ -15,10 +15,11 @@
 ///                          it's stored in `cmd` going backwards, i.e. cmd - 1, -2, ...
 /// @return                  number of commands generated
 static inline unsigned
-commands_for_window_body(struct layer *layer, struct backend_command *cmd,
+commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
                          const region_t *frame_region, bool inactive_dim_fixed,
                          double max_brightness) {
 	auto w = layer->win;
+	auto cmd = cmd_base;
 	scoped_region_t crop = region_from_box(layer->crop);
 	auto mode = win_calc_mode_raw(layer->win);
 	int border_width = w->g.border_width;
@@ -48,18 +49,20 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	if (layer->options.corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
-	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
-	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
-	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
-	pixman_region32_intersect(&cmd->opaque_region, &cmd->opaque_region, &crop);
-	cmd->op = BACKEND_COMMAND_BLIT;
-	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
-	cmd->origin = layer->window.origin;
-	cmd->blit = (struct backend_blit_args){
+
+	float opacity = layer->opacity * (1 - layer->saved_image_blend);
+	if (opacity > (1. - 1. / MAX_ALPHA)) {
+		// Avoid division by a very small number
+		opacity = 1;
+	}
+	float opacity_saved = 0;
+	if (opacity < 1) {
+		opacity_saved = layer->opacity * layer->saved_image_blend / (1 - opacity);
+	}
+	struct backend_blit_args args_base = {
 	    .border_width = border_width,
-	    .target_mask = &cmd->target_mask,
 	    .corner_radius = layer->options.corner_radius,
-	    .opacity = layer->opacity,
+	    .opacity = opacity,
 	    .dim = dim,
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
@@ -68,11 +71,37 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
 	};
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+	pixman_region32_intersect(&cmd->opaque_region, &cmd->opaque_region, &crop);
+	cmd->op = BACKEND_COMMAND_BLIT;
+	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
+	cmd->origin = layer->window.origin;
+	cmd->blit = args_base;
+	cmd->blit.target_mask = &cmd->target_mask;
+	cmd -= 1;
+	if (layer->saved_image_blend > 0) {
+		pixman_region32_copy(&cmd->target_mask, &cmd[1].target_mask);
+		cmd->opaque_region = cmd[1].opaque_region;
+		pixman_region32_init(&cmd[1].opaque_region);
+		cmd->op = BACKEND_COMMAND_BLIT;
+		cmd->source = BACKEND_COMMAND_SOURCE_WINDOW_SAVED;
+		cmd->origin = layer->window.origin;
+		cmd->blit = args_base;
+		cmd->blit.effective_size = (ivec2){
+		    .width = (int)(layer->window.size.width / w->saved_win_image_scale.width),
+		    .height = (int)(layer->window.size.height / w->saved_win_image_scale.height),
+		};
+		cmd->blit.opacity = opacity_saved;
+		cmd->blit.target_mask = &cmd->target_mask;
+		cmd->blit.scale = vec2_scale(cmd->blit.scale, w->saved_win_image_scale);
+		cmd -= 1;
+	}
 
 	if (w->frame_opacity == 1 || w->frame_opacity == 0) {
-		return 1;
+		return (unsigned)(cmd_base - cmd);
 	}
-	cmd -= 1;
 
 	pixman_region32_copy(&cmd->target_mask, frame_region);
 	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
@@ -81,10 +110,27 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->window.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
-	cmd->blit = cmd[1].blit;
+	cmd->blit = args_base;
 	cmd->blit.target_mask = &cmd->target_mask;
-	cmd->blit.opacity *= w->frame_opacity;
-	return 2;
+	cmd->blit.opacity = w->frame_opacity * opacity;
+	cmd -= 1;
+	if (layer->saved_image_blend > 0) {
+		pixman_region32_copy(&cmd->target_mask, &cmd[1].target_mask);
+		pixman_region32_init(&cmd->opaque_region);
+		cmd->op = BACKEND_COMMAND_BLIT;
+		cmd->source = BACKEND_COMMAND_SOURCE_WINDOW_SAVED;
+		cmd->origin = layer->window.origin;
+		cmd->blit = args_base;
+		cmd->blit.effective_size = (ivec2){
+		    .width = (int)(layer->window.size.width / w->saved_win_image_scale.width),
+		    .height = (int)(layer->window.size.height / w->saved_win_image_scale.height),
+		};
+		cmd->blit.opacity = w->frame_opacity * opacity_saved;
+		cmd->blit.target_mask = &cmd->target_mask;
+		cmd->blit.scale = vec2_scale(cmd->blit.scale, w->saved_win_image_scale);
+		cmd -= 1;
+	}
+	return (unsigned)(cmd_base - cmd);
 }
 
 /// Generate render command for the shadow in `layer`
@@ -115,7 +161,8 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		// should be blits for the current window.
 		for (auto j = cmd + 1; j != end; j++) {
 			assert(j->op == BACKEND_COMMAND_BLIT);
-			assert(j->source == BACKEND_COMMAND_SOURCE_WINDOW);
+			assert(j->source == BACKEND_COMMAND_SOURCE_WINDOW ||
+			       j->source == BACKEND_COMMAND_SOURCE_WINDOW_SAVED);
 			if (j->blit.corner_radius == 0) {
 				pixman_region32_subtract(
 				    &cmd->target_mask, &cmd->target_mask, &j->target_mask);
@@ -375,11 +422,16 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 		if (layer->options.shadow) {
 			ncmds += 1;
 		}
+
+		unsigned n_cmds_for_window_body = 1;
 		if (layer->win->frame_opacity < 1 && layer->win->frame_opacity > 0) {
 			// Needs to draw the frame separately
-			ncmds += 1;
+			n_cmds_for_window_body += 1;
 		}
-		ncmds += 1;        // window body
+		if (layer->saved_image_blend > 0) {
+			n_cmds_for_window_body *= 2;
+		}
+		ncmds += n_cmds_for_window_body;        // window body
 	}
 
 	auto list = command_builder_command_list_new(cb, ncmds);

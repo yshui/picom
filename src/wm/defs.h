@@ -101,5 +101,8 @@ enum win_script_output {
 	WIN_SCRIPT_CROP_WIDTH,
 	/// Height of the crop box
 	WIN_SCRIPT_CROP_HEIGHT,
+	/// How much to blend in the saved window image
+	WIN_SCRIPT_SAVED_IMAGE_BLEND,
+
+	NUM_OF_WIN_SCRIPT_OUTPUTS,
 };
-#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_CROP_HEIGHT + 1)

@@ -555,9 +555,7 @@ cdbus_process_list_win(session_t *ps, DBusMessage *msg attr_unused, DBusMessage 
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
-/**
- * Process a win_get D-Bus request.
- */
+/// Process a property Get D-Bus request.
 static DBusHandlerResult
 cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_t wid,
                                   DBusMessage *reply, DBusError *e) {
@@ -1125,9 +1123,7 @@ static DBusHandlerResult cdbus_process_introspect(DBusMessage *reply) {
 }
 ///@}
 
-/**
- * Process an D-Bus Introspect request, for /windows.
- */
+/// Process an D-Bus Introspect request, for /windows.
 static DBusHandlerResult
 cdbus_process_windows_root_introspect(session_t *ps, DBusMessage *reply) {
 	static const char *str_introspect =
@@ -1209,6 +1205,11 @@ static bool cdbus_process_window_introspect(DBusMessage *reply) {
 	    "    <property type='b' name='Mapped' access='read'/>\n"
 	    "    <property type='s' name='Name' access='read'/>\n"
 	    "    <property type='as' name='Type' access='read'/>\n"
+	    "    <method name='BlockUnblockAnimation'>\n"
+	    "      <arg type='s' name='trigger' direction='in'/>\n"
+	    "      <arg type='b' name='block' direction='in'/>\n"
+	    "      <arg type='u' name='count' direction='out'/>\n"
+	    "    </method>\n"
 	    "  </interface>\n"
 	    "</node>\n";
 	// clang-format on
@@ -1423,6 +1424,39 @@ cdbus_process_windows(DBusConnection *conn, DBusMessage *msg, void *ud) {
 			log_debug(
 			    "Unexpected member \"%s\" of dbus properties interface.", member);
 			dbus_set_error_const(&err, DBUS_ERROR_UNKNOWN_METHOD, NULL);
+		}
+	} else if (strcmp(interface, PICOM_WINDOW_INTERFACE) == 0 &&
+	           strcmp(member, "BlockUnblockAnimation") == 0) {
+		bool block = false;
+		const char *trigger_str = NULL;
+		if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &trigger_str) ||
+		    !cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &block)) {
+			dbus_set_error_const(&err, DBUS_ERROR_INVALID_ARGS, NULL);
+			goto finished;
+		}
+		auto trigger = parse_animation_trigger(trigger_str);
+		if (trigger == ANIMATION_TRIGGER_INVALID) {
+			dbus_set_error(&err, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S,
+			               trigger_str);
+			goto finished;
+		}
+		auto cursor = wm_find(ps->wm, wid);
+		if (cursor == NULL) {
+			dbus_set_error(&err, CDBUS_ERROR_BADWIN, CDBUS_ERROR_BADWIN_S, wid);
+			goto finished;
+		}
+		auto w = wm_ref_deref(cursor);
+		unsigned count = 0;
+		if (w != NULL) {
+			if (block) {
+				w->animation_block[trigger] += 1;
+			} else if (w->animation_block[trigger] > 0) {
+				w->animation_block[trigger] -= 1;
+			}
+			count = w->animation_block[trigger];
+		}
+		if (reply != NULL && !cdbus_append_uint32(reply, count)) {
+			ret = DBUS_HANDLER_RESULT_NEED_MEMORY;
 		}
 	} else {
 		log_debug("Illegal message of type \"%s\", path \"%s\" "

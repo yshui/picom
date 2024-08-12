@@ -1649,12 +1649,8 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 		// Process window flags. This needs to happen before `refresh_images`
 		// because this might set the pixmap stale window flag.
 		refresh_windows(ps);
+		ps->pending_updates = false;
 	}
-
-	// Process window flags (stale images)
-	refresh_images(ps);
-
-	ps->pending_updates = false;
 
 	wm_stack_foreach_safe(ps->wm, cursor, tmp) {
 		auto w = wm_ref_deref(cursor);
@@ -1665,6 +1661,11 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 			free(w->running_animation_instance);
 			w->running_animation_instance = NULL;
 			w->in_openclose = false;
+			if (w->saved_win_image != NULL) {
+				ps->backend_data->ops.release_image(ps->backend_data,
+				                                    w->saved_win_image);
+				w->saved_win_image = NULL;
+			}
 			if (w->state == WSTATE_UNMAPPED) {
 				unmap_win_finish(ps, w);
 			} else if (w->state == WSTATE_DESTROYED) {
@@ -1672,6 +1673,10 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 			}
 		}
 	}
+
+	// Process window flags (stale images)
+	refresh_images(ps);
+	assert(ps->pending_updates == false);
 }
 
 /**

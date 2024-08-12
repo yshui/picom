@@ -224,8 +224,8 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 	}
 }
 
-static enum animation_trigger parse_animation_trigger(const char *trigger) {
-	for (int i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+enum animation_trigger parse_animation_trigger(const char *trigger) {
+	for (unsigned i = 0; i < ANIMATION_TRIGGER_COUNT; i++) {
 		if (strcasecmp(trigger, animation_trigger_names[i]) == 0) {
 			return i;
 		}
@@ -297,7 +297,7 @@ static bool parse_animation_one(struct win_script *animations,
 	}
 	auto number_of_triggers =
 	    config_setting_get_string(triggers) == NULL ? config_setting_length(triggers) : 1;
-	if (number_of_triggers > ANIMATION_TRIGGER_LAST) {
+	if (number_of_triggers > ANIMATION_TRIGGER_COUNT) {
 		log_error("Too many triggers in animation defined at line %d",
 		          config_setting_source_line(triggers));
 		return false;
