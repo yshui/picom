@@ -739,11 +739,13 @@ Currently, these context variables are defined: :::
 
   _window-width_, _window-height_:: The size of the window.
 
-  _window-x-before_, _window-y-before_, _window-width-before_, _window-height-before_:: The size and coordinates of the window before the animation is triggered. This is only meaningfully different from the normal window geometry variables for the _geometry_ trigger.
+  _window-x-before_, _window-y-before_, _window-width-before_, _window-height-before_:: The size and coordinates of the window from the previous frame. This is only meaningfully different from the normal window geometry variables inside animations triggered by the _geometry_ trigger.
 
   _window-monitor-x_, _window-monitor-y_, _window-monitor-width_, _window-monitor-height_:: Defines the rectangle which reflects the monitor the window is on. If the window is not fully contained in any monitor, the rectangle will reflect the entire virtual screen.
 
-  _window-raw-opacity-before_, _window-raw-opacity_:: Animation triggers are usually accompanied by a change in the window's opacity. For example, when a window is opened, its opacity changes from 0 to 1. These two variables reflect the opacity of the window before and after the animation is triggered. They are useful if you want to smoothly transition the window's opacity.
+  _window-raw-opacity-before_, _window-raw-opacity_:: Animation triggers are usually accompanied by a change in the window's opacity. For example, when a window is opened, its opacity changes from 0 to 1. These two variables reflect the opacity of the window for the previous and current frame. They are useful if you want to smoothly transition the window's opacity.
+
+IMPORTANT: All of the _window-*-before_ variables are updated every frame, and reflects the state of the window in the previous frame. Which means they will only be meaningful for a single frame, when an animation has just been triggered. Which means you should only use them to define the _start_, _end_, or _delay_ values of a timing function, since these values are only evaluated once when the animation starts.
 --
 
 === Share your animations
