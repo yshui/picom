@@ -94,6 +94,9 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 			if (!pixman_region32_not_empty(cmd->blit.target_mask)) {
 				continue;
 			}
+			if (cmd->blit.opacity < 1. / MAX_ALPHA) {
+				continue;
+			}
 			succeeded =
 			    backend->ops.blit(backend, cmd->origin, target, &cmd->blit);
 			break;
