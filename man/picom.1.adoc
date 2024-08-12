@@ -515,7 +515,7 @@ animations = ({
 
 	  _decrease-opacity_:: When the opacity of a window is decreased.
 
-	  _geometry_:: When the geometry of a window is changed. (EXPERIMENTAL)
+	  [[trigger-geometry]]_geometry_:: When the geometry of a window is changed. (EXPERIMENTAL)
 +
 WARNING: The _geometry_ trigger is experimental. Using this means you accept the caveat that geometry animations will also trigger when you manually resize or move a window, like when you drag the window around with your mouse.
 
@@ -595,6 +595,24 @@ endif::[]
 *Options*:::
 
   _scale_:: The scaling factor of the window, 1.0 means no scaling.
+
+  _duration_:: Duration of the animation in seconds.
+--
++
+_geometry-change_:::
++
+Animate the geometry (i.e. size and position) change of the window.
++
+WARNING: This makes use of both the <<trigger-geometry>> trigger, and the <<saved-image-blend>> output variable. Both of these features are experimental and may not work as expected.
++
+--
+ifdef::env-web[]
+video::assets/geometry-change.mp4[width=400]
+endif::[]
+--
++
+--
+*Options*:::
 
   _duration_:: Duration of the animation in seconds.
 --
@@ -697,7 +715,7 @@ Currently, these output variables are supported: :::
 
   _crop-x_, _crop-y_, _crop-width_, _crop-height_:: These four values combined defines a rectangle on the screen. The window and its shadow will be cropped to this rectangle. If not defined, the window and shadow will not be cropped.
 
-  _saved-image-blend_:: When the window's geometry changes, its content will often change drastically, creating a jarring discontinuity. This output variable allows you to blend the window's content before and after the geometry change, the before and after images will be stretched appropriately to match the animation. This way you can smoothly animated geometry changes. This is a number between 0 and 1. 0 means the saved image is not used, whereas 1 means you will only see the saved image. (EXPERIMENTAL)
+  [[saved-image-blend]]_saved-image-blend_:: When the window's geometry changes, its content will often change drastically, creating a jarring discontinuity. This output variable allows you to blend the window's content before and after the geometry change, the before and after images will be stretched appropriately to match the animation. This way you can smoothly animated geometry changes. This is a number between 0 and 1. 0 means the saved image is not used, whereas 1 means you will only see the saved image. (EXPERIMENTAL)
 +
 WARNING: The _saved-image-blend_ variable is experimental. It might work incorrectly, cause visual artifacts, or slow down your system. You are welcome to open an issue on GitHub if you encounter any problems to help us improve it, though resolution is not guaranteed.
 
