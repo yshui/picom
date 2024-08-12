@@ -1933,11 +1933,27 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			                                    w->saved_win_image);
 			w->saved_win_image = NULL;
 		}
-		// TODO(yshui): might need to copy for NVIDIA. because acquiring a new
-		// window image before freeing the old one could be problematic with
-		// NVIDIA.
-		w->saved_win_image = w->win_image;
-		w->win_image = NULL;
+		if (ps->drivers & DRIVER_NVIDIA) {
+			if (w->win_image != NULL) {
+				w->saved_win_image = ps->backend_data->ops.new_image(
+				    ps->backend_data, BACKEND_IMAGE_FORMAT_PIXMAP,
+				    (ivec2){
+				        .width = (int)win_ctx.width_before,
+				        .height = (int)win_ctx.height_before,
+				    });
+				region_t copy_region;
+				pixman_region32_init_rect(&copy_region, 0, 0,
+				                          (uint)win_ctx.width_before,
+				                          (uint)win_ctx.height_before);
+				ps->backend_data->ops.copy_area(
+				    ps->backend_data, (ivec2){}, w->saved_win_image,
+				    w->win_image, &copy_region);
+				pixman_region32_fini(&copy_region);
+			}
+		} else {
+			w->saved_win_image = w->win_image;
+			w->win_image = NULL;
+		}
 		w->saved_win_image_scale = (vec2){
 		    .x = win_ctx.width / win_ctx.width_before,
 		    .y = win_ctx.height / win_ctx.height_before,
