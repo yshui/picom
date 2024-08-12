@@ -30,6 +30,10 @@ layer_compare(const struct layer *past_layer, const struct backend_command *past
 		// Shadow moved or size changed
 		return false;
 	}
+	if (past_layer->saved_image_blend != curr_layer->saved_image_blend) {
+		// The amount of blending with the saved image changed
+		return false;
+	}
 	if (past_layer->number_of_commands != curr_layer->number_of_commands) {
 		// Number of render commands changed. We are being conservative
 		// here, because even though the number of commands changed, we can still

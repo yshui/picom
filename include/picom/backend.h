@@ -183,6 +183,7 @@ enum backend_command_op {
 /// will later be filled in by the renderer using this symbolic reference.
 enum backend_command_source {
 	BACKEND_COMMAND_SOURCE_WINDOW,
+	BACKEND_COMMAND_SOURCE_WINDOW_SAVED,
 	BACKEND_COMMAND_SOURCE_SHADOW,
 	BACKEND_COMMAND_SOURCE_BACKGROUND,
 };

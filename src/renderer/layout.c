@@ -101,6 +101,12 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 		goto out;
 	}
 
+	out_layer->saved_image_blend =
+	    (float)win_animatable_get(w, WIN_SCRIPT_SAVED_IMAGE_BLEND);
+	if (w->saved_win_image == NULL) {
+		out_layer->saved_image_blend = 0;
+	}
+
 	pixman_region32_copy(&out_layer->damaged, &w->damaged);
 	pixman_region32_translate(&out_layer->damaged, out_layer->window.origin.x,
 	                          out_layer->window.origin.y);

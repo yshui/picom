@@ -313,6 +313,7 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_CROP_Y] = {"crop-y"},
     [WIN_SCRIPT_CROP_WIDTH] = {"crop-width"},
     [WIN_SCRIPT_CROP_HEIGHT] = {"crop-height"},
+    [WIN_SCRIPT_SAVED_IMAGE_BLEND] = {"saved-image-blend"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 

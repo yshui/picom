@@ -1767,6 +1767,8 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 	case WIN_SCRIPT_SHADOW_SCALE_Y: return 1;
 	case WIN_SCRIPT_CROP_WIDTH:
 	case WIN_SCRIPT_CROP_HEIGHT: return INFINITY;
+	case WIN_SCRIPT_SAVED_IMAGE_BLEND: return 0;
+	default: unreachable();
 	}
 	unreachable();
 }
@@ -1948,13 +1950,17 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		// old has left off. Note we still need to advance the old animation for
 		// the last interval.
 		win_advance_animation(w, delta_t, &win_ctx);
+		auto memory = w->running_animation_instance->memory;
+		auto output_indices = w->running_animation.output_indices;
+		if (output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND] >= 0) {
+			memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]] =
+			    1 - memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]];
+		}
 		if (geometry_changed) {
 			// If the window has moved, we need to adjust scripts
 			// outputs so that the window will stay in the same position and
 			// size after applying the animation. This way the window's size
 			// and position won't change discontinuously.
-			auto memory = w->running_animation_instance->memory;
-			auto output_indices = w->running_animation.output_indices;
 			struct {
 				int output;
 				double delta;

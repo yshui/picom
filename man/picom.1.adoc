@@ -697,6 +697,10 @@ Currently, these output variables are supported: :::
 
   _crop-x_, _crop-y_, _crop-width_, _crop-height_:: These four values combined defines a rectangle on the screen. The window and its shadow will be cropped to this rectangle. If not defined, the window and shadow will not be cropped.
 
+  _saved-image-blend_:: When the window's geometry changes, its content will often change drastically, creating a jarring discontinuity. This output variable allows you to blend the window's content before and after the geometry change, the before and after images will be stretched appropriately to match the animation. This way you can smoothly animated geometry changes. This is a number between 0 and 1. 0 means the saved image is not used, whereas 1 means you will only see the saved image. (EXPERIMENTAL)
++
+WARNING: The _saved-image-blend_ variable is experimental. It might work incorrectly, cause visual artifacts, or slow down your system. You are welcome to open an issue on GitHub if you encounter any problems to help us improve it, though resolution is not guaranteed.
+
 All coordinates are in pixels, and are in the coordinate system of the screen. Sizes are also in pixels.
 
 IMPORTANT: If an output variable name is not defined in your animation script, it will take the default value for whichever state the window is in. Specifically, if you don't define an _opacity_ variable in the animation script for the "close" or "hide" trigger, a closed window will, by default, have 0 opacity. So you will just see it disappear instantly. Oftentimes, you will want to set _opacity_ to 1 to make the window visible for the duration of the animation.

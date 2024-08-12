@@ -416,6 +416,9 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 			} else if (cmd->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 				assert(w->win_image);
 				cmd->blit.source_image = w->win_image;
+			} else if (cmd->source == BACKEND_COMMAND_SOURCE_WINDOW_SAVED) {
+				assert(w->saved_win_image);
+				cmd->blit.source_image = w->saved_win_image;
 			}
 			if (cmd->blit.source_mask != NULL) {
 				if (w->mask_image == NULL &&
