@@ -126,7 +126,7 @@ struct curve parse_steps(const char *input_str, const char **out_end, char **err
 	const char *str = input_str;
 	*err = NULL;
 	if (*str != '(') {
-		asprintf(err, "Invalid steps %s.", str);
+		casprintf(err, "Invalid steps %s.", str);
 		return CURVE_INVALID_INIT;
 	}
 	str += 1;
@@ -134,12 +134,12 @@ struct curve parse_steps(const char *input_str, const char **out_end, char **err
 	char *end;
 	auto steps = strtol(str, &end, 10);
 	if (end == str || steps > INT_MAX) {
-		asprintf(err, "Invalid step count at \"%s\".", str);
+		casprintf(err, "Invalid step count at \"%s\".", str);
 		return CURVE_INVALID_INIT;
 	}
 	str = skip_space(end);
 	if (*str != ',') {
-		asprintf(err, "Invalid steps argument list \"%s\".", input_str);
+		casprintf(err, "Invalid steps argument list \"%s\".", input_str);
 		return CURVE_INVALID_INIT;
 	}
 	str = skip_space(str + 1);
@@ -148,13 +148,13 @@ struct curve parse_steps(const char *input_str, const char **out_end, char **err
 	bool jump_end =
 	    starts_with(str, "jump-end", true) || starts_with(str, "jump-both", true);
 	if (!jump_start && !jump_end && !starts_with(str, "jump-none", true)) {
-		asprintf(err, "Invalid jump setting for steps \"%s\".", str);
+		casprintf(err, "Invalid jump setting for steps \"%s\".", str);
 		return CURVE_INVALID_INIT;
 	}
 	str += jump_start ? (jump_end ? 9 : 10) : (jump_end ? 8 : 9);
 	str = skip_space(str);
 	if (*str != ')') {
-		asprintf(err, "Invalid steps argument list \"%s\".", input_str);
+		casprintf(err, "Invalid steps argument list \"%s\".", input_str);
 		return CURVE_INVALID_INIT;
 	}
 	*out_end = str + 1;
@@ -165,7 +165,7 @@ struct curve parse_cubic_bezier(const char *input_str, const char **out_end, cha
 	double numbers[4];
 	const char *str = input_str;
 	if (*str != '(') {
-		asprintf(err, "Invalid cubic-bazier %s.", str);
+		casprintf(err, "Invalid cubic-bazier %s.", str);
 		return CURVE_INVALID_INIT;
 	}
 	str += 1;
@@ -175,13 +175,13 @@ struct curve parse_cubic_bezier(const char *input_str, const char **out_end, cha
 		const char *end = NULL;
 		numbers[i] = strtod_simple(str, &end);
 		if (end == str) {
-			asprintf(err, "Invalid number %s.", str);
+			casprintf(err, "Invalid number %s.", str);
 			return CURVE_INVALID_INIT;
 		}
 		str = skip_space(end);
 		const char expected = i == 3 ? ')' : ',';
 		if (*str != expected) {
-			asprintf(err, "Invalid cubic-bazier argument list %s.", input_str);
+			casprintf(err, "Invalid cubic-bazier argument list %s.", input_str);
 			return CURVE_INVALID_INIT;
 		}
 		str += 1;
@@ -209,7 +209,7 @@ struct curve curve_parse(const char *str, const char **end, char **err) {
 			return curve_parsers[i].parse(str + name_len, end, err);
 		}
 	}
-	asprintf(err, "Unknown curve type \"%s\".", str);
+	casprintf(err, "Unknown curve type \"%s\".", str);
 	return CURVE_INVALID_INIT;
 }
 

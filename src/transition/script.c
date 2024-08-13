@@ -143,7 +143,7 @@ static char parse_op(const char *input_str, const char **end, char **err) {
 		return input_str[0];
 	}
 
-	asprintf(err, "Expected one of \"%s\", got '%c'.", operators, input_str[0]);
+	casprintf(err, "Expected one of \"%s\", got '%c'.", operators, input_str[0]);
 	*end = input_str;
 	return 0;
 }
@@ -198,7 +198,7 @@ parse_raw_operand(struct expression_parser_context *ctx, const char *str, const 
 		}
 	}
 	if (!succeeded) {
-		asprintf(err, "Expected a number or a variable name, got \"%s\".", str);
+		casprintf(err, "Expected a number or a variable name, got \"%s\".", str);
 		*end = str;
 		return;
 	}
@@ -219,7 +219,7 @@ parse_raw_operand(struct expression_parser_context *ctx, const char *str, const 
 		};
 		ctx->need_context = true;
 	} else {
-		asprintf(err, "variable name \"%.*s\" is not defined", (int)(*end - str), str);
+		casprintf(err, "variable name \"%.*s\" is not defined", (int)(*end - str), str);
 		*end = str;
 		return;
 	}
@@ -245,8 +245,8 @@ static inline double op_eval(double l, enum op op, double r) {
 }
 static bool pop_op(const char *input_str, struct expression_parser_context *ctx, char **err) {
 	if (ctx->operand_top < 2) {
-		asprintf(err, "Missing operand for operator %c, in expression %s",
-		         ctx->op_stack[ctx->op_top - 1], input_str);
+		casprintf(err, "Missing operand for operator %c, in expression %s",
+		          ctx->op_stack[ctx->op_top - 1], input_str);
 		return false;
 	}
 	auto f = ctx->entry->entry_point;
@@ -298,7 +298,7 @@ static bool parse_operand_or_paren(struct expression_parser_context *ctx,
 			}
 		}
 		if (ctx->op_top == 0) {
-			asprintf(err, "Unmatched ')' in expression \"%s\"", input_str);
+			casprintf(err, "Unmatched ')' in expression \"%s\"", input_str);
 			return false;
 		}
 		ctx->op_top -= 1;
@@ -379,7 +379,7 @@ static bool expression_compile(struct compilation_stack **stack_entry, const cha
 		}
 	}
 	if (ctx.operand_top != 1) {
-		asprintf(err, "excessive operand on stack %s", input_str);
+		casprintf(err, "excessive operand on stack %s", input_str);
 		goto end;
 	}
 	succeeded = true;
@@ -439,8 +439,8 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 	if (config_setting_lookup_string(setting, "curve", &str)) {
 		curve = curve_parse(str, &str, &err);
 		if (curve.type == CURVE_INVALID) {
-			asprintf(out_err, "Cannot parse curve at line %d: %s",
-			         config_setting_source_line(setting), err);
+			casprintf(out_err, "Cannot parse curve at line %d: %s",
+			          config_setting_source_line(setting), err);
 			free(err);
 			return false;
 		}
@@ -467,14 +467,14 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 	if (config_setting_lookup_float(setting, "start", &number)) {
 		start = make_imm_stack_entry(ctx, number, start_slot, true);
 	} else if (!config_setting_lookup_string(setting, "start", &str)) {
-		asprintf(out_err,
-		         "Transition definition does not contain a start value or "
-		         "expression. Line %d.",
-		         config_setting_source_line(setting));
+		casprintf(out_err,
+		          "Transition definition does not contain a start value or "
+		          "expression. Line %d.",
+		          config_setting_source_line(setting));
 		return false;
 	} else if (!expression_compile(&start, str, ctx, start_slot, !reset, &err)) {
-		asprintf(out_err, "transition has an invalid start expression: %s Line %d.",
-		         err, config_setting_source_line(setting));
+		casprintf(out_err, "transition has an invalid start expression: %s Line %d.",
+		          err, config_setting_source_line(setting));
 		free(err);
 		return false;
 	}
@@ -487,18 +487,18 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 		    .imm = number,
 		};
 	} else if (!config_setting_lookup_string(setting, "end", &str)) {
-		asprintf(out_err,
-		         "Transition definition does not contain a end value or "
-		         "expression. Line %d.",
-		         config_setting_source_line(setting));
+		casprintf(out_err,
+		          "Transition definition does not contain a end value or "
+		          "expression. Line %d.",
+		          config_setting_source_line(setting));
 		return false;
 	} else {
 		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
 		auto end_slot = ctx->allocated_slots++;
 		if (!expression_compile(&end, str, ctx, end_slot, false, &err)) {
-			asprintf(out_err,
-			         "Transition has an invalid end expression: %s. Line %d",
-			         err, config_setting_source_line(setting));
+			casprintf(out_err,
+			          "Transition has an invalid end expression: %s. Line %d",
+			          err, config_setting_source_line(setting));
 			free(err);
 			return false;
 		}
@@ -510,8 +510,8 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 
 	if (config_setting_lookup_float(setting, "duration", &number)) {
 		if (number == 0) {
-			asprintf(out_err, "Duration must be greater than 0. Line %d.",
-			         config_setting_source_line(setting));
+			casprintf(out_err, "Duration must be greater than 0. Line %d.",
+			          config_setting_source_line(setting));
 			return false;
 		}
 		load_parameters[1] = (struct instruction){
@@ -519,17 +519,19 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 		    .imm = number,
 		};
 	} else if (!config_setting_lookup_string(setting, "duration", &str)) {
-		asprintf(out_err,
-		         "Transition definition does not contain a duration value or "
-		         "expression. Line %d.",
-		         config_setting_source_line(setting));
+		casprintf(out_err,
+		          "Transition definition does not contain a duration value or "
+		          "expression. Line %d.",
+		          config_setting_source_line(setting));
 		return false;
 	} else {
 		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
 		auto duration_slot = ctx->allocated_slots++;
 		if (!expression_compile(&end, str, ctx, duration_slot, false, &err)) {
-			asprintf(out_err, "Transition has an invalid duration expression: %s. Line %d",
-			         err, config_setting_source_line(setting));
+			casprintf(out_err,
+			          "Transition has an invalid duration expression: %s. "
+			          "Line %d",
+			          err, config_setting_source_line(setting));
 			free(err);
 			return false;
 		}
@@ -553,8 +555,8 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
 		auto delay_slot = ctx->allocated_slots++;
 		if (!expression_compile(&end, str, ctx, delay_slot, false, &err)) {
-			asprintf(out_err, "Transition has an invalid delay expression: %s. Line %d",
-			         err, config_setting_source_line(setting));
+			casprintf(out_err, "Transition has an invalid delay expression: %s. Line %d",
+			          err, config_setting_source_line(setting));
 			free(err);
 			return false;
 		}
@@ -730,18 +732,19 @@ static bool script_compile_one(struct compilation_stack **stack_entry, config_se
 		bool succeeded =
 		    expression_compile(stack_entry, str, ctx, alloc->slot, false, &tmp_err);
 		if (!succeeded) {
-			asprintf(err, "Failed to parse expression at line %d. %s",
-			         config_setting_source_line(var), tmp_err);
+			casprintf(err, "Failed to parse expression at line %d. %s",
+			          config_setting_source_line(var), tmp_err);
 			free(tmp_err);
 		}
 		return succeeded;
 	}
 
 	if (!config_setting_is_group(var)) {
-		asprintf(err,
-		         "Invalid variable \"%s\", it must be either a number, a string, "
-		         "or a config group defining a transition.",
-		         config_setting_name(var));
+		casprintf(err,
+		          "Invalid variable \"%s\", it must be either a number, a "
+		          "string, "
+		          "or a config group defining a transition.",
+		          config_setting_name(var));
 		return false;
 	}
 	return transition_compile(stack_entry, var, ctx, alloc->slot, err);
@@ -772,8 +775,8 @@ static void report_cycle(struct compilation_stack **stack, unsigned top, unsigne
 	}
 	strcpy(pos, last_name);
 
-	asprintf(err, "Cyclic references detected in animation script defined at line %d: %s",
-	         config_setting_source_line(setting), buf);
+	casprintf(err, "Cyclic references detected in animation script defined at line %d: %s",
+	          config_setting_source_line(setting), buf);
 	free(buf);
 }
 

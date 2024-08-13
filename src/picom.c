@@ -68,6 +68,7 @@
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "utils/statistics.h"
+#include "utils/str.h"
 #include "utils/uthash_extra.h"
 #include "vblank.h"
 #include "wm/defs.h"
@@ -1150,10 +1151,7 @@ static int register_cm(session_t *ps) {
 		xcb_atom_t atom;
 
 		char *buf = NULL;
-		if (asprintf(&buf, "%s%d", register_prop, ps->c.screen) < 0) {
-			log_fatal("Failed to allocate memory");
-			return -1;
-		}
+		casprintf(&buf, "%s%d", register_prop, ps->c.screen);
 		atom = get_atom_with_nul(ps->atoms, buf, ps->c.c);
 		free(buf);
 

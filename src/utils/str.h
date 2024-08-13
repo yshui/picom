@@ -42,6 +42,18 @@ static inline int uitostr(unsigned int n, char *buf) {
 	return ret;
 }
 
+/// Like `asprintf`, but it aborts the program if memory allocation fails.
+static inline size_t __attribute__((format(printf, 2, 3)))
+casprintf(char **strp, const char *fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+	int ret = vasprintf(strp, fmt, ap);
+	va_end(ap);
+
+	BUG_ON(ret < 0);
+	return (size_t)ret;
+}
+
 /// Convert a double into a string. Avoid using *printf functions to print floating points
 /// directly because they are locale dependent.
 static inline void dtostr(double n, char **buf) {
@@ -49,14 +61,14 @@ static inline void dtostr(double n, char **buf) {
 	BUG_ON(safe_isinf(n));
 	if (fabs(n) > 1e9) {
 		// The number is so big that it's not meaningful to keep decimal places.
-		asprintf(buf, "%.0f", n);
+		casprintf(buf, "%.0f", n);
 		return;
 	}
 
 	if (n > 0) {
-		asprintf(buf, "%.0f.%03d", floor(n), (int)(fmod(n, 1) * 1000));
+		casprintf(buf, "%.0f.%03d", floor(n), (int)(fmod(n, 1) * 1000));
 	} else {
-		asprintf(buf, "-%.0f.%03d", floor(-n), (int)(fmod(-n, 1) * 1000));
+		casprintf(buf, "-%.0f.%03d", floor(-n), (int)(fmod(-n, 1) * 1000));
 	}
 }
 
@@ -94,15 +106,3 @@ static inline bool starts_with(const char *str, const char *needle, bool ignore_
 /// reallocates it if it's not big enough.
 int asnprintf(char **strp, size_t *capacity, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
-
-/// Like `asprintf`, but it aborts the program if memory allocation fails.
-static inline size_t __attribute__((format(printf, 2, 3)))
-casprintf(char **strp, const char *fmt, ...) {
-	va_list ap;
-	va_start(ap, fmt);
-	int ret = vasprintf(strp, fmt, ap);
-	va_end(ap);
-
-	BUG_ON(ret < 0);
-	return (size_t)ret;
-}
