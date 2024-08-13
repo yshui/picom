@@ -17,7 +17,7 @@
 static inline unsigned
 commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
                          const region_t *frame_region, bool inactive_dim_fixed,
-                         double max_brightness) {
+                         double max_brightness, const struct shader_info *shaders) {
 	auto w = layer->win;
 	auto cmd = cmd_base;
 	scoped_region_t crop = region_from_box(layer->crop);
@@ -49,6 +49,10 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	if (layer->options.corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
+	struct shader_info *shader = &null_shader;
+	if (layer->options.shader != NULL) {
+		HASH_FIND_STR(shaders, layer->options.shader, shader);
+	}
 
 	float opacity = layer->opacity * (1 - layer->saved_image_blend);
 	if (opacity > (1. - 1. / MAX_ALPHA)) {
@@ -66,7 +70,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .dim = dim,
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
-	    .shader = layer->options.shader->backend_shader,
+	    .shader = shader->backend_shader,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
@@ -408,7 +412,8 @@ void command_builder_free(struct command_builder *cb) {
 // value in `struct managed_win`.
 void command_builder_build(struct command_builder *cb, struct layout *layout,
                            bool force_blend, bool blur_frame, bool inactive_dim_fixed,
-                           double max_brightness, const struct x_monitors *monitors) {
+                           double max_brightness, const struct x_monitors *monitors,
+                           const struct shader_info *shaders) {
 
 	unsigned ncmds = 1;
 	dynarr_foreach(layout->layers, layer) {
@@ -445,8 +450,8 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 		                          layer->window.origin.y);
 
 		// Add window body
-		cmd -= commands_for_window_body(layer, cmd, &frame_region,
-		                                inactive_dim_fixed, max_brightness);
+		cmd -= commands_for_window_body(
+		    layer, cmd, &frame_region, inactive_dim_fixed, max_brightness, shaders);
 
 		// Add shadow
 		cmd -= command_for_shadow(layer, cmd, monitors, last + 1);

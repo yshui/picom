@@ -980,12 +980,11 @@ static void win_determine_fg_shader(session_t *ps, struct win *w) {
 		return;
 	}
 
-	void *val = NULL;
 	w->options.shader = NULL;
+
+	void *val = NULL;
 	if (c2_match(ps->c2_state, w, &ps->o.window_shader_fg_rules, &val)) {
-		struct shader_info *shader = NULL;
-		HASH_FIND_STR(ps->shaders, val, shader);
-		w->options.shader = shader;
+		w->options.shader = val;
 	}
 }
 

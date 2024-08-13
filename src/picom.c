@@ -799,7 +799,11 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
 		const double blur_opacity = win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
 		auto window_options = win_options(w);
-		if (window_options.shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
+		struct shader_info *fg_shader = NULL;
+		if (window_options.shader != NULL) {
+			HASH_FIND_STR(ps->shaders, window_options.shader, fg_shader);
+		}
+		if (fg_shader != NULL && fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
 			add_damage_from_win(ps, w);
 			*animation = true;
 		}
@@ -1852,7 +1856,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			    ps->o.force_win_blend, ps->o.blur_background_frame,
 			    ps->o.inactive_dim_fixed, ps->o.max_brightness,
 			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-			    &after_damage_us);
+			    ps->shaders, &after_damage_us);
 			if (!succeeded) {
 				log_fatal("Render failure");
 				abort();
@@ -2000,7 +2004,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .transparent_clipping = opts->transparent_clipping,
 	    .dim = opts->inactive_dim > 0,
 	    .fade = opts->fading_enable,
-	    .shader = &null_shader,
+	    .shader = opts->window_shader_fg,
 	    .invert_color = false,
 	    .paint = true,
 	    .clip_shadow_above = false,

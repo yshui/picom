@@ -1054,6 +1054,12 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 	}
 }
 
+static void free_window_maybe_options(void *data) {
+	auto wopts = (struct window_maybe_options *)data;
+	free((void *)wopts->shader);
+	free(wopts);
+}
+
 void options_destroy(struct options *options) {
 	// Free blacklists
 	c2_list_free(&options->shadow_blacklist, NULL);
@@ -1069,7 +1075,7 @@ void options_destroy(struct options *options) {
 	c2_list_free(&options->corner_radius_rules, NULL);
 	c2_list_free(&options->window_shader_fg_rules, free);
 	c2_list_free(&options->transparent_clipping_blacklist, NULL);
-	c2_list_free(&options->rules, free);
+	c2_list_free(&options->rules, free_window_maybe_options);
 
 	free(options->config_file_path);
 	free(options->write_pid_path);

@@ -173,8 +173,8 @@ struct window_maybe_options {
 	/// Window dim level, NaN means not set.
 	double dim;
 
-	/// Name of the custom fragment shader for this window. NULL means not set.
-	const struct shader_info *shader;
+	/// The name of the custom fragment shader for this window. NULL means not set.
+	const char *shader;
 
 	/// Whether transparent clipping is excluded by the rules.
 	enum tristate transparent_clipping;
@@ -206,7 +206,7 @@ struct window_maybe_options {
 struct window_options {
 	double opacity;
 	double dim;
-	const struct shader_info *shader;
+	const char *shader;
 	unsigned int corner_radius;
 	enum window_unredir_option unredir;
 	bool transparent_clipping;
