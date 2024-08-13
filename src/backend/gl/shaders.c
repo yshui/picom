@@ -84,9 +84,11 @@ const char masking_glsl[] = GLSL(330,
 	layout(location = UNIFORM_MASK_INVERTED_LOC)
 	uniform bool mask_inverted;
 	in vec2 texcoord;
-	float mask_rectangle_sdf(vec2 point, vec2 half_size) {
-		vec2 d = abs(point) - half_size;
-		return length(max(d, 0.0));
+	vec2 mask_rectangle_sdf(vec2 point, vec2 half_size) {
+		vec2 d = max(abs(point) - half_size, 0.0);
+		float l = length(d);
+		// Add a small number to avoid 0/0.
+		return vec2(l, l / (max(d.x, d.y) + 1e-8));
 	}
 	float mask_factor() {
 		vec2 mask_size = textureSize(mask_tex, 0);
@@ -94,10 +96,11 @@ const char masking_glsl[] = GLSL(330,
 		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
 		if (mask_corner_radius != 0) {
 			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
-			float dist = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
-			    inner_size / 2.0f) - mask_corner_radius + 1.0f;
+			vec2 sdf = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
+			    inner_size / 2.0f);
+			float dist = sdf.x - mask_corner_radius + sdf.y / 2.0f;
 			if (dist > 0.0f) {
-				mask.r *= (1.0f - clamp(dist, 0.0f, 1.0f));
+				mask.r *= (1.0f - clamp(dist, 0.0f, sdf.y) / (sdf.y + 1e-8));
 			}
 		}
 		if (mask_inverted) {
@@ -130,9 +133,13 @@ const char blit_shader_glsl[] = GLSL(330,
 	uniform float time;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
-	float rectangle_sdf(vec2 point, vec2 half_size) {
-		vec2 d = abs(point) - half_size;
-		return length(max(d, 0.0));
+	// Returns 2 number: the distance, and the approximate chord length inside
+	// the pixel around `point`.
+	vec2 rectangle_sdf(vec2 point, vec2 half_size) {
+		vec2 d = max(abs(point) - half_size, 0.0);
+		float l = length(d);
+		// Add a small number to avoid 0/0.
+		return vec2(l, l / (max(d.x, d.y) + 1e-8));
 	}
 
 	vec4 default_post_processing(vec4 c) {
@@ -162,16 +169,20 @@ const char blit_shader_glsl[] = GLSL(330,
 
 			vec2 outer_size = effective_size;
 			vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
-			// +1.0 so the last 1-pixel ring of the rounded rectangle will transition
-			// smoothly from 1 to 0 for anti-aliasing. If we don't do this, everything
-			// inside the corner radius will be solid, and we will have an extra 1-pixel
-			// feathering outside the corner radius, which makes it look bad.
-			float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
-			    inner_size / 2.0f) - corner_radius + 1.0f;
+			vec2 sdf = rectangle_sdf(texcoord - outer_size / 2.0f,
+			    inner_size / 2.0f);
+			// For anti-aliasing, we estimate how much of the pixel is covered by the rounded
+			// rectangle. This differs depends on at what angle the circle sweeps through the
+			// pixel. e.g. if it goes from corner to corner, then the coverage goes from 0 to
+			// 1 when the distance goes from -sqrt(2)/2 to +sqrt(2)/2; if it goes from egde to
+			// edge, then the coverage goes from 0 to 1 when the distance goes from -0.5 to 0.5.
+			// The chord length returned by `rectangle_sdf` is an approximation of this.
+			float rect_distance = sdf.x - corner_radius + sdf.y / 2.0f;
+			// Add a small number to sdf.y to avoid 0/0
 			if (rect_distance > 0.0f) {
-				c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * rim_color;
+				c = (1.0f - clamp(rect_distance, 0.0f, sdf.y) / (sdf.y + 1e-8)) * rim_color;
 			} else {
-				float factor = clamp(rect_distance + border_width, 0.0f, 1.0f);
+				float factor = clamp(rect_distance + border_width, 0.0f, sdf.y) / (sdf.y + 1e-8);
 				c = (1.0f - factor) * c + factor * border_color;
 			}
 		}
