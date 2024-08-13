@@ -2253,6 +2253,16 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_error("Failed to load window shader source file");
 	}
 
+	c2_condition_list_foreach(&ps->o.rules, i) {
+		auto data = (struct window_maybe_options *)c2_condition_get_data(i);
+		if (data->shader == NULL) {
+			continue;
+		}
+		if (load_shader_source(ps, data->shader)) {
+			log_error("Failed to load shader source file for window rules");
+		}
+	}
+
 	if (log_get_level_tls() <= LOG_LEVEL_DEBUG) {
 		HASH_ITER2(ps->shaders, shader) {
 			log_debug("Shader %s:", shader->key);

@@ -627,6 +627,8 @@ parse_rule(struct list_node *rules, config_setting_t *setting, struct script ***
 	if (animations) {
 		parse_animations(wopts->animations, animations, out_scripts);
 	}
+
+	config_setting_lookup_string(setting, "shader", &wopts->shader);
 	return rule;
 }
 
@@ -764,6 +766,14 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
 		parse_rules(&opt->rules, rules, &opt->all_scripts);
+		c2_condition_list_foreach(&opt->rules, i) {
+			auto data = (struct window_maybe_options *)c2_condition_get_data(i);
+			if (data->shader == NULL) {
+				continue;
+			}
+			data->shader = locate_auxiliary_file(
+			    "shaders", data->shader, config_get_include_dir(&cfg));
+		}
 	}
 
 	// --dbus
