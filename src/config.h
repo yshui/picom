@@ -229,8 +229,6 @@ win_options_no_damage(const struct window_options *a, const struct window_option
 	return memcmp(a, b, offsetof(struct window_options, animations)) == 0;
 }
 
-extern struct shader_info null_shader;
-
 /// Structure representing all options.
 typedef struct options {
 	// === Config ===

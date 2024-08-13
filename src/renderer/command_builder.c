@@ -49,7 +49,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	if (layer->options.corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
-	struct shader_info *shader = &null_shader;
+	struct shader_info *shader = NULL;
 	if (layer->options.shader != NULL) {
 		HASH_FIND_STR(shaders, layer->options.shader, shader);
 	}
@@ -70,7 +70,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .dim = dim,
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
-	    .shader = shader->backend_shader,
+	    .shader = shader != NULL ? shader->backend_shader : NULL,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
