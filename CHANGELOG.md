@@ -1,3 +1,11 @@
+# v12-rc2 (2024-Aug-17)
+
+## Bug fixes
+
+* Setting corner-radius to 0 cause all windows to not render: #1311
+* Setting corner-radius causes windows to have a 1-pixel transparent border
+* Window shaders no longer work: #1312
+
 # v12-rc1 (2024-Aug-12)
 
 ## New features
