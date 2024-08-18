@@ -444,6 +444,10 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 			free(err);
 			return false;
 		}
+	} else if (config_setting_lookup(setting, "curve") != NULL) {
+		casprintf(out_err, "Invalid curve definition at line %d. `curve` must be a string.",
+		          config_setting_source_line(setting));
+		return false;
 	} else {
 		curve = CURVE_LINEAR_INIT;
 	}
