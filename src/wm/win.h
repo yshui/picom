@@ -352,6 +352,8 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .fade = tri_or(upper.fade, lower.fade),
 	    .invert_color = tri_or(upper.invert_color, lower.invert_color),
 	    .paint = tri_or(upper.paint, lower.paint),
+	    .transparent_clipping =
+	        tri_or(upper.transparent_clipping, lower.transparent_clipping),
 	    .opacity = !safe_isnan(upper.opacity) ? upper.opacity : lower.opacity,
 	    .dim = !safe_isnan(upper.dim) ? upper.dim : lower.dim,
 	    .shader = upper.shader ? upper.shader : lower.shader,
@@ -377,6 +379,8 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .fade = tri_or_bool(maybe.fade, def.fade),
 	    .invert_color = tri_or_bool(maybe.invert_color, def.invert_color),
 	    .paint = tri_or_bool(maybe.paint, def.paint),
+	    .transparent_clipping =
+	        tri_or_bool(maybe.transparent_clipping, def.transparent_clipping),
 	    .opacity = !safe_isnan(maybe.opacity) ? maybe.opacity : def.opacity,
 	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
 	    .shader = maybe.shader ? maybe.shader : def.shader,
