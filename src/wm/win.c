@@ -259,24 +259,24 @@ static void win_clear_all_properties_stale(struct win *w);
 bool win_update_opacity_prop(struct x_connection *c, struct atom *atoms, struct win *w,
                              bool detect_client_opacity) {
 	bool old_has_opacity_prop = w->has_opacity_prop;
+	auto old_opacity = w->opacity_prop;
 	// get frame opacity first
 	w->has_opacity_prop =
 	    wid_get_opacity_prop(c, atoms, win_id(w), OPAQUE, &w->opacity_prop);
 
+	if (!w->has_opacity_prop && detect_client_opacity) {
+		// didn't find opacity prop on the frame, try to get client opacity
+		auto client_win = wm_ref_client_of(w->tree_ref);
+		if (client_win != NULL) {
+			w->has_opacity_prop = wid_get_opacity_prop(
+			    c, atoms, wm_ref_win_id(client_win), OPAQUE, &w->opacity_prop);
+		}
+	}
+
 	if (w->has_opacity_prop) {
-		// opacity found
-		return old_has_opacity_prop != w->has_opacity_prop;
+		return !old_has_opacity_prop || w->opacity_prop != old_opacity;
 	}
-
-	auto client_win = wm_ref_client_of(w->tree_ref);
-	if (!detect_client_opacity || client_win == NULL) {
-		return old_has_opacity_prop != w->has_opacity_prop;
-	}
-
-	// get client opacity
-	w->has_opacity_prop = wid_get_opacity_prop(c, atoms, wm_ref_win_id(client_win),
-	                                           OPAQUE, &w->opacity_prop);
-	return old_has_opacity_prop != w->has_opacity_prop;
+	return old_has_opacity_prop;
 }
 
 // TODO(yshui) make WIN_FLAGS_FACTOR_CHANGED more fine-grained, or find a better
