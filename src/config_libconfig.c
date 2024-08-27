@@ -192,7 +192,7 @@ void create_rules_compat(const config_t *pcfg, config_setting_t *rules_setting,
 				if (config_setting_type(param) == CONFIG_TYPE_BOOL) {
 					bool val = config_setting_get_bool(param);
 
-					if (!strcmp(param_name, "redir-ignore")) {
+					if (!strcmp(param_name, "unredir")) {
 						val = !val;
 					}
 
