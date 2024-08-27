@@ -141,13 +141,13 @@ void create_rules_compat(const config_t *pcfg, config_setting_t *rules_setting,
 	}
 
 	if (config_setting_is_array(setting)) {
-		int i = config_setting_length(setting);
+		int len = config_setting_length(setting);
 
-		if (i > 0) {
+		if (len > 0) {
 			log_warn("Trying to convert parameters of \"%s\" into rules.", replacement->exclude);
 		}
 
-		while (i--) {
+		for (int i = 0; i < len; i++) {
 			auto rule = config_setting_add(rules_setting, NULL, CONFIG_TYPE_GROUP);
 			auto match = config_setting_add(rule, "match", CONFIG_TYPE_STRING);
 			config_setting_set_string(match, config_setting_get_string_elem(setting, i));
@@ -156,6 +156,52 @@ void create_rules_compat(const config_t *pcfg, config_setting_t *rules_setting,
 				config_setting_set_bool(param, replacement->value.boolean);
 			} else if (replacement->type == CONFIG_TYPE_FLOAT) {
 				config_setting_set_float(param, replacement->value.floating);
+			}
+		}
+	} else if (config_setting_is_group(setting) && !strcmp(config_setting_name(setting), "wintypes")) {
+		int len = config_setting_length(setting);
+
+		if (len > 0) {
+			log_warn("Trying to convert wintypes into rules.");
+		}
+
+		for (unsigned i = 0; i < (unsigned)len; i++) {
+			auto wintype = config_setting_get_elem(setting, i);
+
+			auto rule = config_setting_add(rules_setting, NULL, CONFIG_TYPE_GROUP);
+			auto match = config_setting_add(rule, "match", CONFIG_TYPE_STRING);
+			char *match_str;
+			asprintf(&match_str, "window_type = '%s'", config_setting_name(wintype));
+			config_setting_set_string(match, match_str);
+			free(match_str);
+
+			for (unsigned j = 0; j < (unsigned)config_setting_length(wintype); j++) {
+				auto param = config_setting_get_elem(wintype, j);
+				const char *param_name = config_setting_name(param);
+
+				if (!strcmp(param_name, "redir-ignore")) {
+					param_name = "unredir";
+				} else if (!strcmp(param_name, "focus")) {
+					log_warn("Rules have no equevalent for wintypes' \"focus\" parameter.");
+					continue;
+				}
+
+				auto new_param = config_setting_add(rule, param_name, 
+					config_setting_type(param));
+
+				if (config_setting_type(param) == CONFIG_TYPE_BOOL) {
+					bool val = config_setting_get_bool(param);
+
+					if (!strcmp(param_name, "redir-ignore")) {
+						val = !val;
+					}
+
+					config_setting_set_bool(new_param, val);
+				} else if (config_setting_type(param) == CONFIG_TYPE_FLOAT) {
+					config_setting_set_float(new_param, config_setting_get_float(param));
+				} else {
+					log_warn("Data type %d is not yet implemented for converting wintypes!", config_setting_type(param));
+				}
 			}
 		}
 	}
@@ -812,7 +858,8 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 			{ "rounded-corners-exclude", "corner-radius", CONFIG_TYPE_FLOAT, { .floating = 0.0f } },
 			{ "unredir-if-possible-exclude", "unredir", CONFIG_TYPE_BOOL, { .boolean = false } },
 			{ "invert-color-include", "invert-color", CONFIG_TYPE_BOOL, { .boolean = true } },
-			{ "transparent-clipping-exclude", "transparent-clipping", CONFIG_TYPE_BOOL, { .boolean = false } }
+			{ "transparent-clipping-exclude", "transparent-clipping", CONFIG_TYPE_BOOL, { .boolean = false } },
+			{ "wintypes", NULL, 0, 0 }
 		};
 		
 		for (size_t i = 0; i < sizeof(replacements) / sizeof(*replacements); i++) {
@@ -1033,8 +1080,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		    "focus-exclude",
 		    "corner-radius-rules",
 		    "opacity-rule",
-		    "window-shader-fg-rule",
-		    "wintypes",
+		    "window-shader-fg-rule"
 		};
 		for (size_t i = 0; i < sizeof(rule_list) / sizeof(rule_list[0]); i++) {
 			if (config_lookup(&cfg, rule_list[i])) {
