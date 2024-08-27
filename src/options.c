@@ -507,6 +507,9 @@ static const struct picom_option picom_options[] = {
                                                                                     "transparent clipping applied. Useful for screenshot tools, where you "
                                                                                     "need to be able to see through transparent parts of the window."},
 
+    [342] = {"dump-config"              ,    ENABLE(dump_config),                   "Dump config file to stdout. "
+                                                                                    "Useful when you want to get legacy parameter conversions."},
+
     // Rules that are too long to fit in one line
     [304] = {"opacity-rule"                , NUMERIC_RULES(opacity_rules, "OPACITY", 0, 100),
              "Specify a list of opacity rules, see man page for more details"},

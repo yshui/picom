@@ -639,7 +639,7 @@ bool load_plugin(const char *name, const char *include_dir) {
 	return handle != NULL;
 }
 
-bool parse_config(options_t *opt, const char *config_file) {
+bool parse_config(options_t *opt, const char *config_file, config_t *release_cfg) {
 	// clang-format off
 	*opt = (struct options){
 	    .legacy_backend = BKEND_XRENDER,
@@ -738,5 +738,5 @@ bool parse_config(options_t *opt, const char *config_file) {
 	list_init_head(&opt->rules);
 
 	opt->all_scripts = dynarr_new(struct script *, 4);
-	return parse_config_libconfig(opt, config_file);
+	return parse_config_libconfig(opt, config_file, release_cfg);
 }

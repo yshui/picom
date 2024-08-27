@@ -285,6 +285,8 @@ typedef struct options {
 	switch_t stoppaint_force;
 	/// Whether to enable D-Bus support.
 	bool dbus;
+	/// Dump configuration file to stdout.
+	bool dump_config;
 	/// Path to log file.
 	char *logpath;
 	/// Number of cycles to paint in benchmark mode. 0 for disabled.
@@ -483,13 +485,13 @@ char **xdg_config_dirs(void);
 ///   win_option_mask = whether option overrides for specific window type is set for given
 ///                     options
 ///   hasneg = whether the convolution kernel has negative values
-bool parse_config_libconfig(options_t *, const char *config_file);
+bool parse_config_libconfig(options_t *, const char *config_file, config_t *release_cfg);
 
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
-bool parse_config(options_t *, const char *config_file);
+bool parse_config(options_t *, const char *config_file, config_t *release_cfg);
 
 /**
  * Parse a backend option argument.

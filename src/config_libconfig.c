@@ -757,7 +757,7 @@ resolve_include(config_t *cfg, const char *include_dir, const char *path, const 
  *
  * Returns if config is successfully parsed.
  */
-bool parse_config_libconfig(options_t *opt, const char *config_file) {
+bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *release_cfg) {
 
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
@@ -1261,7 +1261,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	succeeded = true;
 
 out:
-	config_destroy(&cfg);
+	*release_cfg = cfg;
 	free(path);
 	return succeeded;
 }
