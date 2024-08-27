@@ -122,6 +122,46 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 }
 
 /**
+ * Convert legacy *-exclude parameters into rules.
+ *
+ * For example:
+ * shadow-exclude = [
+ *     "name = 'Program'"
+ * ];
+ *
+ * will be added to rules as entry:
+ *
+ * { match = "name = 'Program'", shadow = false; }
+ */
+void create_rules_compat(const config_t *pcfg, config_setting_t *rules_setting, 
+	const rule_replacement_t *replacement) {
+	config_setting_t *setting = config_lookup(pcfg, replacement->exclude);
+	if (setting == NULL) {
+		return;
+	}
+
+	if (config_setting_is_array(setting)) {
+		int i = config_setting_length(setting);
+
+		if (i > 0) {
+			log_warn("Trying to convert parameters of \"%s\" into rules.", replacement->exclude);
+		}
+
+		while (i--) {
+			auto rule = config_setting_add(rules_setting, NULL, CONFIG_TYPE_GROUP);
+			auto match = config_setting_add(rule, "match", CONFIG_TYPE_STRING);
+			config_setting_set_string(match, config_setting_get_string_elem(setting, i));
+			auto param = config_setting_add(rule, replacement->parameter, replacement->type);
+			if (replacement->type == CONFIG_TYPE_BOOL) {
+				config_setting_set_bool(param, replacement->value.boolean);
+			} else if (replacement->type == CONFIG_TYPE_FLOAT) {
+				config_setting_set_float(param, replacement->value.floating);
+			}
+		}
+	}
+}
+
+/**
  * Parse a condition list in configuration file.
  */
 bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg, const char *name) {
@@ -765,6 +805,20 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
+		static const rule_replacement_t replacements[] = {
+			{ "blur-background-exclude", "blur-background", CONFIG_TYPE_BOOL, { .boolean = false } },
+			{ "shadow-exclude", "shadow", CONFIG_TYPE_BOOL, { .boolean = false } },
+			{ "fade-exclude", "fade", CONFIG_TYPE_BOOL, { .boolean = false } },
+			{ "rounded-corners-exclude", "corner-radius", CONFIG_TYPE_FLOAT, { .floating = 0.0f } },
+			{ "unredir-if-possible-exclude", "unredir", CONFIG_TYPE_BOOL, { .boolean = false } },
+			{ "invert-color-include", "invert-color", CONFIG_TYPE_BOOL, { .boolean = true } },
+			{ "transparent-clipping-exclude", "transparent-clipping", CONFIG_TYPE_BOOL, { .boolean = false } }
+		};
+		
+		for (size_t i = 0; i < sizeof(replacements) / sizeof(*replacements); i++) {
+			create_rules_compat(&cfg, rules, &replacements[i]);
+		}
+
 		parse_rules(&opt->rules, rules, &opt->all_scripts);
 		c2_condition_list_foreach(&opt->rules, i) {
 			auto data = (struct window_maybe_options *)c2_condition_get_data(i);
@@ -975,15 +1029,8 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	if (!list_is_empty(&opt->rules)) {
 		static const char *rule_list[] = {
-		    "transparent-clipping-exclude",
-		    "shadow-exclude",
 		    "clip-shadow-above",
-		    "fade-exclude",
 		    "focus-exclude",
-		    "invert-color-include",
-		    "blur-background-exclude",
-		    "unredir-if-possible-exclude",
-		    "rounded-corners-exclude",
 		    "corner-radius-rules",
 		    "opacity-rule",
 		    "window-shader-fg-rule",

@@ -442,6 +442,17 @@ typedef struct options {
 	bool has_both_style_of_rules;
 } options_t;
 
+// compatibility of *-exclude parameters with rules
+typedef struct rule_replacement {
+	const char *exclude;
+	const char *parameter;
+	int type;
+	union {
+		bool boolean;
+		double floating;
+	} value;
+} rule_replacement_t;
+
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 bool load_plugin(const char *name, const char *include_dir);
