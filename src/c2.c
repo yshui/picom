@@ -24,7 +24,6 @@
 #include "atom.h"
 #include "common.h"
 #include "compiler.h"
-#include "config.h"
 #include "log.h"
 #include "test.h"
 #include "utils/str.h"
@@ -645,10 +644,10 @@ c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, 
 			}
 
 			next_expected = true;
-			if (!mstrncmp("&&", pattern + offset)) {
+			if (mstrncmp("&&", pattern + offset) == 0) {
 				ops[elei] = C2_B_OAND;
 				++offset;
-			} else if (!mstrncmp("||", pattern + offset)) {
+			} else if (mstrncmp("||", pattern + offset) == 0) {
 				ops[elei] = C2_B_OOR;
 				++offset;
 			} else {
@@ -812,7 +811,7 @@ static int c2_parse_target(const char *pattern, int offset, c2_condition_node_pt
 	// Check for predefined targets
 	static const int npredefs = (int)(sizeof(C2_PREDEFS) / sizeof(C2_PREDEFS[0]));
 	for (int i = 0; i < npredefs; ++i) {
-		if (!strcmp(C2_PREDEFS[i].name, pleaf->tgt)) {
+		if (strcmp(C2_PREDEFS[i].name, pleaf->tgt) == 0) {
 			pleaf->predef = i;
 			break;
 		}
@@ -1662,19 +1661,19 @@ static bool c2_string_op(const c2_condition_node_leaf *leaf, const char *target)
 	}
 	if (leaf->match_ignorecase) {
 		switch (leaf->match) {
-		case C2_L_MEXACT: return !strcasecmp(target, leaf->ptnstr);
+		case C2_L_MEXACT: return strcasecmp(target, leaf->ptnstr) == 0;
 		case C2_L_MCONTAINS: return strcasestr(target, leaf->ptnstr);
 		case C2_L_MSTART:
-			return !strncasecmp(target, leaf->ptnstr, strlen(leaf->ptnstr));
+			return strncasecmp(target, leaf->ptnstr, strlen(leaf->ptnstr)) == 0;
 		case C2_L_MWILDCARD: return !fnmatch(leaf->ptnstr, target, FNM_CASEFOLD);
 		default: unreachable();
 		}
 	} else {
 		switch (leaf->match) {
-		case C2_L_MEXACT: return !strcmp(target, leaf->ptnstr);
+		case C2_L_MEXACT: return strcmp(target, leaf->ptnstr) == 0;
 		case C2_L_MCONTAINS: return strstr(target, leaf->ptnstr);
 		case C2_L_MSTART:
-			return !strncmp(target, leaf->ptnstr, strlen(leaf->ptnstr));
+			return strncmp(target, leaf->ptnstr, strlen(leaf->ptnstr)) == 0;
 		case C2_L_MWILDCARD: return !fnmatch(leaf->ptnstr, target, 0);
 		default: unreachable();
 		}
