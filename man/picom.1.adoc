@@ -291,9 +291,9 @@ Following is a list of all the options that are superseded by window rules:
 
 <<shadow-ignore-shaped>>, <<inactive-opacity>>, <<active-opacity>>, <<inactive-opacity-override>>, <<inactive-dim>>, <<mark-wmwin-focused>>, <<mark-ovredir-focused>>, <<invert-color-include>>, <<shadow-exclude>>, <<fade-exclude>>, <<focus-exclude>>, <<rounded-corners-exclude>>, <<blur-background-exclude>>, <<opacity-rule>>, <<corner-radius-rules>>, <<window-shader-fg-rule>>, <<clip-shadow-above>>. As well as the xref:wintypes[*wintypes*] configuration file option.
 
-If window rules option is used, none of the above options will have any effect. And warning messages will be issued.
+If window rules option is used, none of the above options will have any effect. And warning messages will be issued. When the window rules option is used, the compositor will also behave somewhat differently in certain cases. One such case is that fullscreen windows will no longer have their rounded corners disabled by default.
 
-If you are currently using some of these options and want to switch to window rules, see the xref:_migrating_old_rules[*Migrating old rules*] section for how to convert them.
+If you are currently using some of these options and want to switch to window rules, or if you want to keep the existing behavior, see the xref:_migrating_old_rules[*Migrating old rules*] section for how to convert them.
 
 === Syntax
 
@@ -361,6 +361,14 @@ Most of the rule options should 1:1 map to the new window rules. Here is a list 
 <<inactive-opacity-override>>, <<mark-wmwin-focused>>, and <<mark-ovredir-focused>>. When using the window rules, the compositor no longer have an "active window" concept, as it is easy to achieve with window rules. You can use `match = "focused || group_focused"` to match windows that would have been considered active with the old options. Then you can set the opacity and dim level for matched windows accordingly. <<mark-wmwin-focused>> and <<mark-ovredir-focused>> can be achieved by adding `|| wmwin` and `|| override_redirect` to the match string, respectively. <<inactive-opacity-override>> can be achieved by setting `opacity-override = true`.
 
 *Active window*:: This includes option <<focus-exclude>>. This option was only used to influence what windows are considered active, to apply inactive opacity and dimming. Since with window rules you no longer need the compositor to help you decide what is active and what is not (see above), this option is no longer needed.
+
+*Rounded corners and fullscreen windows*:: Rounded corners are no longer automatically disabled for fullscreen windows. If you want to disable rounded corners for fullscreen windows, you can use the following rule:
++
+----
+rules = (
+	{ match = "fullscreen"; corner-radius = 0; },
+)
+----
 
 FORMAT OF CONDITIONS
 --------------------
