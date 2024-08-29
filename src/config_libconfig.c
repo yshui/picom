@@ -539,7 +539,7 @@ static enum window_unredir_option parse_unredir_option(config_setting_t *setting
 		return WINDOW_UNREDIR_INVALID;
 	}
 	if (strcmp(sval, "yes") == 0 || strcmp(sval, "true") == 0 ||
-	    strcmp(sval, "default") == 0 || strcmp(sval, "when-possible-else-terminate")) {
+	    strcmp(sval, "default") == 0 || strcmp(sval, "when-possible-else-terminate") == 0) {
 		return WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE;
 	}
 	if (strcmp(sval, "preferred") == 0 || strcmp(sval, "when-possible") == 0) {
