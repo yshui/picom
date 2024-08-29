@@ -1813,19 +1813,21 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	// because its first damage event might come a bit late.
 	bool will_never_render =
 	    (!w->ever_damaged || w->win_image == NULL) && w->state != WSTATE_MAPPED;
+	auto win_ctx = win_script_context_prepare(ps, w);
+	bool geometry_changed = !win_geometry_eq(w->previous.g, w->g);
+	auto old_state = w->previous.state;
+
+	w->previous.state = w->state;
+	w->previous.opacity = w->opacity;
+	w->previous.g = w->g;
+
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
-		bool state_changed = w->previous.state != w->state;
-		w->previous.state = w->state;
-		w->previous.opacity = w->opacity;
+		bool state_changed = old_state != w->state ||
+		                     win_ctx.opacity_before != win_ctx.opacity ||
+		                     geometry_changed;
 		return state_changed || (w->running_animation_instance != NULL);
 	}
-
-	auto win_ctx = win_script_context_prepare(ps, w);
-	w->previous.opacity = w->opacity;
-
-	bool geometry_changed = !win_geometry_eq(w->previous.g, w->g);
-	w->previous.g = w->g;
 
 	// Try to determine the right animation trigger based on state changes. Note there
 	// is some complications here. X automatically unmaps windows before destroying
@@ -1839,7 +1841,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 
 	// Animation trigger priority:
 	//   state > geometry > opacity
-	if (w->previous.state != w->state) {
+	if (old_state != w->state) {
 		// Send D-Bus signal
 		if (ps->o.dbus) {
 			switch (w->state) {
@@ -1855,8 +1857,6 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			}
 		}
 
-		auto old_state = w->previous.state;
-		w->previous.state = w->state;
 		switch (WSTATE_PAIR(old_state, w->state)) {
 		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_MAPPED):
 			trigger = w->in_openclose ? ANIMATION_TRIGGER_OPEN
