@@ -729,6 +729,16 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	}
 	config_set_auto_convert(&cfg, 1);
 
+	// --log-level
+	if (config_lookup_string(&cfg, "log-level", &sval)) {
+		opt->log_level = string_to_log_level(sval);
+		if (opt->log_level == LOG_LEVEL_INVALID) {
+			log_warn("Invalid log level, defaults to WARN");
+		} else {
+			log_set_level_tls(opt->log_level);
+		}
+	}
+
 	// Get options from the configuration file. We don't do range checking
 	// right now. It will be done later
 
@@ -924,15 +934,6 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		if (opt->legacy_backend >= NUM_BKEND && opt->backend == NULL) {
 			log_fatal("Invalid backend: %s", sval);
 			goto out;
-		}
-	}
-	// --log-level
-	if (config_lookup_string(&cfg, "log-level", &sval)) {
-		opt->log_level = string_to_log_level(sval);
-		if (opt->log_level == LOG_LEVEL_INVALID) {
-			log_warn("Invalid log level, defaults to WARN");
-		} else {
-			log_set_level_tls(opt->log_level);
 		}
 	}
 	// --log-file
