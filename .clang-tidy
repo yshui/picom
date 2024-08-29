@@ -28,3 +28,5 @@ CheckOptions:
     value: true
   - key: bugprone-signed-char-misuse.CharTypdefsToIgnore
     value: int8_t
+  - key: bugprone-suspicious-string-compare.WarnOnLogicalNotComparison
+    value: true
