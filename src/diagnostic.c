@@ -13,7 +13,7 @@
 #include "picom.h"
 
 void print_diagnostics(session_t *ps, const char *config_file, bool compositor_running) {
-	printf("**Version:** " PICOM_VERSION "\n");
+	printf("**Version:** " PICOM_FULL_VERSION "\n");
 	// printf("**CFLAGS:** %s\n", "??");
 	printf("\n### Extensions:\n\n");
 	printf("* Shape: %s\n", ps->shape_exists ? "Yes" : "No");

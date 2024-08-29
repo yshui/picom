@@ -3,19 +3,33 @@ project('picom', 'c', version: '11',
 
 cc = meson.get_compiler('c')
 
-# use project version by default
-version = 'v'+meson.project_version()
-
 # use git describe if that's available
 git = find_program('git', required: false)
 if git.found()
-	gitv = run_command('git', 'rev-parse', '--short=5', 'HEAD', check: false)
+	gitv = run_command('git', 'rev-parse', '--short=7', 'HEAD', check: false)
 	if gitv.returncode() == 0
-		version = 'vgit-'+gitv.stdout().strip()
+		commit_hash_short = gitv.stdout().strip()
+	endif
+	git_upstream = run_command('git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}', check: false)
+	if git_upstream.returncode() == 0
+		remote = git_upstream.stdout().strip().split('/')[0]
+	else
+		remote = 'origin'
+	endif
+	git_repository = run_command('git', 'remote', 'get-url', remote, check: false)
+	if git_repository.returncode() == 0
+		repository = git_repository.stdout().strip()
 	endif
 endif
 
-add_global_arguments('-DPICOM_VERSION="'+version+'"', language: 'c')
+add_global_arguments('-DPICOM_VERSION="v'+meson.project_version()+'"', language: 'c')
+if is_variable('repository')
+	add_global_arguments('-DPICOM_FULL_VERSION="v'+meson.project_version()+' ('+repository+' revision '+commit_hash_short+')"', language: 'c')
+elif is_variable('commit_hash_short')
+	add_global_arguments('-DPICOM_FULL_VERSION="v'+meson.project_version()+' (revision '+commit_hash_short+')"', language: 'c')
+else
+	add_global_arguments('-DPICOM_FULL_VERSION="v'+meson.project_version()+'"', language: 'c')
+endif
 
 if get_option('buildtype') == 'release'
 	add_global_arguments('-DNDEBUG', language: 'c')

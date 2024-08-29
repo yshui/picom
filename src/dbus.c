@@ -919,7 +919,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	append(version, string, PICOM_VERSION);
+	append(version, string, PICOM_FULL_VERSION);
 	append(pid, int32, getpid());
 	append(display, string, DisplayString(ps->c.dpy));
 	append(config_file, string, "Unknown");

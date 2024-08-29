@@ -624,7 +624,7 @@ void print_help(const char *help, size_t indent, size_t curr_indent, size_t line
  */
 static void usage(const char *argv0, int ret) {
 	FILE *f = (ret ? stderr : stdout);
-	fprintf(f, "picom (%s)\n", PICOM_VERSION);
+	fprintf(f, "picom " PICOM_FULL_VERSION "\n");
 	fprintf(f, "Standalone X11 compositor\n");
 	fprintf(f, "Please report bugs to https://github.com/yshui/picom\n\n");
 
@@ -775,7 +775,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
-			printf("%s\n", PICOM_VERSION);
+			printf(PICOM_FULL_VERSION "\n");
 			return true;
 		} else if (o == 307) {
 			// --plugin
