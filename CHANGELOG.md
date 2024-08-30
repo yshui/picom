@@ -8,7 +8,7 @@
 
 ## Documentation
 
-* Document behave change around rounded corners and fullscreen windows
+* Document behavior change around rounded corners and fullscreen windows (#1323)
 
 # v12-rc2 (2024-Aug-17)
 
