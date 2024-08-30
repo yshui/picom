@@ -359,6 +359,8 @@ Most of the rule options should 1:1 map to the new window rules. Here is a list 
 
 *Inactive dimming and opacity*:: This includes options <<inactive-opacity>>, <<inactive-dim>>, <<active-opacity>>,
 <<inactive-opacity-override>>, <<mark-wmwin-focused>>, and <<mark-ovredir-focused>>. When using the window rules, the compositor no longer have an "active window" concept, as it is easy to achieve with window rules. You can use `match = "focused || group_focused"` to match windows that would have been considered active with the old options. Then you can set the opacity and dim level for matched windows accordingly. <<mark-wmwin-focused>> and <<mark-ovredir-focused>> can be achieved by adding `|| wmwin` and `|| override_redirect` to the match string, respectively. <<inactive-opacity-override>> can be achieved by setting `opacity-override = true`.
++
+NOTE: Setting _opacity_ explicitly with a rule will override the opacity value from the window properties (i.e. _pass:[_]NET_WM_WINDOW_OPACITY_), which is used by tools like `picom-trans` for setting the opacity of window. If you would like to keep using tools like `picom-trans`, you can choose to set the opacity only for windows without the opacity property by matching `! _NET_WM_WINDOW_OPACITY`.
 
 *Active window*:: This includes option <<focus-exclude>>. This option was only used to influence what windows are considered active, to apply inactive opacity and dimming. Since with window rules you no longer need the compositor to help you decide what is active and what is not (see above), this option is no longer needed.
 
