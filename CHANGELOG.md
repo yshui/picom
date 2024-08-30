@@ -1,10 +1,22 @@
+# v12-rc3 (2024-Aug-30)
+
+## Bug fixes
+
+* Setting `transparent-clipping` via window rules has no effect (#1317)
+* `unredir` in window rules not being parsed correctly
+* Changing window opacity with `picom-trans` does not take effect immediately (#1315)
+
+## Documentation
+
+* Document behave change around rounded corners and fullscreen windows
+
 # v12-rc2 (2024-Aug-17)
 
 ## Bug fixes
 
-* Setting corner-radius to 0 cause all windows to not render: #1311
+* Setting corner-radius to 0 cause all windows to not render (#1311)
 * Setting corner-radius causes windows to have a 1-pixel transparent border
-* Window shaders no longer work: #1312
+* Window shaders no longer work (#1312)
 
 # v12-rc1 (2024-Aug-12)
 
