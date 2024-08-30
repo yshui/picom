@@ -2,7 +2,7 @@
 
 ## Bug fixes
 
-* Setting `transparent-clipping` via window rules has no effect (#1317)
+* `transparent-clipping` has no effect (#1317)
 * `unredir` in window rules not being parsed correctly
 * Changing window opacity with `picom-trans` does not take effect immediately (#1315)
 
