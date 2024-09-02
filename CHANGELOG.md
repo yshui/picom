@@ -1,3 +1,9 @@
+# Unreleased
+
+## Bug fixes
+
+* Windows become completely black when `rules` and `inactive-dim` are set at the same time.
+
 # v12-rc3 (2024-Aug-30)
 
 ## Bug fixes

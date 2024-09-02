@@ -2000,7 +2000,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .shadow = opts->shadow_enable,
 	    .corner_radius = (unsigned)opts->corner_radius,
 	    .transparent_clipping = opts->transparent_clipping,
-	    .dim = opts->inactive_dim > 0,
+	    .dim = 0,
 	    .fade = opts->fading_enable,
 	    .shader = opts->window_shader_fg,
 	    .invert_color = false,
