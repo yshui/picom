@@ -568,9 +568,14 @@ static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
 	}
 
 	auto node = wm_tree_find(&req->wm->tree, req->wid);
-	BUG_ON_NULL(node);        // window must exist at this point, but it might be
-	                          // freed then recreated while we were waiting for the
-	                          // reply.
+	if (node == NULL) {
+		// An in-flight query tree request will keep node alive, but if the query
+		// tree request is completed, this node will be allowed to be destroyed.
+		// So if we received a DestroyNotify for `node` in between the reply to
+		// query tree and the reply to get property, `node` will be NULL here.
+		free(req);
+		return;
+	}
 	auto reply = (xcb_get_property_reply_t *)reply_or_error;
 	wm_tree_set_wm_state(&req->wm->tree, node, reply->type != XCB_NONE);
 	free(req);
