@@ -496,10 +496,10 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		}
 		wm_tree_attach(&wm->tree, child_node, node);
 	}
+	x_flush(c);        // Actually send the requests
 
 out:
 	free(req);
-	xcb_flush(c->c);        // Actually send the requests
 	if (wm_is_consistent(wm)) {
 		wm_reap_orphans(wm);
 	}
@@ -542,9 +542,9 @@ static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
 static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
                                      xcb_window_t wid, struct wm_tree_node *parent) {
 	log_debug("Starting import process for window %#010x", wid);
-	x_set_error_action_ignore(
-	    c, xcb_change_window_attributes(c->c, wid, XCB_CW_EVENT_MASK,
-	                                    (const uint32_t[]){WM_IMPORT_EV_MASK}));
+	x_change_window_attributes(c, wid, XCB_CW_EVENT_MASK,
+	                           (const uint32_t[]){WM_IMPORT_EV_MASK},
+	                           PENDING_REPLY_ACTION_IGNORE);
 
 	// Try to see if any orphaned window has the same window ID, if so, it must
 	// have been destroyed without us knowing, so we should reuse the node.
@@ -587,29 +587,24 @@ static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, stru
 	}
 
 	{
-		auto cookie = xcb_query_tree(c->c, wid);
 		auto req = ccalloc(1, struct wm_query_tree_request);
 		req->base.callback = wm_handle_query_tree_reply;
-		req->base.sequence = cookie.sequence;
 		req->node = new;
 		req->wm = wm;
 		req->atoms = atoms;
 		req->pending_index = dynarr_len(wm->pending_query_trees);
 		dynarr_push(wm->pending_query_trees, req);
-		x_await_request(c, &req->base);
+		x_async_query_tree(c, wid, &req->base);
 	}
 
 	// (It's OK to resend the get property request even if one is already in-flight,
 	// unlike query tree.)
 	{
-		auto cookie =
-		    xcb_get_property(c->c, 0, wid, atoms->aWM_STATE, XCB_ATOM_ANY, 0, 2);
 		auto req = ccalloc(1, struct wm_get_property_request);
 		req->base.callback = wm_handle_get_wm_state_reply;
-		req->base.sequence = cookie.sequence;
 		req->wm = wm;
 		req->wid = wid;
-		x_await_request(c, &req->base);
+		x_async_get_property(c, wid, atoms->aWM_STATE, XCB_ATOM_ANY, 0, 2, &req->base);
 	}
 }
 
@@ -622,7 +617,7 @@ void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
 		return;
 	}
 	wm_import_start_no_flush(wm, c, atoms, wid, parent_node);
-	xcb_flush(c->c);        // Actually send the requests
+	x_flush(c);        // Actually send the requests
 }
 
 bool wm_is_consistent(const struct wm *wm) {

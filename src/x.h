@@ -333,6 +333,19 @@ bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_
 /// Create a X region from a pixman region
 uint32_t x_create_region(struct x_connection *c, const region_t *reg);
 
+void x_change_window_attributes_with_loc(struct x_connection *c, xcb_window_t wid,
+                                         uint32_t mask, const uint32_t *values,
+                                         enum x_error_action error_action,
+                                         const char *func, const char *file, int line);
+#define x_change_window_attributes(c, wid, mask, values, action)                         \
+	x_change_window_attributes_with_loc(c, wid, mask, values, action, __func__,      \
+	                                    __FILE__, __LINE__)
+void x_async_query_tree(struct x_connection *c, xcb_window_t wid,
+                        struct x_async_request_base *req);
+void x_async_get_property(struct x_connection *c, xcb_window_t wid, xcb_atom_t atom,
+                          xcb_atom_t type, uint32_t long_offset, uint32_t long_length,
+                          struct x_async_request_base *req);
+
 /// Destroy a X region
 void x_destroy_region(struct x_connection *c, uint32_t region);
 
@@ -363,6 +376,8 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
  *         for multiple calls to this function,
  */
 const char *x_strerror(xcb_generic_error_t *e);
+
+void x_flush(struct x_connection *c);
 
 xcb_pixmap_t x_create_pixmap(struct x_connection *, uint8_t depth, int width, int height);
 

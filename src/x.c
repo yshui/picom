@@ -673,6 +673,28 @@ uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 	return ret;
 }
 
+void x_change_window_attributes_with_loc(struct x_connection *c, xcb_window_t wid,
+                                         uint32_t mask, const uint32_t *values,
+                                         enum x_error_action error_action,
+                                         const char *func, const char *file, int line) {
+	x_set_error_action(c, xcb_change_window_attributes(c->c, wid, mask, values).sequence,
+	                   error_action, func, file, line);
+}
+
+void x_async_query_tree(struct x_connection *c, xcb_window_t wid,
+                        struct x_async_request_base *req) {
+	req->sequence = xcb_query_tree(c->c, wid).sequence;
+	x_await_request(c, req);
+}
+
+void x_async_get_property(struct x_connection *c, xcb_window_t wid, xcb_atom_t atom,
+                          xcb_atom_t type, uint32_t long_offset, uint32_t long_length,
+                          struct x_async_request_base *req) {
+	req->sequence =
+	    xcb_get_property(c->c, 0, wid, atom, type, long_offset, long_length).sequence;
+	x_await_request(c, req);
+}
+
 void x_destroy_region(struct x_connection *c, xcb_xfixes_region_t r) {
 	if (r != XCB_NONE) {
 		x_set_error_action_debug_abort(c, xcb_xfixes_destroy_region(c->c, r));
@@ -739,6 +761,10 @@ const char *x_strerror(xcb_generic_error_t *e) {
 	}
 	return x_error_code_to_string(e->full_sequence, e->major_code, e->minor_code,
 	                              e->error_code);
+}
+
+void x_flush(struct x_connection *c) {
+	xcb_flush(c->c);
 }
 
 /**
