@@ -29,6 +29,8 @@ struct wm_tree {
 	struct list_node free_changes;
 };
 
+struct wm_query_tree_request;
+
 struct wm_tree_node {
 	UT_hash_handle hh;
 
@@ -57,6 +59,9 @@ struct wm_tree_node {
 	/// just best effort.
 	struct wm_tree_node *leader_final;
 	xcb_window_t leader;
+
+	/// The current in-flight query tree request for this window.
+	struct wm_query_tree_request *req;
 
 	bool has_wm_state : 1;
 	/// Whether this window exists only on our side. A zombie window is a toplevel
