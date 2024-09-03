@@ -479,7 +479,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d, "
 	          "send_event: %#010x",
 	          ev->window, ev->parent, ev->override_redirect, ev->event);
-	wm_reparent(ps->wm, ev->window, ev->parent);
+	wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
