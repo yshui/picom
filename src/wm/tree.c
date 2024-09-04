@@ -334,6 +334,11 @@ struct wm_tree_node *wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *s
 		if (wm_tree_enqueue_toplevel_killed(tree, subroot->id, zombie)) {
 			zombie = NULL;
 		}
+
+		// Gen bump must happen after enqueuing the change, because otherwise the
+		// kill change won't cancel out a previous new change because the IDs will
+		// be different.
+		subroot->id.gen = tree->gen++;
 	}
 	subroot->parent = NULL;
 	return zombie;
