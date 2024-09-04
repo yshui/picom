@@ -346,7 +346,7 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 		          ev->window, ev->parent);
 		assert(false);
 	}
-	wm_import_start(ps->wm, &ps->c, ps->atoms, ev->window, parent);
+	wm_import_start(ps->wm, &ps->c, ps->atoms, ev->window);
 }
 
 /// Handle configure event of a regular window
@@ -399,6 +399,10 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 		return;
 	}
 
+	if (ev->window == ev->event) {
+		return;
+	}
+
 	if (ev->window == ps->c.screen_info->root) {
 		configure_root(ps);
 	} else {
@@ -408,10 +412,18 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	log_debug("{ event: %#010x, id: %#010x }", ev->event, ev->window);
+	if (ev->event != ev->window) {
+		return;
+	}
+
 	wm_destroy(ps->wm, ev->window);
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
+	if (ev->window == ev->event) {
+		return;
+	}
+
 	// Unmap overlay window if it got mapped but we are currently not
 	// in redirected state.
 	if (ps->overlay && ev->window == ps->overlay) {
@@ -461,6 +473,10 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 		return;
 	}
 
+	if (ev->event == ev->window) {
+		return;
+	}
+
 	auto cursor = wm_find(ps->wm, ev->window);
 	if (cursor == NULL) {
 		if (wm_is_consistent(ps->wm)) {
@@ -479,10 +495,17 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d, "
 	          "send_event: %#010x",
 	          ev->window, ev->parent, ev->override_redirect, ev->event);
+	if (ev->event == ev->window) {
+		return;
+	}
 	wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
+	if (ev->event == ev->window) {
+		return;
+	}
+
 	auto cursor = wm_find(ps->wm, ev->window);
 
 	if (cursor == NULL) {

@@ -1364,8 +1364,9 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	}
 
 	// Set window event mask
-	uint32_t frame_event_mask =
-	    XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+	uint32_t frame_event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE |
+	                            XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+	                            XCB_EVENT_MASK_STRUCTURE_NOTIFY;
 	if (!ps->o.use_ewmh_active_win) {
 		frame_event_mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
 	}

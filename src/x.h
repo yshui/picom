@@ -333,13 +333,8 @@ bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_
 /// Create a X region from a pixman region
 uint32_t x_create_region(struct x_connection *c, const region_t *reg);
 
-void x_change_window_attributes_with_loc(struct x_connection *c, xcb_window_t wid,
-                                         uint32_t mask, const uint32_t *values,
-                                         enum x_error_action error_action,
-                                         const char *func, const char *file, int line);
-#define x_change_window_attributes(c, wid, mask, values, action)                         \
-	x_change_window_attributes_with_loc(c, wid, mask, values, action, __func__,      \
-	                                    __FILE__, __LINE__)
+xcb_generic_error_t *x_change_window_attributes(struct x_connection *c, xcb_window_t wid,
+                                                uint32_t mask, const uint32_t *values);
 void x_async_query_tree(struct x_connection *c, xcb_window_t wid,
                         struct x_async_request_base *req);
 void x_async_get_property(struct x_connection *c, xcb_window_t wid, xcb_atom_t atom,
