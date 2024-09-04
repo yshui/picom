@@ -346,7 +346,7 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 		          ev->window, ev->parent);
 		assert(false);
 	}
-	wm_import_start(ps->wm, &ps->c, ps->atoms, ev->window);
+	wm_import_start(ps->wm, &ps->c, ps->atoms, ev->window, parent);
 }
 
 /// Handle configure event of a regular window
@@ -412,11 +412,13 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	log_debug("{ event: %#010x, id: %#010x }", ev->event, ev->window);
+	// If we hit an ABA problem, it is possible to get a DestroyNotify event from a
+	// parent for its child, but not from the child for itself.
 	if (ev->event != ev->window) {
-		return;
+		wm_disconnect(ps->wm, ev->window, ev->event);
+	} else {
+		wm_destroy(ps->wm, ev->window);
 	}
-
-	wm_destroy(ps->wm, ev->window);
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
@@ -498,7 +500,11 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	if (ev->event == ev->window) {
 		return;
 	}
-	wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
+	if (ev->parent != ev->event) {
+		wm_disconnect(ps->wm, ev->window, ev->event);
+	} else {
+		wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
+	}
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {

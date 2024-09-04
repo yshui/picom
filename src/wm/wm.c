@@ -342,6 +342,43 @@ static void wm_move_win(struct wm_tree_node *from, struct wm_tree_node *to) {
 	from->win = NULL;
 }
 
+static void wm_detach_inner(struct wm *wm, struct wm_tree_node *child) {
+	auto zombie = wm_tree_detach(&wm->tree, child);
+	assert(zombie != NULL || child->win == NULL);
+	if (zombie != NULL) {
+		wm_move_win(child, zombie);
+	}
+}
+
+/// Disconnect `child` from `parent`. This is called when a window is removed from its
+/// parent's children list. This can be a result of the window being destroyed, or
+/// reparented to another window. This `child` is attached to the orphan root.
+void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent) {
+	auto parent_node = wm_tree_find(&wm->tree, parent);
+	BUG_ON_NULL(parent_node);
+
+	auto child_node = wm_tree_find(&wm->tree, child);
+	if (child_node == NULL) {
+		// X sends DestroyNotify from child first, then from parent. So if the
+		// child was imported, we will get here. This is the normal case.
+		//
+		// This also happens if the child is created then immediately destroyed,
+		// before we get the CreateNotify event for it. In
+		// `wm_import_start_no_flush` we will ignore this window because setting
+		// the event mask will fail. Then once we get the DestroyNotify for it
+		// from the parent, we get here.
+		log_debug("Child window %#010x of %#010x is not in our tree, ignoring",
+		          child, parent);
+		return;
+	}
+
+	BUG_ON(child_node->parent != parent_node);
+
+	log_debug("Disconnecting window %#010x from window %#010x", child, parent);
+	wm_detach_inner(wm, child_node);
+	wm_tree_attach(&wm->tree, child_node, &wm->orphan_root);
+}
+
 void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	struct wm_tree_node *node = wm_tree_find(&wm->tree, wid);
 	BUG_ON_NULL(node);
@@ -362,11 +399,7 @@ void wm_destroy(struct wm *wm, xcb_window_t wid) {
 		wm->focused_win = NULL;
 	}
 
-	auto zombie = wm_tree_detach(&wm->tree, node);
-	assert(zombie != NULL || node->win == NULL);
-	if (zombie != NULL) {
-		wm_move_win(node, zombie);
-	}
+	wm_detach_inner(wm, node);
 
 	if (node->req != NULL) {
 		// Effectively "cancel" the query tree request by setting `node->req` to
@@ -397,8 +430,8 @@ struct wm_wid_or_node {
 /// reusing the same window ID as a previously destroyed window, and that destroyed window
 /// is in our orphan tree. In this case, we revive the orphaned window instead of creating
 /// a new one.
-static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c,
-                                     struct atom *atoms, xcb_window_t wid);
+static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                                     xcb_window_t wid, struct wm_tree_node *parent);
 
 static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
                                  xcb_window_t wid, xcb_window_t parent) {
@@ -415,7 +448,10 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
 			log_error("Window %#010x reparented, but it's not in our tree.", wid);
 			assert(false);
 		}
-		return wm_import_start_no_flush(wm, c, atoms, wid);
+		if (new_parent_imported) {
+			wm_import_start_no_flush(wm, c, atoms, wid, new_parent);
+		}
+		return;
 	}
 
 	if (window->parent == new_parent) {
@@ -426,12 +462,7 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
 		return;
 	}
 
-	log_debug("Detaching window %#010x from window %#010x", wid, window->parent->id.x);
-	auto zombie = wm_tree_detach(&wm->tree, window);
-	assert(zombie != NULL || window->win == NULL);
-	if (zombie != NULL) {
-		wm_move_win(window, zombie);
-	}
+	BUG_ON(window->parent != &wm->orphan_root);
 
 	// Attaching `window` to `new_parent` will change the children list of
 	// `new_parent`, if there is a pending query tree request for `new_parent`, doing
@@ -450,11 +481,11 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
 		log_debug("Window %#010x is attached to window %#010x which is "
 		          "currently been queried, orphaning.",
 		          window->id.x, parent);
-		wm_tree_attach(&wm->tree, window, &wm->orphan_root);
 		return;
 	}
 
 	log_debug("Reparented window %#010x to window %#010x", window->id.x, parent);
+	BUG_ON(wm_tree_detach(&wm->tree, window) != NULL);
 	wm_tree_attach(&wm->tree, window, new_parent);
 }
 
@@ -487,7 +518,7 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		// able to stay up-to-date with this window, and would have to re-query in
 		// `wm_import_start_no_flush` anyway. And we don't have a node to attach
 		// the children to anyway.
-		if (reply_or_error->response_type != 0) {
+		if (reply_or_error != NULL && reply_or_error->response_type != 0) {
 			log_debug("Ignoring query tree reply for unknown window, it has "
 			          "been destroyed.");
 		}
@@ -496,11 +527,13 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 	}
 
 	BUG_ON(node->req != req);
-	BUG_ON(node->parent != &wm->orphan_root);
 	node->req = NULL;
 	free(req);
 
 	if (reply_or_error == NULL) {
+		// The program is quitting... If this happens when wm is in an
+		// inconsistent state, there could be errors.
+		// TODO(yshui): fix this
 		goto out;
 	}
 
@@ -516,23 +549,6 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 
 	xcb_query_tree_reply_t *reply = (xcb_query_tree_reply_t *)reply_or_error;
 	log_debug("Finished querying tree for window %#010x", node->id.x);
-
-	auto parent = wm_tree_find(&wm->tree, reply->parent);
-	if (reply->parent != XCB_NONE && parent == NULL) {
-		log_debug("Query tree reply for window %#010x has parent %#010x, "
-		          "which is not in our tree.",
-		          node->id.x, reply->parent);
-	} else if (parent != NULL && parent->req != NULL) {
-		log_debug("Query tree reply for window %#010x has parent %#010x is "
-		          "currently being queried.",
-		          node->id.x, reply->parent);
-	} else {
-		log_debug("Query tree reply for window %#010x has parent %#010x, "
-		          "attaching.",
-		          node->id.x, reply->parent);
-		BUG_ON(wm_tree_detach(&wm->tree, node) != NULL);
-		wm_tree_attach(&wm->tree, node, parent);
-	}
 
 	auto children = xcb_query_tree_children(reply);
 	log_debug("Window %#010x has %d children", node->id.x,
@@ -595,9 +611,25 @@ static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
 /// it is possible that it is a new window.
 ///
 /// Note this function does not flush the X connection.
-static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c,
-                                     struct atom *atoms, xcb_window_t wid) {
-	BUG_ON(wm_tree_find(&wm->tree, wid) != NULL);
+static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                                     xcb_window_t wid, struct wm_tree_node *parent) {
+	auto new = wm_tree_find(&wm->tree, wid);
+	if (new != NULL) {
+		// This happens if a window A is created, destroyed, and then another
+		// window B reuses the same window ID. We will receive a CreateNotify for
+		// A, but will import B. Then we will be here again when we receive the
+		// CreateNotify for B, which we have already imported.
+		log_debug("Window %#010x is already in our tree, reparenting.", wid);
+		if (new->parent != &wm->orphan_root) {
+			log_error("Window %#010x appeared twice in our tree. Once as a "
+			          "child of %#010x, once as a child of %#010x",
+			          wid, new->parent->id.x, parent->id.x);
+			BUG_ON(true);
+		}
+		BUG_ON(wm_tree_detach(&wm->tree, new) != NULL);
+		wm_tree_attach(&wm->tree, new, parent);
+		return;
+	}
 
 	auto e = x_change_window_attributes(c, wid, XCB_CW_EVENT_MASK,
 	                                    (const uint32_t[]){WM_IMPORT_EV_MASK});
@@ -609,16 +641,12 @@ static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c,
 		return;
 	}
 
-	auto new = wm_tree_new_window(&wm->tree, wid);
+	new = wm_tree_new_window(&wm->tree, wid);
 	wm_tree_add_window(&wm->tree, new);
 
 	log_debug("Starting import process for window %#010x", new->id.x);
 
-	// We don't attach the window directly to the parent here, because the
-	// window might have already be destroyed and another window created
-	// with the same ID since we got the event about its creation. We will
-	// attach it to the appropriate parent when we get the query tree reply.
-	wm_tree_attach(&wm->tree, new, &wm->orphan_root);
+	wm_tree_attach(&wm->tree, new, parent);
 
 	{
 		auto req = ccalloc(1, struct wm_query_tree_request);
@@ -644,8 +672,14 @@ static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c,
 }
 
 void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                     xcb_window_t wid) {
-	wm_import_start_no_flush(wm, c, atoms, wid);
+                     xcb_window_t wid, struct wm_ref *parent) {
+	struct wm_tree_node *parent_node = parent != NULL ? to_tree_node_mut(parent) : NULL;
+	if (parent_node != NULL && parent_node->req != NULL) {
+		// Parent node is currently being queried, we can't attach the new window
+		// to it as that will change its children list.
+		return;
+	}
+	wm_import_start_no_flush(wm, c, atoms, wid, parent_node);
 	x_flush(c);
 }
 

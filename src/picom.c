@@ -2467,7 +2467,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->wm = wm_new();
-	wm_import_start(ps->wm, &ps->c, ps->atoms, ps->c.screen_info->root);
+	wm_import_start(ps->wm, &ps->c, ps->atoms, ps->c.screen_info->root, NULL);
 
 	ps->command_builder = command_builder_new();
 	ps->expose_rects = dynarr_new(rect_t, 0);

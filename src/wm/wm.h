@@ -165,6 +165,7 @@ void wm_destroy(struct wm *wm, xcb_window_t wid);
 void wm_reap_zombie(struct wm_ref *zombie);
 void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
                  xcb_window_t wid, xcb_window_t parent);
+void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent);
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state);
 
 /// Start the import process for `wid`.
@@ -205,7 +206,7 @@ void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state
 ///
 /// (Now you have a glimpse of how much X11 sucks.)
 void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                     xcb_window_t wid);
+                     xcb_window_t wid, struct wm_ref *parent);
 
 /// Check if there are tree change events
 bool wm_has_tree_changes(const struct wm *wm);
