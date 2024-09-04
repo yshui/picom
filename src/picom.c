@@ -1488,7 +1488,7 @@ static void handle_x_events_ev(EV_P attr_unused, ev_prepare *w, int revents attr
 struct new_window_attributes_request {
 	struct x_async_request_base base;
 	struct session *ps;
-	xcb_window_t wid;
+	wm_treeid id;
 };
 
 static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
@@ -1496,8 +1496,8 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
                                                xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct new_window_attributes_request *)req_base;
 	auto ps = req->ps;
-	auto wid = req->wid;
-	auto new_window = wm_find(ps->wm, wid);
+	auto id = req->id;
+	auto new_window = wm_find(ps->wm, id.x);
 	free(req);
 
 	if (reply_or_error == NULL) {
@@ -1508,7 +1508,7 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 	if (reply_or_error->response_type == 0) {
 		log_debug("Failed to get window attributes for newly created window "
 		          "%#010x",
-		          wid);
+		          id.x);
 		return;
 	}
 
@@ -1517,9 +1517,18 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 		// created with the same window ID before this request completed, and the
 		// latter window isn't in our tree yet.
 		if (wm_is_consistent(ps->wm)) {
-			log_error("Newly created window %#010x is not in the window tree", wid);
+			log_error("Newly created window %#010x is not in the window tree",
+			          id.x);
 			assert(false);
 		}
+		return;
+	}
+
+	auto current_id = wm_ref_treeid(new_window);
+	if (!wm_treeid_eq(current_id, id)) {
+		log_debug("Window %#010x was not the window we queried anymore. Current "
+		          "gen %" PRIu64 ", expected %" PRIu64,
+		          id.x, current_id.gen, id.gen);
 		return;
 	}
 
@@ -1527,7 +1536,7 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 	if (toplevel != new_window) {
 		log_debug("Newly created window %#010x was moved away from toplevel "
 		          "while we were waiting for its attributes",
-		          wid);
+		          id.x);
 		return;
 	}
 	if (wm_ref_deref(toplevel) != NULL) {
@@ -1538,7 +1547,7 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 		// toplevel. But there is another get attributes request sent the
 		// second time it became a toplevel. When we get the reply for the second
 		// request, we will reach here.
-		log_debug("Newly created window %#010x is already managed", wid);
+		log_debug("Newly created window %#010x is already managed", id.x);
 		return;
 	}
 
@@ -1566,11 +1575,11 @@ static void handle_new_windows(session_t *ps) {
 			// number of things could happen before we get the reply. The
 			// window can be reparented, destroyed, then get its window ID
 			// reused, etc.
-			req->wid = wm_ref_win_id(wm_change.toplevel);
+			req->id = wm_ref_treeid(wm_change.toplevel);
 			req->ps = ps;
 			req->base.callback = handle_new_window_attributes_reply,
 			req->base.sequence =
-			    xcb_get_window_attributes(ps->c.c, req->wid).sequence;
+			    xcb_get_window_attributes(ps->c.c, req->id.x).sequence;
 			x_await_request(&ps->c, &req->base);
 			break;
 		case WM_TREE_CHANGE_TOPLEVEL_KILLED:
