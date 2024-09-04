@@ -7,7 +7,6 @@
 
 #include "common.h"
 #include "log.h"
-#include "utils/dynarr.h"
 #include "utils/list.h"
 #include "x.h"
 
@@ -308,31 +307,6 @@ void wm_free(struct wm *wm) {
 	free(wm);
 }
 
-/// Once the window tree reaches a consistent state, we know any tree nodes that are not
-/// reachable from the root must have been destroyed, so we can safely free them.
-///
-/// There are cases where we won't receive DestroyNotify events for these windows. For
-/// example, if a window is reparented to a window that is not yet in our tree, then
-/// destroyed, we won't receive a DestroyNotify event for it.
-static void wm_reap_orphans(struct wm *wm) {
-	// Reap orphaned windows
-	while (!list_is_empty(&wm->orphan_root.children)) {
-		auto node =
-		    list_entry(wm->orphan_root.children.next, struct wm_tree_node, siblings);
-		list_remove(&node->siblings);
-		if (!list_is_empty(&node->children)) {
-			log_error("Orphaned window %#010x still has children", node->id.x);
-			list_foreach(struct wm_tree_node, i, &node->children, siblings) {
-				log_error("  Child: %#010x", i->id.x);
-			}
-			list_splice(&node->children, &wm->orphan_root.children);
-		}
-		log_debug("Reaped orphaned window %#010x", node->id.x);
-		HASH_DEL(wm->tree.nodes, node);
-		free(node);
-	}
-}
-
 /// Move `from->win` to `to->win`, update `win->tree_ref`.
 static void wm_move_win(struct wm_tree_node *from, struct wm_tree_node *to) {
 	if (from->win != NULL) {
@@ -412,9 +386,6 @@ void wm_destroy(struct wm *wm, xcb_window_t wid) {
 	}
 	HASH_DEL(wm->tree.nodes, node);
 	free(node);
-	if (wm_is_consistent(wm)) {
-		wm_reap_orphans(wm);
-	}
 }
 
 void wm_reap_zombie(struct wm_ref *zombie) {
@@ -562,9 +533,6 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 
 out:
 	wm->n_pending_query_trees--;
-	if (wm_is_consistent(wm)) {
-		wm_reap_orphans(wm);
-	}
 }
 
 static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
