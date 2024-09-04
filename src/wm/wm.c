@@ -351,6 +351,17 @@ void wm_destroy(struct wm *wm, xcb_window_t wid) {
 		return;
 	}
 
+	if (node->req) {
+		// This window is currently being queried, we will keep it or destroy it
+		// based on the query tree reply. If query tree actually succeeds, that
+		// means we were querying a different window, that was created after this
+		// destroy event was generated.
+		log_debug("Ignoring destroy event for window %#010x, it's currently "
+		          "being queried.",
+		          wid);
+		return;
+	}
+
 	log_debug("Destroying window %#010x", wid);
 
 	if (!list_is_empty(&node->children)) {
@@ -504,6 +515,10 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 
 	wm->n_pending_query_trees--;
 
+	BUG_ON(node->req != req);
+	BUG_ON(node->parent != &wm->orphan_root);
+	node->req = NULL;
+
 	if (reply_or_error == NULL) {
 		goto out;
 	}
@@ -513,16 +528,33 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		// to query it.
 		xcb_generic_error_t *err = (xcb_generic_error_t *)reply_or_error;
 		log_debug("Query tree request for window %#010x failed with "
-		          "error %s",
+		          "error %s, this window doesn't exist anymore, destroying.",
 		          node == NULL ? 0 : node->id.x, x_strerror(err));
+		BUG_ON(wm_tree_detach(&wm->tree, node) != NULL);
+		HASH_DEL(wm->tree.nodes, node);
+		free(node);
 		goto out;
 	}
 
-	BUG_ON(node->req != req);
-	node->req = NULL;
-
 	xcb_query_tree_reply_t *reply = (xcb_query_tree_reply_t *)reply_or_error;
 	log_debug("Finished querying tree for window %#010x", node->id.x);
+
+	auto parent = wm_tree_find(&wm->tree, reply->parent);
+	if (reply->parent != XCB_NONE && parent == NULL) {
+		log_debug("Query tree reply for window %#010x has parent %#010x, "
+		          "which is not in our tree.",
+		          node->id.x, reply->parent);
+	} else if (parent != NULL && parent->req != NULL) {
+		log_debug("Query tree reply for window %#010x has parent %#010x is "
+		          "currently being queried.",
+		          node->id.x, reply->parent);
+	} else {
+		log_debug("Query tree reply for window %#010x has parent %#010x, "
+		          "attaching.",
+		          node->id.x, reply->parent);
+		BUG_ON(wm_tree_detach(&wm->tree, node) != NULL);
+		wm_tree_attach(&wm->tree, node, parent);
+	}
 
 	auto children = xcb_query_tree_children(reply);
 	log_debug("Window %#010x has %d children", node->id.x,
@@ -594,12 +626,12 @@ wm_new_or_attach_window(struct wm *wm, struct x_connection *c, struct atom *atom
 	// Try to see there is a window with an unknown parent with the same ID. If so, we
 	// now know who its parent is, and we just need to attach it.
 	auto new = window.is_wid ? wm_tree_find(&wm->tree, window.wid) : window.node;
-	assert(new == NULL || new->parent == &wm->orphan_root);
+	assert(new == NULL || new->parent == NULL || new->parent == &wm->orphan_root);
 	if (new == NULL) {
 		BUG_ON(!window.is_wid);
 		new = wm_tree_new_window(&wm->tree, window.wid);
 		wm_tree_add_window(&wm->tree, new);
-	} else {
+	} else if (new->parent != NULL) {
 		if (new->parent == parent) {
 			// What's going on???
 			log_error("Importing window %#010x a second time", new->id.x);
@@ -621,7 +653,6 @@ wm_new_or_attach_window(struct wm *wm, struct x_connection *c, struct atom *atom
 			wm_tree_reap_zombie(zombie);
 		}
 	}
-	wm_tree_attach(&wm->tree, new, parent);
 
 	if (!list_is_empty(&new->children)) {
 		// If new is an orphan that has children, it means it must have been a
@@ -636,7 +667,16 @@ wm_new_or_attach_window(struct wm *wm, struct x_connection *c, struct atom *atom
 		// receive destroy events for them, so we won't know when they are
 		// destroyed. In this case, we treat it as a new window (even though it
 		// might not be).
+		wm_tree_attach(&wm->tree, new, parent);
 		return;
+	}
+
+	// If the window might be new, we don't attach it directly to the parent, because
+	// the window might have already be destroyed and another window created with the
+	// same ID since we got the event about its creation. We will attach it to the
+	// appropriate parent when we get the query tree reply.
+	if (new->parent != &wm->orphan_root) {
+		wm_tree_attach(&wm->tree, new, &wm->orphan_root);
 	}
 
 	log_debug("Starting import process for window %#010x", new->id.x);
