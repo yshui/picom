@@ -444,10 +444,6 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
 	/// included in a query tree reply, so we must initiate its import process
 	/// explicitly.
 	if (window == NULL) {
-		if (wm_is_consistent(wm)) {
-			log_error("Window %#010x reparented, but it's not in our tree.", wid);
-			assert(false);
-		}
 		if (new_parent_imported) {
 			wm_import_start_no_flush(wm, c, atoms, wid, new_parent);
 		}
