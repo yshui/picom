@@ -372,7 +372,10 @@ void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent) {
 		return;
 	}
 
-	BUG_ON(child_node->parent != parent_node);
+	// If child_node->parent is not parent_node, then the parent must be in the
+	// process of being queried. In that case the child_node must be orphaned.
+	BUG_ON(child_node->parent != parent_node &&
+	       (parent_node->req == NULL || child_node->parent != &wm->orphan_root));
 
 	log_debug("Disconnecting window %#010x from window %#010x", child, parent);
 	wm_detach_inner(wm, child_node);
