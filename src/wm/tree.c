@@ -250,9 +250,9 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 	node->has_wm_state = has_wm_state;
 	BUG_ON(node->parent == NULL);        // Trying to set WM_STATE on the root window
 
-	struct wm_tree_node *toplevel;
-	for (auto cur = node; cur->parent != NULL; cur = cur->parent) {
-		toplevel = cur;
+	struct wm_tree_node *toplevel = wm_tree_find_toplevel_for(tree, node);
+	if (toplevel == NULL) {
+		return;
 	}
 
 	if (toplevel == node) {
