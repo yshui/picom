@@ -475,7 +475,7 @@ static const xcb_event_mask_t WM_IMPORT_EV_MASK = XCB_EVENT_MASK_SUBSTRUCTURE_NO
 
 static void
 wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *base,
-                           xcb_raw_generic_event_t *reply_or_error) {
+                           const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct wm_query_tree_request *)base;
 	auto atoms = req->atoms;
 	auto wm = req->wm;
@@ -517,7 +517,7 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		BUG_ON(false);
 	}
 
-	xcb_query_tree_reply_t *reply = (xcb_query_tree_reply_t *)reply_or_error;
+	auto reply = (const xcb_query_tree_reply_t *)reply_or_error;
 	log_debug("Finished querying tree for window %#010x", node->id.x);
 
 	auto children = xcb_query_tree_children(reply);
@@ -537,7 +537,7 @@ out:
 
 static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
                                          struct x_async_request_base *base,
-                                         xcb_raw_generic_event_t *reply_or_error) {
+                                         const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct wm_get_property_request *)base;
 	if (reply_or_error == NULL) {
 		free(req);
@@ -569,7 +569,7 @@ static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
 		free(req);
 		return;
 	}
-	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_property_reply_t *)reply_or_error;
 	wm_tree_set_wm_state(&req->wm->tree, node, reply->type != XCB_NONE);
 	free(req);
 }

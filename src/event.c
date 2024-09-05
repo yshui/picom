@@ -201,7 +201,7 @@ struct ev_ewmh_active_win_request {
 /// returned could not be found.
 static void
 update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base *req_base,
-                       xcb_raw_generic_event_t *reply_or_error) {
+                       const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
 
@@ -219,7 +219,7 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 	}
 
 	// Search for the window
-	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_property_reply_t *)reply_or_error;
 	if (reply->type == XCB_NONE || xcb_get_property_value_length(reply) < 4) {
 		log_debug("EWMH _NET_ACTIVE_WINDOW not set.");
 		return;
@@ -248,7 +248,7 @@ struct ev_recheck_focus_request {
  * @return struct _win of currently focused window, NULL if not found
  */
 static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_base *req_base,
-                          xcb_raw_generic_event_t *reply_or_error) {
+                          const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
 
@@ -268,7 +268,7 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 		return;
 	}
 
-	auto reply = (xcb_get_input_focus_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_input_focus_reply_t *)reply_or_error;
 	xcb_window_t wid = reply->focus;
 	log_debug("Current focused window is %#010x", wid);
 	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||

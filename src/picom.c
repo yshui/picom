@@ -1493,7 +1493,7 @@ struct new_window_attributes_request {
 
 static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
                                                struct x_async_request_base *req_base,
-                                               xcb_raw_generic_event_t *reply_or_error) {
+                                               const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct new_window_attributes_request *)req_base;
 	auto ps = req->ps;
 	auto id = req->id;
@@ -1551,8 +1551,8 @@ static void handle_new_window_attributes_reply(struct x_connection * /*c*/,
 		return;
 	}
 
-	auto w = win_maybe_allocate(ps, toplevel,
-	                            (xcb_get_window_attributes_reply_t *)reply_or_error);
+	auto w = win_maybe_allocate(
+	    ps, toplevel, (const xcb_get_window_attributes_reply_t *)reply_or_error);
 	if (w != NULL && w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		win_set_flags(w, WIN_FLAGS_MAPPED);
 		ps->pending_updates = true;

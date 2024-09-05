@@ -194,7 +194,7 @@ struct x_async_request_base {
 	/// The callback function to call when the reply is received. If `reply_or_error`
 	/// is NULL, it means the X connection is closed while waiting for the reply.
 	void (*callback)(struct x_connection *, struct x_async_request_base *,
-	                 xcb_raw_generic_event_t *reply_or_error);
+	                 const xcb_raw_generic_event_t *reply_or_error);
 	/// The sequence number of the X request.
 	unsigned int sequence;
 };
@@ -449,9 +449,6 @@ void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_
 static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
-
-/// Cancel an async request.
-void x_cancel_request(struct x_connection *c, struct x_async_request_base *req);
 
 /// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
 /// machinery for handling async replies. Calling `xcb_poll_for_event` directly will
