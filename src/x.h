@@ -53,7 +53,7 @@ enum x_error_action {
 
 /// Represents a X request we sent that might error.
 struct pending_x_error {
-	unsigned long sequence;
+	uint32_t sequence;
 	enum x_error_action action;
 
 	// Debug information, where in the code was this request sent.
@@ -81,18 +81,22 @@ struct x_connection {
 	/// The list of pending async requests that we have
 	/// yet to receive a reply for.
 	struct list_node pending_x_requests;
+	/// The first request that has a reply.
+	struct x_async_request_base *first_request_with_reply;
 	/// A message, either an event or a reply, that is currently being held, because
 	/// there are messages of the opposite type with lower sequence numbers that we
 	/// need to return first.
 	xcb_raw_generic_event_t *message_on_hold;
-	/// The sequence number of the last message returned by
-	/// `x_poll_for_message`. Used for sequence number overflow
-	/// detection.
-	uint32_t last_sequence;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
 	xcb_screen_t *screen_info;
+	/// The sequence number of the last message returned by
+	/// `x_poll_for_message`. Used for sequence number overflow
+	/// detection.
+	uint32_t last_sequence;
+	/// The sequence number of `message_on_hold`
+	uint32_t sequence_on_hold;
 };
 
 /// Monitor info
@@ -197,6 +201,9 @@ struct x_async_request_base {
 	                 const xcb_raw_generic_event_t *reply_or_error);
 	/// The sequence number of the X request.
 	unsigned int sequence;
+	/// This request doesn't expect a reply. If this is true, in the success case,
+	/// `callback` will be called with a dummy reply whose `response_type` is 1.
+	bool no_reply;
 };
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
@@ -447,6 +454,9 @@ void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_
 /// `req` store information about the request, including the callback. The callback is
 /// responsible for freeing `req`.
 static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
+	if (c->first_request_with_reply == NULL && !req->no_reply) {
+		c->first_request_with_reply = req;
+	}
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
 
