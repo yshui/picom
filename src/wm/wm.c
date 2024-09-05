@@ -714,8 +714,7 @@ void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
 }
 
 bool wm_is_consistent(const struct wm *wm) {
-	assert(wm->n_pending_imports > 0 || list_is_empty(&wm->orphan_root.children));
-	return wm->n_pending_imports == 0;
+	return wm->n_pending_imports == 0 && list_is_empty(&wm->orphan_root.children);
 }
 
 bool wm_has_tree_changes(const struct wm *wm) {
