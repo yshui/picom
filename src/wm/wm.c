@@ -414,11 +414,11 @@ struct wm_wid_or_node {
 /// reusing the same window ID as a previously destroyed window, and that destroyed window
 /// is in our orphan tree. In this case, we revive the orphaned window instead of creating
 /// a new one.
-static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                                     xcb_window_t wid, struct wm_tree_node *parent);
+static void wm_import_start_inner(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                                  xcb_window_t wid, struct wm_tree_node *parent);
 
-static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                                 xcb_window_t wid, xcb_window_t parent) {
+void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                 xcb_window_t wid, xcb_window_t parent) {
 	auto window = wm_tree_find(&wm->tree, wid);
 	auto new_parent = wm_tree_find(&wm->tree, parent);
 	bool new_parent_imported = new_parent != NULL && new_parent->tree_queried;
@@ -429,7 +429,7 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
 	/// explicitly.
 	if (window == NULL) {
 		if (new_parent_imported) {
-			wm_import_start_no_flush(wm, c, atoms, wid, new_parent);
+			wm_import_start_inner(wm, c, atoms, wid, new_parent);
 		}
 		return;
 	}
@@ -467,12 +467,6 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
 	log_debug("Reparented window %#010x to window %#010x", window->id.x, parent);
 	BUG_ON(wm_tree_detach(&wm->tree, window) != NULL);
 	wm_tree_attach(&wm->tree, window, new_parent);
-}
-
-void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                 xcb_window_t wid, xcb_window_t parent) {
-	wm_reparent_no_flush(wm, c, atoms, wid, parent);
-	x_flush(c);
 }
 
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state) {
@@ -551,9 +545,8 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		auto child = children[i];
 		// wm_reparent handles both the case where child is new, and the case
 		// where the child is an known orphan.
-		wm_reparent_no_flush(wm, c, atoms, child, node->id.x);
+		wm_reparent(wm, c, atoms, child, node->id.x);
 	}
-	x_flush(c);        // Actually send the requests
 }
 
 static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
@@ -670,8 +663,8 @@ end_import:
 /// it is possible that it is a new window.
 ///
 /// Note this function does not flush the X connection.
-static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                                     xcb_window_t wid, struct wm_tree_node *parent) {
+static void wm_import_start_inner(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                                  xcb_window_t wid, struct wm_tree_node *parent) {
 	auto new = wm_tree_find(&wm->tree, wid);
 	if (new != NULL) {
 		// This happens if a window A is created, destroyed, and then another
@@ -717,8 +710,7 @@ void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
 		// to it as that will change its children list.
 		return;
 	}
-	wm_import_start_no_flush(wm, c, atoms, wid, parent_node);
-	x_flush(c);
+	wm_import_start_inner(wm, c, atoms, wid, parent_node);
 }
 
 bool wm_is_consistent(const struct wm *wm) {
