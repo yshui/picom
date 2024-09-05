@@ -340,8 +340,9 @@ bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_
 /// Create a X region from a pixman region
 uint32_t x_create_region(struct x_connection *c, const region_t *reg);
 
-xcb_generic_error_t *x_change_window_attributes(struct x_connection *c, xcb_window_t wid,
-                                                uint32_t mask, const uint32_t *values);
+void x_async_change_window_attributes(struct x_connection *c, xcb_window_t wid,
+                                      uint32_t mask, const uint32_t *values,
+                                      struct x_async_request_base *req);
 void x_async_query_tree(struct x_connection *c, xcb_window_t wid,
                         struct x_async_request_base *req);
 void x_async_get_property(struct x_connection *c, xcb_window_t wid, xcb_atom_t atom,
@@ -377,7 +378,7 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
  * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
  *         for multiple calls to this function,
  */
-const char *x_strerror(xcb_generic_error_t *e);
+const char *x_strerror(const xcb_generic_error_t *e);
 
 void x_flush(struct x_connection *c);
 

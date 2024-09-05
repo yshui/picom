@@ -415,7 +415,7 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 	// If we hit an ABA problem, it is possible to get a DestroyNotify event from a
 	// parent for its child, but not from the child for itself.
 	if (ev->event != ev->window) {
-		wm_disconnect(ps->wm, ev->window, ev->event);
+		wm_disconnect(ps->wm, ev->window, ev->event, XCB_NONE);
 	} else {
 		wm_destroy(ps->wm, ev->window);
 	}
@@ -501,7 +501,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		return;
 	}
 	if (ev->parent != ev->event) {
-		wm_disconnect(ps->wm, ev->window, ev->event);
+		wm_disconnect(ps->wm, ev->window, ev->event, ev->parent);
 	} else {
 		wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
 	}

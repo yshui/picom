@@ -669,10 +669,12 @@ uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 	return ret;
 }
 
-xcb_generic_error_t *x_change_window_attributes(struct x_connection *c, xcb_window_t wid,
-                                                uint32_t mask, const uint32_t *values) {
-	return xcb_request_check(
-	    c->c, xcb_change_window_attributes_checked(c->c, wid, mask, values));
+void x_async_change_window_attributes(struct x_connection *c, xcb_window_t wid,
+                                      uint32_t mask, const uint32_t *values,
+                                      struct x_async_request_base *req) {
+	req->sequence = xcb_change_window_attributes(c->c, wid, mask, values).sequence;
+	req->no_reply = true;
+	x_await_request(c, req);
 }
 
 void x_async_query_tree(struct x_connection *c, xcb_window_t wid,
@@ -749,7 +751,7 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
  * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
  *         for multiple calls to this function,
  */
-const char *x_strerror(xcb_generic_error_t *e) {
+const char *x_strerror(const xcb_generic_error_t *e) {
 	if (!e) {
 		return "No error";
 	}

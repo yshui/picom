@@ -60,9 +60,6 @@ struct wm_tree_node {
 	struct wm_tree_node *leader_final;
 	xcb_window_t leader;
 
-	/// The current in-flight query tree request for this window.
-	struct wm_query_tree_request *req;
-
 	bool has_wm_state : 1;
 	/// Whether this window exists only on our side. A zombie window is a toplevel
 	/// that has been destroyed or reparented (i.e. no long a toplevel) on the X
@@ -70,6 +67,12 @@ struct wm_tree_node {
 	/// window cannot be found in the wm_tree hash table.
 	bool is_zombie : 1;
 	bool visited : 1;
+	/// Whether we have set up event masks on this window. This means we can reliably
+	/// detect if the window is destroyed.
+	bool receiving_events : 1;
+	/// If the initial query tree request has completed. This means the children list
+	/// of this window is complete w.r.t. the event stream.
+	bool tree_queried : 1;
 };
 
 /// Describe a change of a toplevel's client window.

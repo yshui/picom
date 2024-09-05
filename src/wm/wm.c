@@ -16,9 +16,9 @@
 
 struct wm_query_tree_request {
 	struct x_async_request_base base;
-	struct wm_tree_node *node;
 	struct wm *wm;
 	struct atom *atoms;
+	xcb_window_t wid;
 };
 
 struct wm_get_property_request {
@@ -42,11 +42,10 @@ struct wm {
 	/// created its list of children is always up to date.
 	struct wm_tree_node orphan_root;
 
-	/// Number of pending async query tree requests. We also have async get
-	/// property requests, but they are not tracked because they don't
-	/// affect the tree structure. We guarantee that when there are pending
-	/// query tree requests, no tree nodes will be freed.
-	unsigned n_pending_query_trees;
+	/// Number of pending async imports. This tracks the async event mask setups and
+	/// query tree queries. We also have async get property requests, but they are not
+	/// tracked because they don't affect the tree structure.
+	unsigned n_pending_imports;
 
 	/// Whether cached window leaders should be recalculated. Following tree changes
 	/// will trigger a leader refresh:
@@ -277,7 +276,7 @@ struct wm *wm_new(void) {
 	auto wm = ccalloc(1, struct wm);
 	wm_tree_init(&wm->tree);
 	list_init_head(&wm->orphan_root.children);
-	wm->n_pending_query_trees = 0;
+	wm->n_pending_imports = 0;
 	return wm;
 }
 
@@ -327,8 +326,10 @@ static void wm_detach_inner(struct wm *wm, struct wm_tree_node *child) {
 /// Disconnect `child` from `parent`. This is called when a window is removed from its
 /// parent's children list. This can be a result of the window being destroyed, or
 /// reparented to another window. This `child` is attached to the orphan root.
-void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent) {
+void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent,
+                   xcb_window_t new_parent) {
 	auto parent_node = wm_tree_find(&wm->tree, parent);
+	auto new_parent_node = wm_tree_find(&wm->tree, new_parent);
 	BUG_ON_NULL(parent_node);
 
 	auto child_node = wm_tree_find(&wm->tree, child);
@@ -349,11 +350,26 @@ void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent) {
 	// If child_node->parent is not parent_node, then the parent must be in the
 	// process of being queried. In that case the child_node must be orphaned.
 	BUG_ON(child_node->parent != parent_node &&
-	       (parent_node->req == NULL || child_node->parent != &wm->orphan_root));
+	       (parent_node->tree_queried || child_node->parent != &wm->orphan_root));
 
-	log_debug("Disconnecting window %#010x from window %#010x", child, parent);
 	wm_detach_inner(wm, child_node);
-	wm_tree_attach(&wm->tree, child_node, &wm->orphan_root);
+	if ((new_parent_node != NULL && new_parent_node->receiving_events) ||
+	    child_node->receiving_events) {
+		// We need to be sure we will be able to keep track of all orphaned
+		// windows to know none of them will be destroyed without us knowing. If
+		// we have already set up event mask for the new parent, we will be
+		// getting a reparent event from the new parent, which means we will have
+		// an eye on `child` at all times, so that's fine. If we have already set
+		// up event mask on the child itself, that's even better.
+		log_debug("Disconnecting window %#010x from window %#010x", child, parent);
+		wm_tree_attach(&wm->tree, child_node, &wm->orphan_root);
+	} else {
+		// Otherwise, we might potentially lose track of this window, so we have
+		// to destroy it.
+		log_debug("Destroy window %#010x because we can't keep track of it", child);
+		HASH_DEL(wm->tree.nodes, child_node);
+		free(child_node);
+	}
 }
 
 void wm_destroy(struct wm *wm, xcb_window_t wid) {
@@ -378,12 +394,6 @@ void wm_destroy(struct wm *wm, xcb_window_t wid) {
 
 	wm_detach_inner(wm, node);
 
-	if (node->req != NULL) {
-		// Effectively "cancel" the query tree request by setting `node->req` to
-		// NULL. This will cause its reply to be ignored.
-		node->req->node = NULL;
-		wm->n_pending_query_trees--;
-	}
 	HASH_DEL(wm->tree.nodes, node);
 	free(node);
 }
@@ -411,7 +421,7 @@ static void wm_reparent_no_flush(struct wm *wm, struct x_connection *c, struct a
                                  xcb_window_t wid, xcb_window_t parent) {
 	auto window = wm_tree_find(&wm->tree, wid);
 	auto new_parent = wm_tree_find(&wm->tree, parent);
-	bool new_parent_imported = new_parent != NULL && new_parent->req == NULL;
+	bool new_parent_imported = new_parent != NULL && new_parent->tree_queried;
 
 	/// If a previously unseen window is reparented to a window that has been fully
 	/// imported, we must treat it as a newly created window. Because it will not be
@@ -479,7 +489,17 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 	auto req = (struct wm_query_tree_request *)base;
 	auto atoms = req->atoms;
 	auto wm = req->wm;
-	auto node = req->node;
+	auto node = wm_tree_find(&wm->tree, req->wid);
+	free(req);
+
+	wm->n_pending_imports--;
+
+	if (reply_or_error == NULL) {
+		// The program is quitting... If this happens when wm is in an
+		// inconsistent state, there could be errors.
+		// TODO(yshui): fix this
+		return;
+	}
 
 	if (node == NULL) {
 		// If the node was previously destroyed, then it means a newly created
@@ -488,34 +508,38 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		// able to stay up-to-date with this window, and would have to re-query in
 		// `wm_import_start_no_flush` anyway. And we don't have a node to attach
 		// the children to anyway.
-		if (reply_or_error != NULL && reply_or_error->response_type != 0) {
-			log_debug("Ignoring query tree reply for unknown window, it has "
-			          "been destroyed.");
+		if (reply_or_error->response_type != 0) {
+			log_debug("Ignoring query tree reply for window not in our "
+			          "tree.");
+			BUG_ON(wm_is_consistent(wm));
 		}
-		free(req);
 		return;
 	}
 
-	BUG_ON(node->req != req);
-	node->req = NULL;
-	free(req);
-
-	if (reply_or_error == NULL) {
-		// The program is quitting... If this happens when wm is in an
-		// inconsistent state, there could be errors.
-		// TODO(yshui): fix this
-		goto out;
+	if (!node->receiving_events) {
+		log_debug("Window ID %#010x is destroyed then reused, and hasn't had "
+		          "event mask set yet.",
+		          node->id.x);
+		return;
 	}
 
 	if (reply_or_error->response_type == 0) {
 		// This is an error, most likely the window is gone when we tried
 		// to query it.
+		// A window we are tracking died without us knowing, this should
+		// be impossible.
 		xcb_generic_error_t *err = (xcb_generic_error_t *)reply_or_error;
-		log_error("Query tree request for window %#010x failed with "
-		          "error %s, this query should have been cancelled.",
+		log_error("Query tree request for window %#010x failed with error %s.",
 		          node == NULL ? 0 : node->id.x, x_strerror(err));
 		BUG_ON(false);
 	}
+
+	if (node->tree_queried) {
+		log_debug("Window %#010x has already been queried.", node->id.x);
+		return;
+	}
+
+	node->tree_queried = true;
 
 	auto reply = (const xcb_query_tree_reply_t *)reply_or_error;
 	log_debug("Finished querying tree for window %#010x", node->id.x);
@@ -530,9 +554,6 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		wm_reparent_no_flush(wm, c, atoms, child, node->id.x);
 	}
 	x_flush(c);        // Actually send the requests
-
-out:
-	wm->n_pending_query_trees--;
 }
 
 static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
@@ -574,6 +595,77 @@ static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
 	free(req);
 }
 
+struct wm_set_event_mask_request {
+	struct x_async_request_base base;
+	struct wm *wm;
+	struct atom *atoms;
+	xcb_window_t wid;
+};
+
+static void
+wm_handle_set_event_mask_reply(struct x_connection *c, struct x_async_request_base *base,
+                               const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct wm_set_event_mask_request *)base;
+	auto wm = req->wm;
+	auto atoms = req->atoms;
+	auto wid = req->wid;
+	free(req);
+
+	if (reply_or_error == NULL) {
+		goto end_import;
+	}
+	if (reply_or_error->response_type == 0) {
+		log_debug("Failed to set event mask for window %#010x: %s, ignoring this "
+		          "window.",
+		          wid, x_strerror((const xcb_generic_error_t *)reply_or_error));
+		goto end_import;
+	}
+
+	auto node = wm_tree_find(&wm->tree, wid);
+	if (node == NULL) {
+		// The window initiated this request is gone, but a window with this wid
+		// does exist - we just haven't gotten the event for its creation yet. We
+		// create a placeholder for it.
+		node = wm_tree_new_window(&wm->tree, wid);
+		wm_tree_add_window(&wm->tree, node);
+		wm_tree_attach(&wm->tree, node, &wm->orphan_root);
+	}
+
+	if (node->receiving_events) {
+		// This means another set event mask request was already completed before
+		// us. We don't need to do anything.
+		log_debug("Event mask already set for window %#010x", wid);
+		goto end_import;
+	}
+
+	log_debug("Event mask set for window %#010x, sending query tree.", wid);
+	node->receiving_events = true;
+
+	{
+		auto req2 = ccalloc(1, struct wm_query_tree_request);
+		req2->base.callback = wm_handle_query_tree_reply;
+		req2->wid = node->id.x;
+		req2->wm = wm;
+		req2->atoms = atoms;
+		x_async_query_tree(c, node->id.x, &req2->base);
+	}
+
+	// (It's OK to resend the get property request even if one is already in-flight,
+	// unlike query tree.)
+	{
+		auto req2 = ccalloc(1, struct wm_get_property_request);
+		req2->base.callback = wm_handle_get_wm_state_reply;
+		req2->wm = wm;
+		req2->wid = node->id.x;
+		x_async_get_property(c, node->id.x, atoms->aWM_STATE, XCB_ATOM_ANY, 0, 2,
+		                     &req2->base);
+	}
+	return;
+
+end_import:
+	wm->n_pending_imports--;
+}
+
 /// Create a window for `wid`. Send query tree and get property requests for the window if
 /// it is possible that it is a new window.
 ///
@@ -598,50 +690,29 @@ static void wm_import_start_no_flush(struct wm *wm, struct x_connection *c, stru
 		return;
 	}
 
-	auto e = x_change_window_attributes(c, wid, XCB_CW_EVENT_MASK,
-	                                    (const uint32_t[]){WM_IMPORT_EV_MASK});
-	if (e) {
-		log_debug("Failed to set event mask for window %#010x: %s, ignoring this "
-		          "window.",
-		          wid, x_strerror(e));
-		free(e);
-		return;
-	}
-
+	// We need to create a tree node immediate before we even know if it still exists.
+	// Because otherwise we have nothing to keep track of its stacking order.
 	new = wm_tree_new_window(&wm->tree, wid);
 	wm_tree_add_window(&wm->tree, new);
+	wm_tree_attach(&wm->tree, new, parent);
 
 	log_debug("Starting import process for window %#010x", new->id.x);
 
-	wm_tree_attach(&wm->tree, new, parent);
+	auto req = ccalloc(1, struct wm_set_event_mask_request);
+	req->base.callback = wm_handle_set_event_mask_reply;
+	req->wid = wid;
+	req->atoms = atoms;
+	req->wm = wm;
+	x_async_change_window_attributes(
+	    c, wid, XCB_CW_EVENT_MASK, (const uint32_t[]){WM_IMPORT_EV_MASK}, &req->base);
 
-	{
-		auto req = ccalloc(1, struct wm_query_tree_request);
-		req->base.callback = wm_handle_query_tree_reply;
-		req->node = new;
-		req->wm = wm;
-		req->atoms = atoms;
-		new->req = req;
-		wm->n_pending_query_trees++;
-		x_async_query_tree(c, new->id.x, &req->base);
-	}
-
-	// (It's OK to resend the get property request even if one is already in-flight,
-	// unlike query tree.)
-	{
-		auto req = ccalloc(1, struct wm_get_property_request);
-		req->base.callback = wm_handle_get_wm_state_reply;
-		req->wm = wm;
-		req->wid = new->id.x;
-		x_async_get_property(c, new->id.x, atoms->aWM_STATE, XCB_ATOM_ANY, 0, 2,
-		                     &req->base);
-	}
+	wm->n_pending_imports++;
 }
 
 void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
                      xcb_window_t wid, struct wm_ref *parent) {
 	struct wm_tree_node *parent_node = parent != NULL ? to_tree_node_mut(parent) : NULL;
-	if (parent_node != NULL && parent_node->req != NULL) {
+	if (parent_node != NULL && !parent_node->tree_queried) {
 		// Parent node is currently being queried, we can't attach the new window
 		// to it as that will change its children list.
 		return;
@@ -651,7 +722,7 @@ void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
 }
 
 bool wm_is_consistent(const struct wm *wm) {
-	return wm->n_pending_query_trees == 0;
+	return wm->n_pending_imports == 0;
 }
 
 bool wm_has_tree_changes(const struct wm *wm) {
