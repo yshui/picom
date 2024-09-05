@@ -310,6 +310,9 @@ wm_tree_refresh_client_and_queue_change(struct wm_tree *tree, struct wm_tree_nod
 		if (new_client != NULL) {
 			new_client_id = new_client->id;
 		}
+		log_debug("Toplevel window %#010x had client window %#010x, now has "
+		          "%#010x.",
+		          toplevel->id.x, old_client_id.x, new_client_id.x);
 		toplevel->client_window = new_client;
 		wm_tree_enqueue_client_change(tree, toplevel, old_client_id, new_client_id);
 	}
@@ -328,6 +331,7 @@ struct wm_tree_node *wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *s
 		}
 	} else {
 		// Detached a toplevel, create a zombie for it
+		log_debug("Detaching toplevel window %#010x.", subroot->id.x);
 		zombie = ccalloc(1, struct wm_tree_node);
 		zombie->parent = subroot->parent;
 		zombie->id = subroot->id;
@@ -342,6 +346,7 @@ struct wm_tree_node *wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *s
 		// kill change won't cancel out a previous new change because the IDs will
 		// be different.
 		subroot->id.gen = tree->gen++;
+		subroot->client_window = NULL;
 	}
 	subroot->parent = NULL;
 	return zombie;
@@ -364,7 +369,8 @@ void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
 	auto toplevel = wm_tree_find_toplevel_for(tree, child);
 	if (child == toplevel) {
 		wm_tree_enqueue_toplevel_new(tree, child);
-	} else if (toplevel != NULL) {
+	}
+	if (toplevel != NULL) {
 		wm_tree_refresh_client_and_queue_change(tree, toplevel);
 	}
 }
