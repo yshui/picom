@@ -196,7 +196,7 @@ struct wm_tree_node *wm_tree_next(struct wm_tree_node *node, struct wm_tree_node
 
 /// Find a client window under a toplevel window. If there are multiple windows with
 /// `WM_STATE` set under the toplevel window, we will return an arbitrary one.
-static struct wm_tree_node *attr_pure wm_tree_find_client(struct wm_tree_node *subroot) {
+struct wm_tree_node *attr_pure wm_tree_find_client(struct wm_tree_node *subroot) {
 	if (subroot->has_wm_state) {
 		log_debug("Toplevel %#010x has WM_STATE set, weird. Using itself as its "
 		          "client window.",
@@ -257,7 +257,6 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 
 	if (toplevel == node) {
 		log_debug("Setting WM_STATE on a toplevel window %#010x, weird.", node->id.x);
-		return;
 	}
 
 	if (!has_wm_state && toplevel->client_window == node) {

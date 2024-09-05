@@ -133,6 +133,7 @@ void wm_tree_move_to_end(struct wm_tree *tree, struct wm_tree_node *node, bool t
 struct wm_tree_change wm_tree_dequeue_change(struct wm_tree *tree);
 void wm_tree_reap_zombie(struct wm_tree_node *zombie);
 void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool has_wm_state);
+struct wm_tree_node *attr_pure wm_tree_find_client(struct wm_tree_node *subroot);
 
 static inline void wm_tree_init(struct wm_tree *tree) {
 	tree->nodes = NULL;
