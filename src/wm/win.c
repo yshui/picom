@@ -235,6 +235,13 @@ static inline void win_release_mask(backend_t *base, struct win *w) {
 	}
 }
 
+static inline void win_release_saved_win_image(backend_t *base, struct win *w) {
+	if (w->saved_win_image) {
+		base->ops.release_image(base, w->saved_win_image);
+		w->saved_win_image = NULL;
+	}
+}
+
 void win_release_images(struct backend_base *backend, struct win *w) {
 	// We don't want to decide what we should do if the image we want to
 	// release is stale (do we clear the stale flags or not?) But if we are
@@ -244,6 +251,7 @@ void win_release_images(struct backend_base *backend, struct win *w) {
 	win_release_pixmap(backend, w);
 	win_release_shadow(backend, w);
 	win_release_mask(backend, w);
+	win_release_saved_win_image(backend, w);
 }
 
 /// Returns true if the `prop` property is stale, as well as clears the stale
