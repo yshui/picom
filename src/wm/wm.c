@@ -417,18 +417,17 @@ struct wm_wid_or_node {
 static void wm_import_start_inner(struct wm *wm, struct x_connection *c, struct atom *atoms,
                                   xcb_window_t wid, struct wm_tree_node *parent);
 
-void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
-                 xcb_window_t wid, xcb_window_t parent) {
+static void wm_reparent_inner(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                              xcb_window_t wid, struct wm_tree_node *new_parent) {
+	BUG_ON_NULL(new_parent);
 	auto window = wm_tree_find(&wm->tree, wid);
-	auto new_parent = wm_tree_find(&wm->tree, parent);
-	bool new_parent_imported = new_parent != NULL && new_parent->tree_queried;
 
 	/// If a previously unseen window is reparented to a window that has been fully
 	/// imported, we must treat it as a newly created window. Because it will not be
 	/// included in a query tree reply, so we must initiate its import process
 	/// explicitly.
 	if (window == NULL) {
-		if (new_parent_imported) {
+		if (new_parent->tree_queried) {
 			wm_import_start_inner(wm, c, atoms, wid, new_parent);
 		}
 		return;
@@ -437,7 +436,7 @@ void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
 	if (window->parent == new_parent) {
 		// Reparent to the same parent moves the window to the top of the
 		// stack
-		BUG_ON(!new_parent_imported);
+		BUG_ON(!new_parent->tree_queried);
 		wm_tree_move_to_end(&wm->tree, window, false);
 		return;
 	}
@@ -457,16 +456,22 @@ void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
 	// a destroyed window's ID, then we know we will re-query the new parent later
 	// when we encounter it in a query tree reply, so we orphan the window in this
 	// case as well.
-	if (!new_parent_imported) {
-		log_debug("Window %#010x is attached to window %#010x which is "
-		          "currently been queried, orphaning.",
-		          window->id.x, parent);
+	if (!new_parent->tree_queried) {
+		log_debug("Window %#010x is attached to window %#010x that is currently "
+		          "been queried, orphaning.",
+		          window->id.x, new_parent->id.x);
 		return;
 	}
 
-	log_debug("Reparented window %#010x to window %#010x", window->id.x, parent);
+	log_debug("Reparented window %#010x to window %#010x", window->id.x,
+	          new_parent->id.x);
 	BUG_ON(wm_tree_detach(&wm->tree, window) != NULL);
 	wm_tree_attach(&wm->tree, window, new_parent);
+}
+
+void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                 xcb_window_t wid, xcb_window_t parent) {
+	return wm_reparent_inner(wm, c, atoms, wid, wm_tree_find(&wm->tree, parent));
 }
 
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state) {
@@ -545,7 +550,7 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		auto child = children[i];
 		// wm_reparent handles both the case where child is new, and the case
 		// where the child is an known orphan.
-		wm_reparent(wm, c, atoms, child, node->id.x);
+		wm_reparent_inner(wm, c, atoms, child, node);
 	}
 }
 
