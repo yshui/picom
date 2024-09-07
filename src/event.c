@@ -201,7 +201,7 @@ struct ev_ewmh_active_win_request {
 /// returned could not be found.
 static void
 update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base *req_base,
-                       xcb_raw_generic_event_t *reply_or_error) {
+                       const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
 
@@ -219,7 +219,7 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 	}
 
 	// Search for the window
-	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_property_reply_t *)reply_or_error;
 	if (reply->type == XCB_NONE || xcb_get_property_value_length(reply) < 4) {
 		log_debug("EWMH _NET_ACTIVE_WINDOW not set.");
 		return;
@@ -248,7 +248,7 @@ struct ev_recheck_focus_request {
  * @return struct _win of currently focused window, NULL if not found
  */
 static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_base *req_base,
-                          xcb_raw_generic_event_t *reply_or_error) {
+                          const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
 
@@ -268,7 +268,7 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 		return;
 	}
 
-	auto reply = (xcb_get_input_focus_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_input_focus_reply_t *)reply_or_error;
 	xcb_window_t wid = reply->focus;
 	log_debug("Current focused window is %#010x", wid);
 	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||
@@ -399,6 +399,10 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 		return;
 	}
 
+	if (ev->window == ev->event) {
+		return;
+	}
+
 	if (ev->window == ps->c.screen_info->root) {
 		configure_root(ps);
 	} else {
@@ -408,10 +412,20 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	log_debug("{ event: %#010x, id: %#010x }", ev->event, ev->window);
-	wm_destroy(ps->wm, ev->window);
+	// If we hit an ABA problem, it is possible to get a DestroyNotify event from a
+	// parent for its child, but not from the child for itself.
+	if (ev->event != ev->window) {
+		wm_disconnect(ps->wm, ev->window, ev->event, XCB_NONE);
+	} else {
+		wm_destroy(ps->wm, ev->window);
+	}
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
+	if (ev->window == ev->event) {
+		return;
+	}
+
 	// Unmap overlay window if it got mapped but we are currently not
 	// in redirected state.
 	if (ps->overlay && ev->window == ps->overlay) {
@@ -461,6 +475,10 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 		return;
 	}
 
+	if (ev->event == ev->window) {
+		return;
+	}
+
 	auto cursor = wm_find(ps->wm, ev->window);
 	if (cursor == NULL) {
 		if (wm_is_consistent(ps->wm)) {
@@ -479,10 +497,21 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d, "
 	          "send_event: %#010x",
 	          ev->window, ev->parent, ev->override_redirect, ev->event);
-	wm_reparent(ps->wm, ev->window, ev->parent);
+	if (ev->event == ev->window) {
+		return;
+	}
+	if (ev->parent != ev->event) {
+		wm_disconnect(ps->wm, ev->window, ev->event, ev->parent);
+	} else {
+		wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
+	}
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
+	if (ev->event == ev->window) {
+		return;
+	}
+
 	auto cursor = wm_find(ps->wm, ev->window);
 
 	if (cursor == NULL) {

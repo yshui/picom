@@ -163,7 +163,13 @@ void wm_refresh_leaders(struct wm *wm);
 void wm_destroy(struct wm *wm, xcb_window_t wid);
 /// Remove a zombie window from the window tree.
 void wm_reap_zombie(struct wm_ref *zombie);
-void wm_reparent(struct wm *wm, xcb_window_t wid, xcb_window_t parent);
+void wm_reparent(struct wm *wm, struct x_connection *c, struct atom *atoms,
+                 xcb_window_t wid, xcb_window_t parent);
+/// Disconnect `child` from its `parent`. If `new_parent_known` is true, the new parent
+/// is a fully imported window in our tree. Otherwise, the new parent is either unknown,
+/// or in the process of being imported.
+void wm_disconnect(struct wm *wm, xcb_window_t child, xcb_window_t parent,
+                   xcb_window_t new_parent);
 void wm_set_has_wm_state(struct wm *wm, struct wm_ref *cursor, bool has_wm_state);
 
 /// Start the import process for `wid`.

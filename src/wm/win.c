@@ -1279,7 +1279,7 @@ void free_win_res(session_t *ps, struct win *w) {
 /// Query the Xorg for information about window `win`, and assign a window to `cursor` if
 /// this window should be managed.
 struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
-                               xcb_get_window_attributes_reply_t *attrs) {
+                               const xcb_get_window_attributes_reply_t *attrs) {
 	static const struct win win_def = {
 	    .frame_opacity = 1.0,
 	    .in_openclose = true,        // set to false after first map is done,
@@ -1364,8 +1364,9 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	}
 
 	// Set window event mask
-	uint32_t frame_event_mask =
-	    XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+	uint32_t frame_event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE |
+	                            XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+	                            XCB_EVENT_MASK_STRUCTURE_NOTIFY;
 	if (!ps->o.use_ewmh_active_win) {
 		frame_event_mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
 	}
@@ -2087,7 +2088,7 @@ struct win_get_geometry_request {
 
 static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
                                           struct x_async_request_base *req_base,
-                                          xcb_raw_generic_event_t *reply_or_error) {
+                                          const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct win_get_geometry_request *)req_base;
 	auto wid = req->wid;
 	auto ps = req->ps;
@@ -2122,7 +2123,7 @@ static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
 		return;
 	}
 
-	auto r = (xcb_get_geometry_reply_t *)reply_or_error;
+	auto r = (const xcb_get_geometry_reply_t *)reply_or_error;
 	ps->pending_updates |= win_set_pending_geometry(w, win_geometry_from_get_geometry(r));
 }
 

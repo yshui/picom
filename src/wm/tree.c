@@ -196,7 +196,7 @@ struct wm_tree_node *wm_tree_next(struct wm_tree_node *node, struct wm_tree_node
 
 /// Find a client window under a toplevel window. If there are multiple windows with
 /// `WM_STATE` set under the toplevel window, we will return an arbitrary one.
-static struct wm_tree_node *attr_pure wm_tree_find_client(struct wm_tree_node *subroot) {
+struct wm_tree_node *attr_pure wm_tree_find_client(struct wm_tree_node *subroot) {
 	if (subroot->has_wm_state) {
 		log_debug("Toplevel %#010x has WM_STATE set, weird. Using itself as its "
 		          "client window.",
@@ -250,14 +250,13 @@ void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool 
 	node->has_wm_state = has_wm_state;
 	BUG_ON(node->parent == NULL);        // Trying to set WM_STATE on the root window
 
-	struct wm_tree_node *toplevel;
-	for (auto cur = node; cur->parent != NULL; cur = cur->parent) {
-		toplevel = cur;
+	struct wm_tree_node *toplevel = wm_tree_find_toplevel_for(tree, node);
+	if (toplevel == NULL) {
+		return;
 	}
 
 	if (toplevel == node) {
 		log_debug("Setting WM_STATE on a toplevel window %#010x, weird.", node->id.x);
-		return;
 	}
 
 	if (!has_wm_state && toplevel->client_window == node) {
@@ -284,6 +283,9 @@ struct wm_tree_node *wm_tree_new_window(struct wm_tree *tree, xcb_window_t id) {
 	node->id.x = id;
 	node->id.gen = tree->gen++;
 	node->has_wm_state = false;
+	node->receiving_events = false;
+	node->is_zombie = false;
+	node->visited = false;
 	node->leader = id;
 	list_init_head(&node->children);
 	return node;
@@ -307,6 +309,9 @@ wm_tree_refresh_client_and_queue_change(struct wm_tree *tree, struct wm_tree_nod
 		if (new_client != NULL) {
 			new_client_id = new_client->id;
 		}
+		log_debug("Toplevel window %#010x had client window %#010x, now has "
+		          "%#010x.",
+		          toplevel->id.x, old_client_id.x, new_client_id.x);
 		toplevel->client_window = new_client;
 		wm_tree_enqueue_client_change(tree, toplevel, old_client_id, new_client_id);
 	}
@@ -325,6 +330,7 @@ struct wm_tree_node *wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *s
 		}
 	} else {
 		// Detached a toplevel, create a zombie for it
+		log_debug("Detaching toplevel window %#010x.", subroot->id.x);
 		zombie = ccalloc(1, struct wm_tree_node);
 		zombie->parent = subroot->parent;
 		zombie->id = subroot->id;
@@ -334,6 +340,12 @@ struct wm_tree_node *wm_tree_detach(struct wm_tree *tree, struct wm_tree_node *s
 		if (wm_tree_enqueue_toplevel_killed(tree, subroot->id, zombie)) {
 			zombie = NULL;
 		}
+
+		// Gen bump must happen after enqueuing the change, because otherwise the
+		// kill change won't cancel out a previous new change because the IDs will
+		// be different.
+		subroot->id.gen = tree->gen++;
+		subroot->client_window = NULL;
 	}
 	subroot->parent = NULL;
 	return zombie;
@@ -356,7 +368,8 @@ void wm_tree_attach(struct wm_tree *tree, struct wm_tree_node *child,
 	auto toplevel = wm_tree_find_toplevel_for(tree, child);
 	if (child == toplevel) {
 		wm_tree_enqueue_toplevel_new(tree, child);
-	} else if (toplevel != NULL) {
+	}
+	if (toplevel != NULL) {
 		wm_tree_refresh_client_and_queue_change(tree, toplevel);
 	}
 }

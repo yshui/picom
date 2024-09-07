@@ -100,7 +100,7 @@ static inline void _resize_region(const region_t *region, region_t *output, int 
 	int nrects;
 	int nnewrects = 0;
 	const rect_t *rects = pixman_region32_rectangles((region_t *)region, &nrects);
-	auto newrects = ccalloc(nrects, rect_t);
+	rect_t *newrects = calloc((size_t)nrects, sizeof(rect_t));
 	for (int i = 0; i < nrects; i++) {
 		int x1 = rects[i].x1 - dx;
 		int y1 = rects[i].y1 - dy;

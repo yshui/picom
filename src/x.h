@@ -53,7 +53,7 @@ enum x_error_action {
 
 /// Represents a X request we sent that might error.
 struct pending_x_error {
-	unsigned long sequence;
+	uint32_t sequence;
 	enum x_error_action action;
 
 	// Debug information, where in the code was this request sent.
@@ -81,18 +81,22 @@ struct x_connection {
 	/// The list of pending async requests that we have
 	/// yet to receive a reply for.
 	struct list_node pending_x_requests;
+	/// The first request that has a reply.
+	struct x_async_request_base *first_request_with_reply;
 	/// A message, either an event or a reply, that is currently being held, because
 	/// there are messages of the opposite type with lower sequence numbers that we
 	/// need to return first.
 	xcb_raw_generic_event_t *message_on_hold;
-	/// The sequence number of the last message returned by
-	/// `x_poll_for_message`. Used for sequence number overflow
-	/// detection.
-	uint32_t last_sequence;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
 	xcb_screen_t *screen_info;
+	/// The sequence number of the last message returned by
+	/// `x_poll_for_message`. Used for sequence number overflow
+	/// detection.
+	uint32_t last_sequence;
+	/// The sequence number of `message_on_hold`
+	uint32_t sequence_on_hold;
 };
 
 /// Monitor info
@@ -194,9 +198,12 @@ struct x_async_request_base {
 	/// The callback function to call when the reply is received. If `reply_or_error`
 	/// is NULL, it means the X connection is closed while waiting for the reply.
 	void (*callback)(struct x_connection *, struct x_async_request_base *,
-	                 xcb_raw_generic_event_t *reply_or_error);
+	                 const xcb_raw_generic_event_t *reply_or_error);
 	/// The sequence number of the X request.
 	unsigned int sequence;
+	/// This request doesn't expect a reply. If this is true, in the success case,
+	/// `callback` will be called with a dummy reply whose `response_type` is 1.
+	bool no_reply;
 };
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
@@ -333,6 +340,15 @@ bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_
 /// Create a X region from a pixman region
 uint32_t x_create_region(struct x_connection *c, const region_t *reg);
 
+void x_async_change_window_attributes(struct x_connection *c, xcb_window_t wid,
+                                      uint32_t mask, const uint32_t *values,
+                                      struct x_async_request_base *req);
+void x_async_query_tree(struct x_connection *c, xcb_window_t wid,
+                        struct x_async_request_base *req);
+void x_async_get_property(struct x_connection *c, xcb_window_t wid, xcb_atom_t atom,
+                          xcb_atom_t type, uint32_t long_offset, uint32_t long_length,
+                          struct x_async_request_base *req);
+
 /// Destroy a X region
 void x_destroy_region(struct x_connection *c, uint32_t region);
 
@@ -362,7 +378,9 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
  * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
  *         for multiple calls to this function,
  */
-const char *x_strerror(xcb_generic_error_t *e);
+const char *x_strerror(const xcb_generic_error_t *e);
+
+void x_flush(struct x_connection *c);
 
 xcb_pixmap_t x_create_pixmap(struct x_connection *, uint8_t depth, int width, int height);
 
@@ -437,11 +455,11 @@ void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_
 /// `req` store information about the request, including the callback. The callback is
 /// responsible for freeing `req`.
 static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
+	if (c->first_request_with_reply == NULL && !req->no_reply) {
+		c->first_request_with_reply = req;
+	}
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
-
-/// Cancel an async request.
-void x_cancel_request(struct x_connection *c, struct x_async_request_base *req);
 
 /// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
 /// machinery for handling async replies. Calling `xcb_poll_for_event` directly will
