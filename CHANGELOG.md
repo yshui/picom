@@ -1,8 +1,10 @@
-# Unreleased
+# v12-rc4 (2024-Sep-08)
 
 ## Bug fixes
 
-* Windows become completely black when `rules` and `inactive-dim` are set at the same time.
+* Windows become completely black when `rules` and `inactive-dim` are set at the same time
+* Fix segmentation fault during unredirection if the geometry change animation is used (#1333, thanks to @monsterovich)
+* Fix many rare race conditions in the window management code (#1334)
 
 # v12-rc3 (2024-Aug-30)
 
