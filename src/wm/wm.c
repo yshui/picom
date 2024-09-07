@@ -428,6 +428,7 @@ static void wm_reparent_inner(struct wm *wm, struct x_connection *c, struct atom
 	/// explicitly.
 	if (window == NULL) {
 		if (new_parent->tree_queried) {
+			// Contract: we just checked `wid` is not in the tree.
 			wm_import_start_inner(wm, c, atoms, wid, new_parent);
 		}
 		return;
@@ -664,33 +665,15 @@ end_import:
 	wm->n_pending_imports--;
 }
 
-/// Create a window for `wid`. Send query tree and get property requests for the window if
-/// it is possible that it is a new window.
+/// Create a window for `wid`. Send query tree and get property requests, for this new
+/// window. Caller must guarantee `wid` isn't already in the tree.
 ///
 /// Note this function does not flush the X connection.
 static void wm_import_start_inner(struct wm *wm, struct x_connection *c, struct atom *atoms,
                                   xcb_window_t wid, struct wm_tree_node *parent) {
-	auto new = wm_tree_find(&wm->tree, wid);
-	if (new != NULL) {
-		// This happens if a window A is created, destroyed, and then another
-		// window B reuses the same window ID. We will receive a CreateNotify for
-		// A, but will import B. Then we will be here again when we receive the
-		// CreateNotify for B, which we have already imported.
-		log_debug("Window %#010x is already in our tree, reparenting.", wid);
-		if (new->parent != &wm->orphan_root) {
-			log_error("Window %#010x appeared twice in our tree. Once as a "
-			          "child of %#010x, once as a child of %#010x",
-			          wid, new->parent->id.x, parent->id.x);
-			BUG_ON(true);
-		}
-		BUG_ON(wm_tree_detach(&wm->tree, new) != NULL);
-		wm_tree_attach(&wm->tree, new, parent);
-		return;
-	}
-
 	// We need to create a tree node immediate before we even know if it still exists.
 	// Because otherwise we have nothing to keep track of its stacking order.
-	new = wm_tree_new_window(&wm->tree, wid);
+	auto new = wm_tree_new_window(&wm->tree, wid);
 	wm_tree_add_window(&wm->tree, new);
 	wm_tree_attach(&wm->tree, new, parent);
 
@@ -715,6 +698,16 @@ void wm_import_start(struct wm *wm, struct x_connection *c, struct atom *atoms,
 		// to it as that will change its children list.
 		return;
 	}
+	// Contract: how do we know `wid` is not in the tree? First of all, if `wid` is in
+	// the tree, it must be an orphan node, otherwise that would mean the same `wid`
+	// is children of two different windows. Notice a node is added to the orphan root
+	// only after we have confirmed its existence by setting up its event mask. Also
+	// notice replies to event mask setup requests are processed in order. So if we
+	// haven't received a CreateNotify before a window enters the orphan tree, we will
+	// _never_ get a CreateNotify for it.
+	//
+	// We get to here by receiving a CreateNotify for `wid`, therefore `wid` cannot be
+	// in the orphan tree.
 	wm_import_start_inner(wm, c, atoms, wid, parent_node);
 }
 
