@@ -225,6 +225,9 @@ static struct wm_tree_node *wm_find_leader(struct wm *wm, struct wm_tree_node *n
 			return node->leader_final;
 		}
 		leader_node = wm_tree_find_toplevel_for(&wm->tree, leader_node);
+		if (leader_node == NULL) {
+			return node->leader_final;
+		}
 		node->visited = true;
 		node->leader_final = wm_find_leader(wm, leader_node);
 		node->visited = false;
