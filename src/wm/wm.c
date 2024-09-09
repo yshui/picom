@@ -236,6 +236,22 @@ void wm_refresh_leaders(struct wm *wm) {
 	if (!wm->needs_leader_refresh) {
 		return;
 	}
+	if (!wm_is_consistent(wm)) {
+		// The window tree has not been fully replicated, we might be missing
+		// windows, so we couldn't refresh the leaders here, but also can't leave
+		// them NULL. So we just set them to themselves.
+		log_debug("Window tree is not consistent, setting all leaders to "
+		          "themselves");
+		list_foreach(struct wm_tree_node, i, &wm->tree.root->children, siblings) {
+			if (i->is_zombie) {
+				// Don't change anything about a zombie window.
+				continue;
+			}
+			i->leader_final = i;
+		}
+		return;
+	}
+	log_debug("Refreshing window leaders");
 	wm->needs_leader_refresh = false;
 	list_foreach(struct wm_tree_node, i, &wm->tree.root->children, siblings) {
 		if (i->is_zombie) {
@@ -249,6 +265,9 @@ void wm_refresh_leaders(struct wm *wm) {
 			continue;
 		}
 		wm_find_leader(wm, i);
+		BUG_ON_NULL(i->leader_final);
+		log_verbose("Window %#010x has leader %#010x", i->id.x,
+		            i->leader_final->id.x);
 	}
 }
 
