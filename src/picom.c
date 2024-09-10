@@ -1448,6 +1448,8 @@ static void unredirect(session_t *ps) {
 /// keeps an internal queue of events, so we have to be 100% sure no events are
 /// left in that queue before we go to sleep.
 static void handle_x_events(struct session *ps) {
+	bool wm_was_consistent = wm_is_consistent(ps->wm);
+
 	if (ps->vblank_scheduler) {
 		vblank_handle_x_events(ps->vblank_scheduler);
 	}
@@ -1477,6 +1479,12 @@ static void handle_x_events(struct session *ps) {
 	if (err) {
 		log_fatal("X11 server connection broke (error %d)", err);
 		exit(1);
+	}
+
+	if (wm_is_consistent(ps->wm) != wm_was_consistent && !wm_was_consistent) {
+		log_debug("Window tree has just become consistent, queueing redraw.");
+		ps->pending_updates = true;
+		queue_redraw(ps);
 	}
 }
 
