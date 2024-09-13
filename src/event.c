@@ -352,7 +352,6 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto cursor = wm_find(ps->wm, ce->window);
-	auto below = wm_find(ps->wm, ce->above_sibling);
 
 	if (!cursor) {
 		if (wm_is_consistent(ps->wm)) {
@@ -363,17 +362,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		return;
 	}
 
-	if (below == NULL && ce->above_sibling != XCB_NONE) {
-		log_error("Configure event received for window %#010x, but its sibling "
-		          "window %#010x is not in our tree. Expect malfunction.",
-		          ce->window, ce->above_sibling);
-		assert(false);
-	} else if (below != NULL) {
-		wm_stack_move_to_above(ps->wm, cursor, below);
-	} else {
-		// above_sibling being XCB_NONE means the window is put at the bottom.
-		wm_stack_move_to_end(ps->wm, cursor, true);
-	}
+	wm_stack_move_to_above(ps->wm, cursor, ce->above_sibling);
 
 	auto w = wm_ref_deref(cursor);
 	if (!w) {

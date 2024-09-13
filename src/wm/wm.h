@@ -137,7 +137,7 @@ struct wm_ref *attr_pure wm_ref_bottommost_child(const struct wm_ref *cursor);
 
 /// Move window `w` so it's right above `below`, if `below` is 0, `w` is moved
 /// to the bottom of the stack
-void wm_stack_move_to_above(struct wm *wm, struct wm_ref *cursor, struct wm_ref *below);
+void wm_stack_move_to_above(struct wm *wm, struct wm_ref *cursor, xcb_window_t below);
 /// Move window `w` to the top of the stack.
 void wm_stack_move_to_end(struct wm *wm, struct wm_ref *cursor, bool to_bottom);
 

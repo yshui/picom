@@ -266,16 +266,32 @@ void wm_refresh_leaders(struct wm *wm) {
 	}
 }
 
-/// Move window `w` so it's right above `below`, if `below` is 0, `w` is moved
+/// Move window `w` so it's right above `below`, if `below` is XCB_NONE, `w` is moved
 /// to the bottom of the stack
-void wm_stack_move_to_above(struct wm *wm, struct wm_ref *cursor, struct wm_ref *below) {
+void wm_stack_move_to_above(struct wm *wm, struct wm_ref *cursor, xcb_window_t below) {
+	BUG_ON_NULL(cursor);
 	auto node = to_tree_node_mut(cursor);
 	if (node->parent == &wm->orphan_root) {
 		// If this window is orphaned, moving it around its siblings is
 		// meaningless. Same below.
+		log_debug("Ignoring restack request for orphaned window %#010x", node->id.x);
 		return;
 	}
-	wm_tree_move_to_above(&wm->tree, node, to_tree_node_mut(below));
+	if (below == XCB_NONE) {
+		// `below` being XCB_NONE means the window is put at the bottom.
+		wm_tree_move_to_end(&wm->tree, node, /*to_bottom=*/true);
+		return;
+	}
+
+	auto below_node = wm_tree_find(&wm->tree, below);
+	if (below_node == NULL) {
+		log_error("Trying to restack window %#010x, but its sibling window "
+		          "%#010x is not in our tree. Expect malfunction.",
+		          node->id.x, below);
+		assert(false);
+		return;
+	}
+	wm_tree_move_to_above(&wm->tree, node, below_node);
 }
 
 void wm_stack_move_to_end(struct wm *wm, struct wm_ref *cursor, bool to_bottom) {
