@@ -1,3 +1,10 @@
+# v12
+
+## Bug fixes
+
+* Fix crash related to window leader updates (#1337 + extra).
+* Remove an invalid assertion.
+
 # v12-rc4 (2024-Sep-08)
 
 ## Bug fixes
