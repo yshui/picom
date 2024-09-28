@@ -1,3 +1,9 @@
+# v12.1
+
+## Bug fixes
+
+* picom stops rendering correctly after monitor configuration changes (#1338, thanks to @Suyooo)
+
 # v12
 
 ## Bug fixes
