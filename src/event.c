@@ -388,13 +388,13 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 		return;
 	}
 
-	if (ev->window == ev->event) {
-		return;
-	}
-
 	if (ev->window == ps->c.screen_info->root) {
 		configure_root(ps);
 	} else {
+		if (ev->window == ev->event) {
+			return;
+		}
+
 		configure_win(ps, ev);
 	}
 }
