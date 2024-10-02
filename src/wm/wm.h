@@ -63,7 +63,7 @@ enum wm_tree_change_type {
 typedef struct wm_treeid {
 	/// The generation of the window ID. This is used to detect if the window ID is
 	/// reused. Inherited from the wm_tree at cr
-	uint64_t gen;
+	alignas(8) uint64_t gen;
 	/// The X window ID.
 	xcb_window_t x;
 
