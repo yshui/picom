@@ -45,8 +45,6 @@ enum script_evaluation_result {
 	SCRIPT_EVAL_OK,
 };
 typedef struct config_setting_t config_setting_t;
-static_assert(alignof(double) > alignof(unsigned), "double/unsigned has unexpected "
-                                                   "alignment");
 
 #define SCRIPT_CTX_PLACEHOLDER_BASE (0x40000000)
 
