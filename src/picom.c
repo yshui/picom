@@ -1410,7 +1410,8 @@ static void unredirect(session_t *ps) {
 	xcb_composite_unredirect_subwindows(ps->c.c, ps->c.screen_info->root,
 	                                    session_redirection_mode(ps));
 	// Unmap overlay window
-	if (ps->overlay != XCB_NONE) {
+	if (ps->overlay != XCB_NONE &&
+	    session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL) {
 		xcb_unmap_window(ps->c.c, ps->overlay);
 	}
 
@@ -2539,6 +2540,21 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		// We are here if we don't really function as a compositor, so we are not
 		// taking over the screen, and we don't need to register as a compositor
 
+		// We still need to know what the overlay window is, so we won't be
+		// confused when we get events for the overlay window. Since
+		// CompositeGetOverlayWindow also maps the overlay, we need to immediately
+		// release it.
+		auto get_overlay =
+		    xcb_composite_get_overlay_window(ps->c.c, ps->c.screen_info->root);
+		XCB_AWAIT_VOID(xcb_composite_release_overlay_window, ps->c.c,
+		               ps->c.screen_info->root);
+		auto overlay_reply =
+		    xcb_composite_get_overlay_window_reply(ps->c.c, get_overlay, NULL);
+		if (overlay_reply) {
+			ps->overlay = overlay_reply->overlay_win;
+			free(overlay_reply);
+		}
+
 		// If we are in debug mode, we need to create a window for rendering if
 		// the backend supports presenting.
 
@@ -2654,7 +2670,7 @@ static void session_destroy(session_t *ps) {
 #endif
 
 	// Release overlay window
-	if (ps->overlay) {
+	if (ps->overlay && session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL) {
 		xcb_composite_release_overlay_window(ps->c.c, ps->overlay);
 		ps->overlay = XCB_NONE;
 	}
