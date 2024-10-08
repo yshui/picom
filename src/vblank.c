@@ -69,7 +69,7 @@ struct vblank_scheduler_ops {
 	bool (*init)(struct vblank_scheduler *self);
 	void (*deinit)(struct vblank_scheduler *self);
 	bool (*schedule)(struct vblank_scheduler *self);
-	bool (*handle_x_events)(struct vblank_scheduler *self);
+	enum vblank_handle_x_events_result (*handle_x_events)(struct vblank_scheduler *self);
 };
 
 static void
@@ -444,10 +444,14 @@ static void handle_present_complete_notify(struct present_vblank_scheduler *self
 	ev_timer_start(self->base.loop, &self->callback_timer);
 }
 
-static bool handle_present_events(struct vblank_scheduler *base) {
+static enum vblank_handle_x_events_result
+handle_present_events(struct vblank_scheduler *base) {
 	auto self = (struct present_vblank_scheduler *)base;
 	xcb_present_generic_event_t *ev;
+	enum vblank_handle_x_events_result result = VBLANK_HANDLE_X_EVENTS_NO_EVENTS;
 	while ((ev = (void *)xcb_poll_for_special_event(base->c->c, self->event))) {
+		result = VBLANK_HANDLE_X_EVENTS_OK;
+
 		if (ev->event != self->event_id) {
 			// This event doesn't have the right event context, it's not meant
 			// for us.
@@ -460,7 +464,7 @@ static bool handle_present_events(struct vblank_scheduler *base) {
 	next:
 		free(ev);
 	}
-	return true;
+	return result;
 }
 
 static const struct vblank_scheduler_ops vblank_scheduler_ops[LAST_VBLANK_SCHEDULER] = {
@@ -571,11 +575,11 @@ vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c, xcb_window_t 
 	return self;
 }
 
-bool vblank_handle_x_events(struct vblank_scheduler *self) {
+enum vblank_handle_x_events_result vblank_handle_x_events(struct vblank_scheduler *self) {
 	assert(self->type < LAST_VBLANK_SCHEDULER);
 	auto fn = vblank_scheduler_ops[self->type].handle_x_events;
 	if (fn != NULL) {
 		return fn(self);
 	}
-	return true;
+	return VBLANK_HANDLE_X_EVENTS_NO_EVENTS;
 }

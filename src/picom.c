@@ -1451,31 +1451,48 @@ static void unredirect(session_t *ps) {
 static void handle_x_events(struct session *ps) {
 	bool wm_was_consistent = wm_is_consistent(ps->wm);
 
-	if (ps->vblank_scheduler) {
-		vblank_handle_x_events(ps->vblank_scheduler);
+	while (true) {
+		// Flush because if we go into sleep when there is still requests
+		// in the outgoing buffer, they will not be sent for an indefinite
+		// amount of time. Use XFlush here too, we might still use some
+		// Xlib functions because OpenGL.
+		//
+		// Also note, `xcb_flush`/`XFlush` may _read_ more events from the server
+		// (yes, this is ridiculous, I know). But since we are polling for events
+		// in a loop, this should be fine - if we read events here, they will be
+		// handled below; and if some requests is sent later in this loop, which
+		// means some events must have been received, we will loop once more and
+		// get here to flush them.
+		XFlush(ps->c.dpy);
+		xcb_flush(ps->c.c);
+
+		// We have to check for vblank events (i.e. special xcb events) and normal
+		// events in a loop. This is because both `xcb_poll_for_event` and
+		// `xcb_poll_for_special_event` will read data from the X connection and
+		// put it in a buffer. So whichever one we call last, say
+		// `xcb_poll_for_special_event`, will read data into the buffer that might
+		// contain events that `xcb_poll_for_event` should handle, and vice versa.
+		// This causes us to go into sleep with events in the buffer.
+		//
+		// We have to keep calling both of them until neither of them return any
+		// events.
+		bool has_events = false;
+		if (ps->vblank_scheduler) {
+			has_events = vblank_handle_x_events(ps->vblank_scheduler) ==
+			             VBLANK_HANDLE_X_EVENTS_OK;
+		}
+
+		xcb_generic_event_t *ev;
+		while ((ev = x_poll_for_event(&ps->c))) {
+			has_events = true;
+			ev_handle(ps, (xcb_generic_event_t *)ev);
+			free(ev);
+		};
+
+		if (!has_events) {
+			break;
+		}
 	}
-
-	// Flush because if we go into sleep when there is still requests in the
-	// outgoing buffer, they will not be sent for an indefinite amount of
-	// time. Use XFlush here too, we might still use some Xlib functions
-	// because OpenGL.
-	//
-	// Also note, after we have flushed here, we won't flush again in this
-	// function before going into sleep. This is because `xcb_flush`/`XFlush`
-	// may _read_ more events from the server (yes, this is ridiculous, I
-	// know). And we can't have that, see the comments above this function.
-	//
-	// This means if functions called ev_handle need to send some events,
-	// they need to carefully make sure those events are flushed, one way or
-	// another.
-	XFlush(ps->c.dpy);
-	xcb_flush(ps->c.c);
-
-	xcb_generic_event_t *ev;
-	while ((ev = x_poll_for_event(&ps->c))) {
-		ev_handle(ps, (xcb_generic_event_t *)ev);
-		free(ev);
-	};
 	int err = xcb_connection_has_error(ps->c.c);
 	if (err) {
 		log_fatal("X11 server connection broke (error %d)", err);
