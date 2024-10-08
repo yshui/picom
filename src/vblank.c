@@ -428,6 +428,8 @@ static void handle_present_complete_notify(struct present_vblank_scheduler *self
 		self->last_ust = cne->ust;
 		self->last_msc = cne->msc;
 	}
+	log_debug("Received PresentCompleteNotify event, %" PRIu64 " %" PRIu64 " %f",
+	          cne->msc, cne->ust, ((double)cne->ust - (double)now_us) / 1000000.0);
 	double delay_sec = 0.0;
 	if (now_us < cne->ust) {
 		log_trace("The end of this vblank is %" PRIu64 " us into the "
