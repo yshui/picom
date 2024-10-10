@@ -1,4 +1,23 @@
-# v12
+# 12.2 (2024-Oct-10)
+
+## Improvements
+
+* fly-out/slide-out animation presets no longer cause jumps in window opacity
+
+## Bug fixes
+
+* Random delays before screen is updated (#1345 #1330)
+* Fix building on 32-bit systems (#1346)
+* Fix blank screen on 32-bit systems
+* Fix fly-in/fly-out animation presets so they work with directions other than up and left
+
+# v12.1 (2024-Sep-29)
+
+## Bug fixes
+
+* picom stops rendering correctly after monitor configuration changes (#1338, thanks to @Suyooo)
+
+# v12 (2024-Sep-27)
 
 ## Bug fixes
 
