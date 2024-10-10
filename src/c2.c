@@ -69,16 +69,12 @@ struct c2_tracked_property {
 	UT_hash_handle hh;
 	struct c2_tracked_property_key key;
 	unsigned int id;
-	/// Highest indices of this property that
-	/// are tracked. -1 mean all indices are tracked.
-	int max_indices;
 };
 
 struct c2_state {
 	struct c2_tracked_property *tracked_properties;
 	struct atom *atoms;
 	xcb_get_property_cookie_t *cookies;
-	uint32_t *propert_lengths;
 };
 
 // TODO(yshui) this has some overlap with winprop_t, consider merging them.
@@ -470,7 +466,6 @@ TEST_CASE(c2_parse) {
 	HASH_ITER2(state->tracked_properties, prop) {
 		TEST_EQUAL(prop->key.property,
 		           get_atom_with_nul(state->atoms, "_GTK_FRAME_EXTENTS", NULL));
-		TEST_EQUAL(prop->max_indices, 0);
 	}
 	c2_state_free(state);
 	destroy_atoms(atoms);
@@ -1225,11 +1220,6 @@ c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_condition_node_
 			property->id = HASH_COUNT(state->tracked_properties);
 			HASH_ADD_KEYPTR(hh, state->tracked_properties, &property->key,
 			                sizeof(property->key), property);
-			property->max_indices = pleaf->index;
-		} else if (pleaf->index == -1) {
-			property->max_indices = -1;
-		} else if (property->max_indices >= 0 && pleaf->index > property->max_indices) {
-			property->max_indices = pleaf->index;
 		}
 		pleaf->target_id = property->id;
 	}
@@ -1976,7 +1966,6 @@ void c2_state_free(struct c2_state *state) {
 		HASH_DEL(state->tracked_properties, property);
 		free(property);
 	}
-	free(state->propert_lengths);
 	free(state->cookies);
 	free(state);
 }
@@ -2136,7 +2125,7 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 static void c2_window_state_update_from_replies(struct c2_state *state,
                                                 struct c2_window_state *window_state,
                                                 xcb_connection_t *c, xcb_window_t client_win,
-                                                xcb_window_t frame_win, bool refetch) {
+                                                xcb_window_t frame_win) {
 	HASH_ITER2(state->tracked_properties, p) {
 		if (!window_state->values[p->id].needs_update) {
 			continue;
@@ -2152,25 +2141,8 @@ static void c2_window_state_update_from_replies(struct c2_state *state,
 			window_state->values[p->id].needs_update = false;
 			continue;
 		}
-		bool property_is_string = x_is_type_string(state->atoms, reply->type);
-		if (reply->bytes_after > 0 && (property_is_string || p->max_indices < 0)) {
-			if (!refetch) {
-				log_warn("Did property %d for window %#010x change while "
-				         "we were fetching it? some window rules might "
-				         "not work.",
-				         p->id, window);
-				window_state->values[p->id].valid = false;
-				window_state->values[p->id].needs_update = false;
-			} else {
-				state->propert_lengths[p->id] += reply->bytes_after;
-				state->cookies[p->id] = xcb_get_property(
-				    c, 0, window, p->key.property, XCB_GET_PROPERTY_TYPE_ANY,
-				    0, (state->propert_lengths[p->id] + 3) / 4);
-			}
-		} else {
-			c2_window_state_update_one_from_reply(
-			    state, &window_state->values[p->id], p->key.property, reply, c);
-		}
+		c2_window_state_update_one_from_reply(state, &window_state->values[p->id],
+		                                      p->key.property, reply, c);
 		free(reply);
 	}
 }
@@ -2182,47 +2154,24 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
 	if (!state->cookies) {
 		state->cookies = ccalloc(property_count, xcb_get_property_cookie_t);
 	}
-	if (!state->propert_lengths) {
-		state->propert_lengths = ccalloc(property_count, uint32_t);
-	}
 	memset(state->cookies, 0, property_count * sizeof(xcb_get_property_cookie_t));
 
 	log_verbose("Updating c2 window state for window %#010x (frame %#010x)",
 	            client_win, frame_win);
 
-	// Because we don't know the length of all properties (i.e. if they are string
-	// properties, or for properties matched with `[*]`). We do this in 3 steps:
-	//   1. Send requests to all properties we need. Use `max_indices` to determine
-	//      the length, or use 0 if it's unknown.
-	//   2. From the replies to (1), for properties we know the length of, we update
-	//      the values. For those we don't, use the length information from the
-	//      replies to send a new request with the correct length.
-	//   3. Update the rest of the properties.
-
-	// Step 1
 	HASH_ITER2(state->tracked_properties, p) {
 		if (!window_state->values[p->id].needs_update) {
 			continue;
-		}
-		uint32_t length = 0;
-		if (p->max_indices >= 0) {
-			// length is in 4 bytes units
-			length = (uint32_t)p->max_indices + 1;
 		}
 
 		xcb_window_t window = p->key.is_on_client ? client_win : frame_win;
 		// xcb_get_property long_length is in units of 4-byte,
 		// so use `ceil(length / 4)`. same below.
 		state->cookies[p->id] = xcb_get_property(
-		    c, 0, window, p->key.property, XCB_GET_PROPERTY_TYPE_ANY, 0, length);
-		state->propert_lengths[p->id] = length * 4;
+		    c, 0, window, p->key.property, XCB_GET_PROPERTY_TYPE_ANY, 0, UINT32_MAX);
 	}
 
-	// Step 2
-	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win, true);
-	// Step 3
-	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win,
-	                                    false);
+	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win);
 }
 
 bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
