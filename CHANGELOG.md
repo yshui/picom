@@ -1,3 +1,9 @@
+# Unreleased
+
+## Bug fixes
+
+* Fix memory corruption that can happen when handling window property changes (#1350)
+
 # 12.2 (2024-Oct-10)
 
 ## Improvements
