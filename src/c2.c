@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <fnmatch.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -85,13 +86,16 @@ struct c2_property_value {
 	union {
 		struct {
 			char *string;
+			/// Number of bytes allocated for the string.
+			unsigned int string_capacity;
 		};
 		struct {
 			int64_t numbers[4];
 		};
 		struct {
 			int64_t *array;
-			unsigned int capacity;
+			/// Number of bytes allocated for the array.
+			unsigned int array_capacity;
 		};
 	};
 	/// Number of items if the property is a number type,
@@ -101,6 +105,7 @@ struct c2_property_value {
 		C2_PROPERTY_TYPE_STRING,
 		C2_PROPERTY_TYPE_NUMBER,
 		C2_PROPERTY_TYPE_ATOM,
+		C2_PROPERTY_TYPE_NONE,
 	} type;
 	bool valid;
 	bool needs_update;
@@ -2020,6 +2025,8 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 	auto len = to_u32_checked(xcb_get_property_value_length(reply));
 	void *data = xcb_get_property_value(reply);
 	bool property_is_string = x_is_type_string(state->atoms, reply->type);
+	unsigned int external_capacity = 0;
+	char *external_storage = NULL;
 	value->needs_update = false;
 	value->valid = false;
 	if (reply->type == XCB_ATOM_NONE) {
@@ -2037,29 +2044,44 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 		return;
 	}
 
+	if (value->type == C2_PROPERTY_TYPE_STRING) {
+		external_capacity = value->string_capacity;
+		external_storage = value->string;
+	} else if (value->type == C2_PROPERTY_TYPE_NUMBER &&
+	           value->length > ARR_SIZE(value->numbers)) {
+		external_capacity = value->array_capacity;
+		external_storage = (char *)value->array;
+	}
 	log_verbose("Updating property %s, length = %u, format = %d",
 	            get_atom_name_cached(state->atoms, property), len, reply->format);
 	value->valid = true;
 	if (len == 0) {
 		value->length = 0;
-		return;
-	}
-	if (property_is_string) {
+		value->type = C2_PROPERTY_TYPE_NONE;
+	} else if (property_is_string) {
 		bool nul_terminated = ((char *)data)[len - 1] == '\0';
 		value->length = len;
 		value->type = C2_PROPERTY_TYPE_STRING;
 		if (!nul_terminated) {
 			value->length += 1;
 		}
-		value->string = crealloc(value->string, value->length);
+		if (value->length > external_capacity) {
+			value->string = crealloc(external_storage, value->length);
+			value->string_capacity = value->length;
+		} else {
+			value->string = external_storage;
+			value->string_capacity = external_capacity;
+		}
+		external_capacity = 0;
+		external_storage = NULL;
 		memcpy(value->string, data, len);
 		if (!nul_terminated) {
 			value->string[len] = '\0';
 		}
 	} else {
-		size_t step = reply->format / 8;
+		unsigned step = reply->format / 8;
 		bool is_signed = reply->type == XCB_ATOM_INTEGER;
-		value->length = len * 8 / reply->format;
+		value->length = len / step;
 		if (reply->type == XCB_ATOM_ATOM) {
 			value->type = C2_PROPERTY_TYPE_ATOM;
 		} else {
@@ -2068,14 +2090,20 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 
 		int64_t *storage = value->numbers;
 		if (value->length > ARR_SIZE(value->numbers)) {
-			if (value->capacity < value->length) {
-				value->array = crealloc(value->array, value->length);
-				value->capacity = value->length;
+			const unsigned size = value->length * sizeof(*value->array);
+			if (external_capacity < size) {
+				value->array = (int64_t *)crealloc(external_storage, size);
+				value->array_capacity = size;
+			} else {
+				value->array = (int64_t *)external_storage;
+				value->array_capacity = external_capacity;
 			}
+			external_capacity = 0;
+			external_storage = NULL;
 			storage = value->array;
 		}
 		for (uint32_t i = 0; i < value->length; i++) {
-			auto item = (char *)data + i * step;
+			auto item = (char *)data + (size_t)i * step;
 			if (is_signed) {
 				switch (reply->format) {
 				case 8: storage[i] = *(int8_t *)item; break;
@@ -2101,6 +2129,8 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 			}
 		}
 	}
+
+	free(external_storage);
 }
 
 static void c2_window_state_update_from_replies(struct c2_state *state,
