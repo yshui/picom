@@ -283,6 +283,7 @@ err:
 	if (eglpixmap && *eglpixmap) {
 		eglDestroyImage(gd->display, *eglpixmap);
 	}
+	free(inner);
 	free(eglpixmap);
 	return NULL;
 }

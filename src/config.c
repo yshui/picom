@@ -487,9 +487,11 @@ char *locate_auxiliary_file(const char *scope, const char *path, const char *inc
 	if (config_home) {
 		char *ret = locate_auxiliary_file_at(config_home, picom_scope, path);
 		if (ret) {
+			free(config_home);
 			return ret;
 		}
 	}
+	free(config_home);
 
 	// Fall back to searching in system config directory
 	auto config_dirs = xdg_config_dirs();
@@ -581,6 +583,7 @@ void parse_debug_options(struct debug_options *debug_options) {
 		parse_debug_option_single(needle, debug_options);
 		needle = strtok_r(NULL, ";", &tmp);
 	}
+	free(debug_copy);
 }
 
 void *parse_window_shader_prefix(const char *src, const char **end, void *user_data) {
@@ -609,6 +612,7 @@ void *parse_window_shader_prefix(const char *src, const char **end, void *user_d
 	char *tmp = (char *)trim_both(untrimed_shader_source, &length);
 	tmp[length] = '\0';
 	char *shader_source = NULL;
+	free(untrimed_shader_source);
 
 	if (strcasecmp(tmp, "default") != 0) {
 		shader_source = locate_auxiliary_file("shaders", tmp, include_dir);

@@ -444,6 +444,7 @@ err:
 	if (glxpixmap && *glxpixmap) {
 		glXDestroyPixmap(base->c->dpy, *glxpixmap);
 	}
+	free(inner);
 	free(glxpixmap);
 	return NULL;
 }
