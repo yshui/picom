@@ -1,5 +1,9 @@
 # Unreleased
 
+## Improvements
+
+* Extend workaround for missing hardware accelerated convolution to more drivers (#1349)
+
 ## Bug fixes
 
 * Fix memory corruption that can happen when handling window property changes (#1350)
