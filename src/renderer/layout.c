@@ -110,12 +110,6 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	pixman_region32_copy(&out_layer->damaged, &w->damaged);
 	pixman_region32_translate(&out_layer->damaged, out_layer->window.origin.x,
 	                          out_layer->window.origin.y);
-	// TODO(yshui) Is there a better way to handle shaped windows? Shaped windows can
-	// have a very large number of rectangles in their shape, we don't want to handle
-	// that and slow ourselves down. so we treat them as transparent and just use
-	// their extent rectangle.
-	out_layer->is_opaque =
-	    !win_has_alpha(w) && out_layer->opacity == 1.0F && !w->bounding_shaped;
 	out_layer->next_rank = -1;
 	out_layer->prev_rank = -1;
 	out_layer->key = wm_ref_treeid(w->tree_ref);

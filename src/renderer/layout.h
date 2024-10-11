@@ -53,9 +53,6 @@ struct layer {
 	/// removed in the next frame
 	int next_rank;
 
-	/// Is this window completely opaque?
-	bool is_opaque;
-
 	// TODO(yshui) make opaqueness/blur finer grained maybe? to support
 	// things like blur-background-frame
 	// region_t opaque_region;
