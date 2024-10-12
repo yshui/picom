@@ -8,6 +8,7 @@
 
 * Fix memory corruption that can happen when handling window property changes (#1350)
 * Fix `force-win-blend` having no effect (#1354)
+* Fix shadow being rendered incorrectly in xrender backend (#1352)
 
 # 12.2 (2024-Oct-10)
 

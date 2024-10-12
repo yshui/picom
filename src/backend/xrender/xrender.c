@@ -289,7 +289,9 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->source_mask != NULL) {
 		ivec2 mask_origin = args->source_mask->origin;
-		mask_pict = xrender_process_mask(xd, args->source_mask, extent,
+		auto extent_to_mask =
+		    region_translate_rect(extent, ivec2_neg(ivec2_add(mask_origin, origin)));
+		mask_pict = xrender_process_mask(xd, args->source_mask, extent_to_mask,
 		                                 args->opacity < 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_origin, &mask_allocated);
 		mask_pict_dst_x = to_i16_checked(-mask_origin.x);
