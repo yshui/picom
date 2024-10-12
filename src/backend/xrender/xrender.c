@@ -242,9 +242,8 @@ xrender_process_mask(struct xrender_data *xd, const struct backend_mask_image *m
 	    (xcb_render_create_picture_value_list_t[]){XCB_RENDER_REPEAT_NONE});
 	xrender_set_picture_repeat(xd, inner->pict, XCB_RENDER_REPEAT_NONE);
 	xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC, inner->pict, XCB_NONE,
-	                     ret, to_i16_checked(extent.x1 - mask->origin.x),
-	                     to_i16_checked(extent.y1 - mask->origin.y), 0, 0, 0, 0,
-	                     w_u16, h_u16);
+	                     ret, to_i16_checked(extent.x1), to_i16_checked(extent.y1), 0,
+	                     0, 0, 0, w_u16, h_u16);
 	if (mask->corner_radius != 0) {
 		if (inner->rounded_rectangle != NULL &&
 		    inner->rounded_rectangle->radius != (int)mask->corner_radius) {
@@ -569,8 +568,8 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	if (args->source_mask != NULL) {
 		// Translate the target mask region to the mask's coordinate
 		auto mask_extent = *pixman_region32_extents(args->target_mask);
-		region_translate_rect(
-		    mask_extent, ivec2_neg(ivec2_add(origin, args->source_mask->origin)));
+		mask_extent =
+		    region_translate_rect(mask_extent, ivec2_neg(args->source_mask->origin));
 		mask_pict_origin = args->source_mask->origin;
 		mask_pict = xrender_process_mask(xd, args->source_mask, mask_extent,
 		                                 args->opacity != 1.0 ? mask_pict : XCB_NONE,
