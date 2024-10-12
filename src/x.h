@@ -81,12 +81,6 @@ struct x_connection {
 	/// The list of pending async requests that we have
 	/// yet to receive a reply for.
 	struct list_node pending_x_requests;
-	/// The first request that has a reply.
-	struct x_async_request_base *first_request_with_reply;
-	/// A message, either an event or a reply, that is currently being held, because
-	/// there are messages of the opposite type with lower sequence numbers that we
-	/// need to return first.
-	xcb_raw_generic_event_t *message_on_hold;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
@@ -95,8 +89,30 @@ struct x_connection {
 	/// `x_poll_for_message`. Used for sequence number overflow
 	/// detection.
 	uint32_t last_sequence;
-	/// The sequence number of `message_on_hold`
-	uint32_t sequence_on_hold;
+	/// The sequence number of the last completed request.
+	uint32_t latest_completed_request;
+	/// The sequence number of the "event sync" request we sent. This is
+	/// a request we sent that is guaranteed to error, so we can be sure
+	/// `xcb_poll_for_event` will return something. This is akin to `xcb_aux_sync`,
+	/// except that guarantees a reply, this one guarantees an error.
+	///
+	/// # Why do we need this?
+	///
+	/// To understand why we need this, first notice we need a way to fetch replies
+	/// that are already in xcb's buffer, without reading from the X connection.
+	/// Because otherwise we can't going into sleep while being confident that there
+	/// is no buffered events we haven't handled.
+	///
+	/// For events or unchecked errors (we will refer to both of them as events
+	/// without distinction), this is possible with `xcb_poll_for_queued_event`, but
+	/// for replies, there is no `xcb_poll_for_queued_reply` (ridiculous, if you
+	/// ask me). Luckily, if there is a reply already in the buffer,
+	/// `xcb_poll_for_reply` will return it without reading from X. And we can deduce
+	/// whether a reply is already received from the sequence number of received
+	/// events. The only problem, if no events are coming, we will be stuck
+	/// indefinitely, so we have to make our own events.
+	uint32_t event_sync;
+	bool event_sync_sent;
 };
 
 /// Monitor info
@@ -455,17 +471,13 @@ void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_
 /// `req` store information about the request, including the callback. The callback is
 /// responsible for freeing `req`.
 static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
-	if (c->first_request_with_reply == NULL && !req->no_reply) {
-		c->first_request_with_reply = req;
-	}
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
 
 /// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
 /// machinery for handling async replies. Calling `xcb_poll_for_event` directly will
 /// cause replies to async requests to be lost, so that should never be called.
-xcb_generic_event_t *x_poll_for_event(struct x_connection *c);
-
-static inline bool x_has_pending_requests(struct x_connection *c) {
-	return !list_is_empty(&c->pending_x_requests);
-}
+///
+/// @param[out] queued if true, only return events that are already in the queue, don't
+///                    attempt to read from the X connection.
+xcb_generic_event_t *x_poll_for_event(struct x_connection *c, bool queued);
