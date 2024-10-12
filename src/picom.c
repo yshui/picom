@@ -1449,8 +1449,7 @@ static void unredirect(session_t *ps) {
 /// keeps an internal queue of events, so we have to be 100% sure no events are
 /// left in that queue before we go to sleep.
 static void handle_x_events(struct session *ps) {
-	bool wm_was_consistent = wm_is_consistent(ps->wm);
-
+	uint32_t latest_completed = ps->c.latest_completed_request;
 	while (true) {
 		// Flush because if we go into sleep when there is still requests
 		// in the outgoing buffer, they will not be sent for an indefinite
@@ -1460,47 +1459,44 @@ static void handle_x_events(struct session *ps) {
 		// Also note, `xcb_flush`/`XFlush` may _read_ more events from the server
 		// (yes, this is ridiculous, I know). But since we are polling for events
 		// in a loop, this should be fine - if we read events here, they will be
-		// handled below; and if some requests is sent later in this loop, which
-		// means some events must have been received, we will loop once more and
-		// get here to flush them.
+		// handled below; and if some requests is sent later in this loop, we will
+		// set `needs_flush` and loop once more and get here to flush them.
 		XFlush(ps->c.dpy);
 		xcb_flush(ps->c.c);
 
-		// We have to check for vblank events (i.e. special xcb events) and normal
-		// events in a loop. This is because both `xcb_poll_for_event` and
-		// `xcb_poll_for_special_event` will read data from the X connection and
-		// put it in a buffer. So whichever one we call last, say
-		// `xcb_poll_for_special_event`, will read data into the buffer that might
-		// contain events that `xcb_poll_for_event` should handle, and vice versa.
-		// This causes us to go into sleep with events in the buffer.
-		//
-		// We have to keep calling both of them until neither of them return any
-		// events.
-		bool has_events = false;
+		// If we send any new requests, we should loop again to flush them. There
+		// is no direct way to do this from xcb. So if we called `ev_handle`, or
+		// if any pending requests were completed, we conservatively loop again.
+		bool needs_flush = false;
 		if (ps->vblank_scheduler) {
-			has_events = vblank_handle_x_events(ps->vblank_scheduler) ==
-			             VBLANK_HANDLE_X_EVENTS_OK;
+			vblank_handle_x_events(ps->vblank_scheduler);
 		}
 
 		xcb_generic_event_t *ev;
-		while ((ev = x_poll_for_event(&ps->c))) {
-			has_events = true;
+		while ((ev = x_poll_for_event(&ps->c, true))) {
 			ev_handle(ps, (xcb_generic_event_t *)ev);
+			needs_flush = true;
 			free(ev);
 		};
 
-		if (!has_events) {
+		if (ps->c.latest_completed_request != latest_completed) {
+			needs_flush = true;
+			latest_completed = ps->c.latest_completed_request;
+		}
+
+		if (!needs_flush) {
 			break;
 		}
 	}
+
 	int err = xcb_connection_has_error(ps->c.c);
 	if (err) {
 		log_fatal("X11 server connection broke (error %d)", err);
 		exit(1);
 	}
 
-	if (wm_is_consistent(ps->wm) != wm_was_consistent && !wm_was_consistent) {
-		log_debug("Window tree has just become consistent, queueing redraw.");
+	if (wm_has_tree_changes(ps->wm)) {
+		log_debug("Window tree changed, queueing redraw.");
 		ps->pending_updates = true;
 		queue_redraw(ps);
 	}
@@ -1966,9 +1962,18 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 	}
 }
 
-static void x_event_callback(EV_P attr_unused, ev_io * /*w*/, int revents attr_unused) {
-	// This function is intentionally left blank, events are actually read and handled
-	// in the ev_prepare listener.
+static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
+	// Make sure the X connection is being read from at least once every time
+	// we woke up because of readability of the X connection.
+	//
+	// `handle_x_events` is not guaranteed to read from X, so if we don't do
+	// it here we could dead lock.
+	struct session *ps = session_ptr(w, xiow);
+	auto ev = x_poll_for_event(&ps->c, false);
+	if (ev) {
+		ev_handle(ps, (xcb_generic_event_t *)ev);
+		free(ev);
+	}
 }
 
 static void config_file_change_cb(void *_ps) {

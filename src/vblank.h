@@ -29,12 +29,6 @@ enum vblank_callback_action {
 	VBLANK_CALLBACK_DONE,
 };
 
-enum vblank_handle_x_events_result {
-	VBLANK_HANDLE_X_EVENTS_OK,
-	VBLANK_HANDLE_X_EVENTS_ERROR,
-	VBLANK_HANDLE_X_EVENTS_NO_EVENTS,
-};
-
 typedef enum vblank_callback_action (*vblank_callback_t)(struct vblank_event *event,
                                                          void *user_data);
 
@@ -53,4 +47,4 @@ vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c, xcb_window_t 
                      enum vblank_scheduler_type type, bool use_realtime_scheduling);
 void vblank_scheduler_free(struct vblank_scheduler *);
 
-enum vblank_handle_x_events_result vblank_handle_x_events(struct vblank_scheduler *self);
+bool vblank_handle_x_events(struct vblank_scheduler *self);
