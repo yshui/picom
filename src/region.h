@@ -15,8 +15,6 @@ typedef struct pixman_box32 pixman_box32_t;
 typedef pixman_region32_t region_t;
 typedef pixman_box32_t rect_t;
 
-RC_TYPE(region_t, rc_region, pixman_region32_init, pixman_region32_fini, static inline)
-
 static inline void region_free(region_t *region) {
 	if (region) {
 		pixman_region32_fini(region);

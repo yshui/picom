@@ -17,7 +17,6 @@
 #include "config.h"
 #include "defs.h"
 #include "region.h"
-#include "render.h"
 #include "transition/script.h"
 #include "utils/list.h"
 #include "utils/misc.h"
@@ -27,7 +26,6 @@
 
 struct backend_base;
 typedef struct session session_t;
-typedef struct _glx_texture glx_texture_t;
 struct wm_cursor;
 
 #define wm_stack_foreach(wm, i)                                                          \
@@ -42,20 +40,6 @@ struct wm_cursor;
 	                     *(next_i) = (i) != NULL ? wm_ref_below(i) : NULL;           \
 	     (i); (i) = (next_i), (next_i) = (i) != NULL ? wm_ref_below(i) : NULL)
 
-#ifdef CONFIG_OPENGL
-// FIXME this type should be in opengl.h
-//       it is very unideal for it to be here
-typedef struct {
-	/// Framebuffer used for blurring.
-	GLuint fbo;
-	/// Textures used for blurring.
-	GLuint textures[2];
-	/// Width of the textures.
-	int width;
-	/// Height of the textures.
-	int height;
-} glx_blur_cache_t;
-#endif
 struct wm;
 /// An entry in the window stack. May or may not correspond to a window we know about.
 struct window_stack_entry {
@@ -141,8 +125,6 @@ struct win {
 	bool pixmap_damaged;
 	/// Damage of the window.
 	xcb_damage_damage_t damage;
-	/// Paint info of the window.
-	paint_t paint;
 	/// bitmap for properties which needs to be updated
 	uint64_t *stale_props;
 	/// number of uint64_ts that has been allocated for stale_props
@@ -153,16 +135,6 @@ struct win {
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
 	uint64_t flags;
-	/// The region of screen that will be obscured when windows above is painted,
-	/// in global coordinates.
-	/// We use this to reduce the pixels that needed to be paint when painting
-	/// this window and anything underneath. Depends on window frame
-	/// opacity state, window geometry, window mapped/unmapped state,
-	/// window mode of the windows above. DOES NOT INCLUDE the body of THIS WINDOW.
-	/// NULL means reg_ignore has not been calculated for this window.
-	rc_region_t *reg_ignore;
-	/// Whether the reg_ignore of all windows beneath this window are valid
-	bool reg_ignore_valid;
 	/// Cached width/height of the window including border.
 	int widthb, heightb;
 	/// Whether the window is bounding-shaped.
@@ -231,22 +203,11 @@ struct win {
 	int shadow_width;
 	/// Height of shadow. Affected by window size and command line argument.
 	int shadow_height;
-	/// Picture to render shadow. Affected by window size.
-	paint_t shadow_paint;
 	/// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
 	/// none.
 	long long prop_shadow;
 
 	struct c2_window_state c2_state;
-
-	// Animation related
-
-#ifdef CONFIG_OPENGL
-	/// Textures and FBO background blur use.
-	glx_blur_cache_t glx_blur_cache;
-	/// Background texture of the window
-	glx_texture_t *glx_texture_bg;
-#endif
 
 	/// The damaged region of the window, in window local coordinates.
 	region_t damaged;
@@ -417,7 +378,7 @@ void unmap_win_start(struct win *);
 void unmap_win_finish(session_t *ps, struct win *w);
 /// Start the destroying of a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
-void win_destroy_start(session_t *ps, struct win *w);
+void win_destroy_start(struct win *w);
 void win_map_start(struct session *ps, struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
@@ -449,13 +410,6 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w);
  */
 void win_extents(const struct win *w, region_t *res);
 region_t win_extents_by_val(const struct win *w);
-/**
- * Add a window to damaged area.
- *
- * @param ps current session
- * @param w struct _win element representing the window
- */
-void add_damage_from_win(session_t *ps, const struct win *w);
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  *
@@ -508,9 +462,6 @@ static inline xcb_window_t win_client_id(const struct win *w, bool fallback_to_s
 	return wm_ref_win_id(client_win);
 }
 
-/// check if reg_ignore_valid is true for all windows above us
-bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct win *w);
-
 /// Whether a given window is mapped on the X server side
 bool win_is_mapped_in_x(const struct win *w);
 /// Set flags on a window. Some sanity checks are performed
@@ -553,7 +504,7 @@ bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct win *
  * Retrieve frame extents from a window.
  */
 void win_update_frame_extents(struct x_connection *c, struct atom *atoms, struct win *w,
-                              xcb_window_t client, double frame_opacity);
+                              xcb_window_t client);
 /**
  * Retrieve the <code>WM_CLASS</code> of a window and update its
  * <code>win</code> structure.

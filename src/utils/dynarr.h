@@ -136,8 +136,9 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_truncate(arr, n, dtor)                                                    \
 	do {                                                                             \
 		if ((dtor) != NULL) {                                                    \
-			for (size_t i = n; i < dynarr_len(arr); i++) {                   \
-				(dtor)((arr) + i);                                       \
+			for (size_t __dynarr_i = n; __dynarr_i < dynarr_len(arr);        \
+			     __dynarr_i++) {                                             \
+				(dtor)((arr) + __dynarr_i);                              \
 			}                                                                \
 		}                                                                        \
 		dynarr_len(arr) = n;                                                     \

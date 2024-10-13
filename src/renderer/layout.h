@@ -90,6 +90,9 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 /// layout.
 struct layout *layout_manager_layout(struct layout_manager *lm, unsigned age);
 void layout_manager_free(struct layout_manager *lm);
+/// Clear all layouts in the layout manager, so that the next render will start from
+/// scratch instead of incremental based on damage information.
+void layout_manager_clear(struct layout_manager *lm);
 /// Create a new render lm with a ring buffer for `max_buffer_age` layouts.
 struct layout_manager *layout_manager_new(unsigned max_buffer_age);
 /// Collect damage from the window for the past `buffer_age` frames.

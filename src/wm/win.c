@@ -28,7 +28,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "render.h"
 #include "utils/console.h"
 #include "utils/misc.h"
 #include "x.h"
@@ -181,25 +180,6 @@ void win_get_region_frame_local(const struct win *w, region_t *res) {
 
 gen_by_val(win_get_region_frame_local);
 
-/**
- * Add a window to damaged area.
- *
- * @param ps current session
- * @param w struct _win element representing the window
- */
-void add_damage_from_win(session_t *ps, const struct win *w) {
-	// XXX there was a cached extents region, investigate
-	//     if that's better
-
-	// TODO(yshui) use the bounding shape when the window is shaped, otherwise the
-	//             damage would be excessive
-	region_t extents;
-	pixman_region32_init(&extents);
-	win_extents(w, &extents);
-	add_damage(ps, &extents);
-	pixman_region32_fini(&extents);
-}
-
 /// Release the images attached to this window
 static inline void win_release_pixmap(backend_t *base, struct win *w) {
 	log_debug("Releasing pixmap of window %#010x (%s)", win_id(w), w->name);
@@ -310,8 +290,7 @@ static void win_update_properties(session_t *ps, struct win *w) {
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
 		auto client_win = win_client_id(w, /*fallback_to_self=*/false);
-		win_update_frame_extents(&ps->c, ps->atoms, w, client_win, ps->o.frame_opacity);
-		add_damage_from_win(ps, w);
+		win_update_frame_extents(&ps->c, ps->atoms, w, client_win);
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_NAME) ||
@@ -397,12 +376,6 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		//
 		// All that is basically me saying what really matters is if the
 		// window was rendered last frame, not if it's mapped in X server.
-		if (w->to_paint) {
-			// Mark the old extents of this window as damaged. The new
-			// extents will be marked damaged below, after the window
-			// extents are updated.
-			add_damage_from_win(ps, w);
-		}
 
 		// Update window geometry
 		w->previous.g = w->g;
@@ -420,19 +393,15 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 
 			// Window shape/size changed, invalidate the images we built
 			// log_trace("free out dated pict");
-			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE |
-			                     WIN_FLAGS_FACTOR_CHANGED | WIN_FLAGS_DAMAGED);
+			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_FACTOR_CHANGED);
 
 			win_release_mask(ps->backend_data, w);
 			win_release_shadow(ps->backend_data, w);
 			ps->pending_updates = true;
-			free_paint(ps, &w->paint);
-			free_paint(ps, &w->shadow_paint);
 		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
 			win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
-			win_set_flags(w, WIN_FLAGS_DAMAGED);
 		}
 	}
 
@@ -495,12 +464,6 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 		win_on_factor_change(ps, w);
 		win_clear_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 	}
-	if (win_check_flags_all(w, WIN_FLAGS_DAMAGED)) {
-		// Add damage, has to be done last so the window has the latest geometry
-		// information.
-		add_damage_from_win(ps, w);
-		win_clear_flags(w, WIN_FLAGS_DAMAGED);
-	}
 
 	auto new_options = win_options(w);
 	if (win_options_no_damage(&old_options, &new_options)) {
@@ -508,9 +471,7 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
-	add_damage_from_win(ps, w);        // Only for legacy backends
 	if (new_options.shadow != old_options.shadow && !new_options.shadow) {
-		add_damage(ps, &extents);
 		win_release_shadow(ps->backend_data, w);
 	}
 	pixman_region32_fini(&extents);
@@ -787,8 +748,6 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w, bool f
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
 void unmap_win_finish(session_t *ps, struct win *w) {
-	w->reg_ignore_valid = false;
-
 	// We are in unmap_win, this window definitely was viewable
 	if (ps->backend_data) {
 		// Only the pixmap needs to be freed and reacquired when mapping.
@@ -798,9 +757,6 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 		assert(!w->win_image);
 		assert(!w->shadow_image);
 	}
-
-	free_paint(ps, &w->paint);
-	free_paint(ps, &w->shadow_paint);
 
 	// Try again at binding images when the window is mapped next time
 	if (w->state != WSTATE_DESTROYED) {
@@ -1131,7 +1087,6 @@ void win_on_factor_change(session_t *ps, struct win *w) {
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 
-	w->reg_ignore_valid = false;
 	if (ps->debug_window != XCB_NONE &&
 	    (win_id(w) == ps->debug_window ||
 	     (win_client_id(w, /*fallback_to_self=*/false) == ps->debug_window))) {
@@ -1212,7 +1167,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 
 	xcb_window_t client_win_id = win_client_id(w, /*fallback_to_self=*/true);
 	// Get frame widths. The window is in damaged area already.
-	win_update_frame_extents(&ps->c, ps->atoms, w, client_win_id, ps->o.frame_opacity);
+	win_update_frame_extents(&ps->c, ps->atoms, w, client_win_id);
 
 	// Get window group
 	if (ps->o.track_leader) {
@@ -1239,24 +1194,10 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	free(r);
 }
 
-#ifdef CONFIG_OPENGL
-void free_win_res_glx(session_t *ps, struct win *w);
-#else
-static inline void free_win_res_glx(session_t * /*ps*/, struct win * /*w*/) {
-}
-#endif
-
 /**
  * Free all resources in a <code>struct _win</code>.
  */
 void free_win_res(session_t *ps, struct win *w) {
-	// No need to call backend release_image here because
-	// finish_unmap_win should've done that for us.
-	// XXX unless we are called by session_destroy
-	// assert(w->win_data == NULL);
-	free_win_res_glx(ps, w);
-	free_paint(ps, &w->paint);
-	free_paint(ps, &w->shadow_paint);
 	// Above should be done during unmapping
 	// Except when we are called by session_destroy
 
@@ -1264,7 +1205,6 @@ void free_win_res(session_t *ps, struct win *w) {
 	pixman_region32_fini(&w->bounding_shape);
 	// BadDamage may be thrown if the window is destroyed
 	x_set_error_action_ignore(&ps->c, xcb_damage_destroy(ps->c.c, w->damage));
-	rc_region_unref(&w->reg_ignore);
 	free(w->name);
 	free(w->class_instance);
 	free(w->class_general);
@@ -1293,9 +1233,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	    .opacity_set = 1,
 	    .frame_extents = MARGIN_INIT,
 	    .prop_shadow = -1,
-
-	    .paint = PAINT_INIT,
-	    .shadow_paint = PAINT_INIT,
 	};
 
 	// Reject overlay window
@@ -1575,7 +1512,7 @@ void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape
  * Retrieve frame extents from a window.
  */
 void win_update_frame_extents(struct x_connection *c, struct atom *atoms, struct win *w,
-                              xcb_window_t client, double frame_opacity) {
+                              xcb_window_t client) {
 	if (client == XCB_NONE) {
 		w->frame_extents = (margin_t){0};
 		return;
@@ -1598,39 +1535,16 @@ void win_update_frame_extents(struct x_connection *c, struct atom *atoms, struct
 			extents[i] = (int)prop.c32[i];
 		}
 
-		const bool changed = w->frame_extents.left != extents[0] ||
-		                     w->frame_extents.right != extents[1] ||
-		                     w->frame_extents.top != extents[2] ||
-		                     w->frame_extents.bottom != extents[3];
 		w->frame_extents.left = extents[0];
 		w->frame_extents.right = extents[1];
 		w->frame_extents.top = extents[2];
 		w->frame_extents.bottom = extents[3];
-
-		// If frame_opacity != 1, then frame of this window
-		// is not included in reg_ignore of underneath windows
-		if (frame_opacity == 1 && changed) {
-			w->reg_ignore_valid = false;
-		}
 	}
 
 	log_trace("(%#010x): %d, %d, %d, %d", win_id(w), w->frame_extents.left,
 	          w->frame_extents.right, w->frame_extents.top, w->frame_extents.bottom);
 
 	free_winprop(&prop);
-}
-
-bool win_is_region_ignore_valid(session_t *ps, const struct win *w) {
-	wm_stack_foreach(ps->wm, cursor) {
-		auto i = wm_ref_deref(cursor);
-		if (i == w) {
-			break;
-		}
-		if (i != NULL && !i->reg_ignore_valid) {
-			return false;
-		}
-	}
-	return true;
 }
 
 /// Finish the destruction of a window (e.g. after fading has finished).
@@ -1662,7 +1576,7 @@ void win_destroy_finish(session_t *ps, struct win *w) {
 
 /// Start destroying a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
-void win_destroy_start(session_t *ps, struct win *w) {
+void win_destroy_start(struct win *w) {
 	BUG_ON(w == NULL);
 	log_debug("Destroying %#010x (%s)", win_id(w), w->name);
 
@@ -1682,15 +1596,6 @@ void win_destroy_start(session_t *ps, struct win *w) {
 	// shadow is refreshed but the flags are stuck in STALE. Do this
 	// before changing the window state to destroying
 	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
-
-	// If size/shape/position information is stale,
-	// win_process_update_flags will update them and add the new
-	// window extents to damage. Since the window has been destroyed,
-	// we cannot get the complete information at this point, so we
-	// just add what we currently have to the damage.
-	if (win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
-		add_damage_from_win(ps, w);
-	}
 
 	// Clear some flags about stale window information. Because now
 	// the window is destroyed, we can't update them anyway.

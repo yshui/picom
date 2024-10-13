@@ -642,8 +642,6 @@ bool load_plugin(const char *name, const char *include_dir) {
 bool parse_config(options_t *opt, const char *config_file) {
 	// clang-format off
 	*opt = (struct options){
-	    .legacy_backend = BKEND_XRENDER,
-	    .use_legacy_backends = false,
 	    .glx_no_stencil = false,
 	    .mark_wmwin_focused = false,
 	    .mark_ovredir_focused = false,

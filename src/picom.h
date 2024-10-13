@@ -20,14 +20,11 @@
 #include "config.h"
 #include "log.h"        // XXX clean up
 #include "region.h"
-#include "render.h"
 #include "wm/win.h"
 #include "x.h"
 
 // == Functions ==
 // TODO(yshui) move static inline functions that are only used in picom.c, into picom.c
-
-void add_damage(session_t *ps, const region_t *damage);
 
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 

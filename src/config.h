@@ -251,8 +251,6 @@ typedef struct options {
 	char *write_pid_path;
 	/// Name of the backend
 	struct backend_info *backend;
-	/// The backend in use (for legacy backends).
-	int legacy_backend;
 	/// Log level.
 	int log_level;
 	/// Whether to sync X drawing with X Sync fence to avoid certain delay
