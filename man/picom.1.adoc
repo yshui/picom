@@ -67,9 +67,6 @@ OPTIONS
 *--log-file*::
 	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to written to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
 
-*--legacy-backends*::
-	Use the old version of the backends. This option can not be set from the config file.
-
 *--show-all-xerrors*::
 	Show all X errors (for debugging).
 
@@ -248,7 +245,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 
 *--force-win-blend*::
-	Force all windows to be painted with blending. Useful if you have a *--glx-fshader-win* that could turn opaque pixels transparent.
+	Force all windows to be painted with blending. Useful if you have a window shader that could turn opaque pixels transparent.
 
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
@@ -272,10 +269,10 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Specify a list of conditions of windows that should never have transparent clipping applied. Useful for screenshot tools, where you need to be able to see through transparent parts of the window.
 
 *--window-shader-fg* _SHADER_::
-	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
+	Specify GLSL fragment shader path for rendering window contents. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
 
 [[window-shader-fg-rule]]*--window-shader-fg-rule* _SHADER_:__CONDITION__::
-	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
+	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
 
 *--dithered-present*::
 	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
@@ -762,7 +759,7 @@ If you have created an animation script that you think is particularly cool, you
 SHADER INTERFACE
 ----------------
 
-This secion describes the interface of a custom shader, how it is used by picom, and what parameters are passed by picom to the shader. This does not apply to the legacy backends.
+This secion describes the interface of a custom shader, how it is used by picom, and what parameters are passed by picom to the shader.
 
 A custom shader is a GLSL fragment shader program, which can be used to override the default way of how a window is rendered. If a custom shader is used, the default picom effects (e.g. dimming, color inversion, etc.) will no longer be automatically applied. It would be the custom shader's responsibility to apply these effects.
 
@@ -883,7 +880,6 @@ Available options of the _blur_ section are: ::
   *method*:::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
       _none_ to disable blurring; _gaussian_ for gaussian blur; _box_ for box blur; _kernel_ for convolution blur with a custom kernel; _dual_kawase_ for dual-filter kawase blur.
-    Note: _gaussian_, _box_ and _dual_kawase_ blur methods are not supported by the legacy backends.
     (default: none)
 
   *size*:::
