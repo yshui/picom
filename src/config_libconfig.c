@@ -1049,7 +1049,10 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		}
 	}
 	// --resize-damage
-	config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);
+	if (config_lookup_int(&cfg, "resize-damage", &opt->resize_damage)) {
+		log_warn("resize-damage is deprecated. Please remove it from your "
+		         "configuration file.");
+	}
 	// --glx-no-stencil
 	lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
 	// --glx-no-rebind-pixmap

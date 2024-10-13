@@ -211,9 +211,6 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 [[blur-background-exclude]]*--blur-background-exclude* _CONDITION_::
 	Exclude conditions for background blur.
 
-*--resize-damage* _INTEGER_::
-	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use `--resize-damage 1`, with a 5x5 one you use `--resize-damage 2`, and so on). May or may not work with *--glx-no-stencil*. Only works with *--legacy-backends*. Shrinking doesn't function correctly.
-
 [[invert-color-include]]*--invert-color-include* _CONDITION_::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to do this.
 
