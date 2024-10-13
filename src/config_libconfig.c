@@ -943,11 +943,6 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		}
 		opt->logpath = strdup(sval);
 	}
-	// --sw-opti
-	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
-		log_error("The sw-opti %s", deprecation_message);
-		goto out;
-	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
 	// --unredir-if-possible
@@ -1060,26 +1055,6 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 	// --glx-no-rebind-pixmap
 	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
 	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
-	// --glx-swap-method
-	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
-		char *endptr;
-		long val = strtol(sval, &endptr, 10);
-		bool should_remove = true;
-		if (*endptr || !(*sval)) {
-			// sval is not a number, or an empty string
-			val = -1;
-		}
-		if (strcmp(sval, "undefined") != 0 && val != 0) {
-			// If not undefined, we will use damage and buffer-age to limit
-			// the rendering area.
-			should_remove = false;
-		}
-		log_error("glx-swap-method has been removed, your setting "
-		          "\"%s\" should be %s.",
-		          sval,
-		          !should_remove ? "replaced by `use-damage = true`" : "removed");
-		goto out;
-	}
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
 
@@ -1097,19 +1072,8 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		    locate_auxiliary_file("shaders", sval, config_get_include_dir(&cfg));
 	}
 
-	// --glx-use-gpushader4
-	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
-		log_error("glx-use-gpushader4 has been removed, please remove it "
-		          "from your config file");
-		goto out;
-	}
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
-
-	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval)) {
-		log_warn("\"clear-shadow\" is removed as an option, and is always"
-		         " enabled now. Consider removing it from your config file");
-	}
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {

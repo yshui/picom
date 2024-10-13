@@ -247,9 +247,6 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 
-*--glx-fshader-win* _SHADER_::
-	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples. Only works with *--legacy-backends* enabled.
-
 *--force-win-blend*::
 	Force all windows to be painted with blending. Useful if you have a *--glx-fshader-win* that could turn opaque pixels transparent.
 

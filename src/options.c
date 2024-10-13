@@ -322,22 +322,6 @@ store_shadow_color(const struct picom_option * /*opt*/, const struct picom_arg *
 }
 
 static bool
-handle_menu_opacity(const struct picom_option * /*opt*/, const struct picom_arg * /*arg*/,
-                    const char *arg_str, void *output) {
-	struct options *opt = (struct options *)output;
-	const char *endptr = NULL;
-	double tmp = max2(0.0, min2(1.0, strtod_simple(arg_str, &endptr)));
-	if (!endptr || *endptr != '\0') {
-		return false;
-	}
-	opt->wintype_option_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
-	opt->wintype_option_mask[WINTYPE_POPUP_MENU].opacity = true;
-	opt->wintype_option[WINTYPE_POPUP_MENU].opacity = tmp;
-	opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = tmp;
-	return true;
-}
-
-static bool
 store_blur_kern(const struct picom_option * /*opt*/, const struct picom_arg * /*arg*/,
                 const char *arg_str, void *output) {
 	struct options *opt = (struct options *)output;
@@ -487,7 +471,6 @@ static const struct picom_option picom_options[] = {
     [302] = {"resize-damage"               , INTEGER(resize_damage, INT_MIN, INT_MAX)},       // only used by legacy backends
     [309] = {"unredir-if-possible-delay"   , INTEGER(unredir_if_possible_delay, 0, INT_MAX) , "Delay before unredirecting the window, in milliseconds. Defaults to 0."},
     [310] = {"write-pid-path"              , NAMED_STRING(write_pid_path, "PATH")           , "Write process ID to a file."},
-    [317] = {"glx-fshader-win"             , STRING(glx_fshader_win_str)},
     [322] = {"log-file"                    , STRING(logpath)                                , "Path to the log file."},
     [326] = {"max-brightness"              , FLOAT(max_brightness, 0, 1)                    , "Dims windows which average brightness is above this threshold. Requires "
                                                                                               "--no-use-damage. (default: 1.0, meaning no dimming)"},
@@ -538,30 +521,11 @@ static const struct picom_option picom_options[] = {
 	     "'box' or 'kernel' for custom convolution blur with --blur-kern."},
 
     // Deprecated options
-    [274] = {"sw-opti"            , ERROR_DEPRECATED(no_argument)},
-    [275] = {"vsync-aggressive"   , ERROR_DEPRECATED(no_argument)},
-    [277] = {"respect-prop-shadow", ERROR_DEPRECATED(no_argument)},
-    [303] = {"glx-use-gpushader4" , ERROR_DEPRECATED(no_argument)},
     [269] = {"refresh-rate"       , WARN_DEPRECATED(IGNORE(required_argument))},
-
-    // Deprecated options with messages
-#define CLEAR_SHADOW_DEPRECATION                                                         \
-	"Shadows are automatically cleared now. If you want to prevent shadow from "     \
-	"being cleared under certain types of windows, you can use the \"full-shadow\" " \
-	"window type option."
-
-#define MENU_OPACITY_DEPRECATION                                                         \
-	"Use the wintype option `opacity` of `popup_menu` and `dropdown_menu` instead."
-
-    ['m'] = {"menu-opacity"        , SAY_DEPRECATED(false, MENU_OPACITY_DEPRECATION               , DO(handle_menu_opacity))},
-    ['z'] = {"clear-shadow"        , SAY_DEPRECATED(false, CLEAR_SHADOW_DEPRECATION               , IGNORE(no_argument))},
     [272] = {"xinerama-shadow-crop", SAY_DEPRECATED(false, "Use --crop-shadow-to-monitor instead.", ENABLE(crop_shadow_to_monitor))},
     [287] = {"logpath"             , SAY_DEPRECATED(false, "Use --log-file instead."              , STRING(logpath))},
     [289] = {"opengl"              , SAY_DEPRECATED(false, "Use --backend=glx instead."           , FIXED_STR(backend, "glx"))},
     [305] = {"shadow-exclude-reg"  , SAY_DEPRECATED(true,  "Use --clip-shadow-above instead."     , REJECT(required_argument))},
-
-#undef CLEAR_SHADOW_DEPRECATION
-#undef MENU_OPACITY_DEPRECATION
 };
 // clang-format on
 
