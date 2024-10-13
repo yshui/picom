@@ -1054,9 +1054,13 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) {
 		         "configuration file.");
 	}
 	// --glx-no-stencil
-	lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
+	if (lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil)) {
+		log_warn("glx-no-stencil %s", deprecation_message);
+	}
 	// --glx-no-rebind-pixmap
-	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
+	if (lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap)) {
+		log_warn("glx-no-rebind-pixmap %s", deprecation_message);
+	}
 	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);

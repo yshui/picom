@@ -432,8 +432,8 @@ static const struct picom_option picom_options[] = {
                                                                              "windows. Affects --shadow-ignore-shaped, --unredir-if-possible, and "
                                                                              "possibly others. You need to turn this on manually if you want to match "
                                                                              "against rounded_corners in conditions."},
-    [298] = {"glx-no-rebind-pixmap"     , ENABLE(glx_no_rebind_pixmap)},
-    [291] = {"glx-no-stencil"           , ENABLE(glx_no_stencil)},
+    [298] = {"glx-no-rebind-pixmap"     , WARN_DEPRECATED(ENABLE(glx_no_rebind_pixmap))},
+    [291] = {"glx-no-stencil"           , WARN_DEPRECATED(ENABLE(glx_no_stencil))},
     [325] = {"no-vsync"                 , DISABLE(vsync)                   , "Disable VSync"},
     [327] = {"transparent-clipping"     , ENABLE(transparent_clipping)     , "Make transparent windows clip other windows like non-transparent windows do, "
                                                                              "instead of blending on top of them"},
