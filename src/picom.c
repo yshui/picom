@@ -1299,18 +1299,10 @@ static void unredirect(session_t *ps) {
 static void handle_x_events(struct session *ps) {
 	uint32_t latest_completed = ps->c.latest_completed_request;
 	while (true) {
-		// Flush because if we go into sleep when there is still requests
-		// in the outgoing buffer, they will not be sent for an indefinite
-		// amount of time. Use XFlush here too, we might still use some
-		// Xlib functions because OpenGL.
-		//
-		// Also note, `xcb_flush`/`XFlush` may _read_ more events from the server
-		// (yes, this is ridiculous, I know). But since we are polling for events
-		// in a loop, this should be fine - if we read events here, they will be
-		// handled below; and if some requests is sent later in this loop, we will
-		// set `needs_flush` and loop once more and get here to flush them.
-		XFlush(ps->c.dpy);
-		xcb_flush(ps->c.c);
+		if (!x_prepare_for_sleep(&ps->c)) {
+			log_fatal("X connection broke.");
+			exit(1);
+		}
 
 		// If we send any new requests, we should loop again to flush them. There
 		// is no direct way to do this from xcb. So if we called `ev_handle`, or

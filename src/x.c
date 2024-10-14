@@ -166,12 +166,6 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
 /// This function logs X errors, or aborts the program based on severity of the error.
 static void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 	x_discard_pending_errors(c, ev->full_sequence);
-	if (c->event_sync_sent && ev->full_sequence == c->event_sync) {
-		// This is the error for our event sync request we have been
-		// expecting.
-		c->event_sync_sent = false;
-		return;
-	}
 	struct pending_x_error *first_error_action = NULL;
 	if (!list_is_empty(&c->pending_x_errors)) {
 		first_error_action =
@@ -206,6 +200,48 @@ static void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
 	                                ev->error_code));
 }
 
+struct x_generic_async_request {
+	struct x_async_request_base base;
+	enum x_error_action error_action;
+	const char *func;
+	const char *file;
+	int line;
+};
+
+static void x_generic_async_callback(struct x_connection * /*c*/,
+                                     struct x_async_request_base *req_base,
+                                     const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct x_generic_async_request *)req_base;
+	auto error_action = req->error_action;
+	auto func = req->func == NULL ? "(unknown)" : req->func;
+	auto file = req->file == NULL ? "(unknown)" : req->file;
+	auto line = req->line;
+	free(req);
+
+	if (reply_or_error->response_type != 0) {
+		return;
+	}
+
+	auto error = (xcb_generic_error_t *)reply_or_error;
+	if (error_action != PENDING_REPLY_ACTION_IGNORE) {
+		log_error("X error for request in %s at %s:%d: %s", func, file, line,
+		          x_error_code_to_string(error->full_sequence, error->major_code,
+		                                 error->minor_code, error->error_code));
+	} else {
+		log_debug("Expected X error for request in %s at %s:%d: %s", func, file, line,
+		          x_error_code_to_string(error->full_sequence, error->major_code,
+		                                 error->minor_code, error->error_code));
+	}
+	switch (error_action) {
+	case PENDING_REPLY_ACTION_ABORT:
+		log_fatal("An unrecoverable X error occurred, "
+		          "aborting...");
+		abort();
+	case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
+	case PENDING_REPLY_ACTION_IGNORE: break;
+	}
+}
+
 /**
  * Xlib error handler function.
  */
@@ -238,7 +274,6 @@ void x_connection_init(struct x_connection *c, Display *dpy) {
 
 	c->screen = DefaultScreen(dpy);
 	c->screen_info = xcb_aux_get_screen(c->c, c->screen);
-	c->event_sync_sent = false;
 
 	// Do a round trip to fetch the current sequence number
 	auto cookie = xcb_get_input_focus(c->c);
@@ -1063,15 +1098,36 @@ static xcb_raw_generic_event_t *x_poll_for_event_impl(struct x_connection *c, bo
 	return x_ingest_event(c, e);
 }
 
+bool x_prepare_for_sleep(struct x_connection *c) {
+	if (!list_is_empty(&c->pending_x_requests)) {
+		auto last = list_entry(c->pending_x_requests.prev,
+		                       struct x_async_request_base, siblings);
+		if (c->event_sync != last->sequence) {
+			// Send an async request that is guaranteed to error, see comments
+			// on `event_sync` for why.
+			auto req = ccalloc(1, struct x_generic_async_request);
+			req->func = __func__;
+			req->file = __FILE__;
+			req->line = __LINE__;
+			req->error_action = PENDING_REPLY_ACTION_IGNORE;
+			req->base.sequence = xcb_free_pixmap(c->c, XCB_NONE).sequence;
+			req->base.callback = x_generic_async_callback,
+			req->base.no_reply = true;
+			c->event_sync = req->base.sequence;
+			x_await_request(c, &req->base);
+			log_trace("Sending event sync request to catch response to "
+			          "pending request, last sequence: %u, event sync: %u",
+			          last->sequence, c->event_sync);
+		}
+	}
+	XFlush(c->dpy);
+	xcb_flush(c->c);
+	return true;
+}
+
 xcb_generic_event_t *x_poll_for_event(struct x_connection *c, bool queued) {
 	xcb_raw_generic_event_t *ret = NULL;
 	while (true) {
-		if (!list_is_empty(&c->pending_x_requests) && !c->event_sync_sent) {
-			// Send a request that is guaranteed to error, see comments on
-			// `event_sync` for why.
-			c->event_sync = xcb_free_pixmap(c->c, XCB_NONE).sequence;
-			c->event_sync_sent = true;
-		}
 		ret = x_poll_for_event_impl(c, queued);
 
 		if (ret == NULL || ret->response_type != 0) {
