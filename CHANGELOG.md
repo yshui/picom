@@ -1,4 +1,4 @@
-# Unreleased
+# 12.3 (2024-Oct-14)
 
 ## Improvements
 
