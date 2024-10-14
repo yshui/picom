@@ -21,7 +21,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "utils/dynarr.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"

@@ -62,12 +62,6 @@
 struct atom;
 struct conv;
 
-/// Linked list type of atoms.
-typedef struct _latom {
-	xcb_atom_t atom;
-	struct _latom *next;
-} latom_t;
-
 struct shader_info {
 	char *key;
 	char *source;

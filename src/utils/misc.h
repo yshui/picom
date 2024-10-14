@@ -83,8 +83,8 @@ safe_isinf(double a) {
 		auto __assert_in_range_tmp attr_unused = (var);                          \
 		_Pragma("GCC diagnostic push");                                          \
 		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
-		assert(__assert_in_range_tmp >= lower);                                  \
-		assert(__assert_in_range_tmp <= upper);                                  \
+		assert(__assert_in_range_tmp >= (lower));                                \
+		assert(__assert_in_range_tmp <= (upper));                                \
 		_Pragma("GCC diagnostic pop");                                           \
 	} while (0)
 
@@ -95,7 +95,7 @@ safe_isinf(double a) {
 		auto __tmp attr_unused = (var);                                          \
 		_Pragma("GCC diagnostic push");                                          \
 		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
-		assert(__tmp >= lower);                                                  \
+		assert(__tmp >= (lower));                                                \
 		_Pragma("GCC diagnostic pop");                                           \
 	} while (0)
 

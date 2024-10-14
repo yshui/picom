@@ -14,7 +14,6 @@
 
 #include "backend/backend.h"
 #include "c2.h"
-#include "common.h"
 #include "config.h"
 #include "log.h"
 #include "options.h"

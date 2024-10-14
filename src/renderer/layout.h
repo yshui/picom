@@ -85,7 +85,7 @@ struct layout_manager;
 /// layouts, with its size chosen at creation time. Calling this will push at new layout
 /// at the end of the ring buffer, and remove the oldest layout if the buffer is full.
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
-                                  uint64_t root_image_generation, ivec2 size);
+                                  uint64_t root_pixmap_generation, ivec2 size);
 /// Get the layout `age` frames into the past. Age `0` is the most recently appended
 /// layout.
 struct layout *layout_manager_layout(struct layout_manager *lm, unsigned age);

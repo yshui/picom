@@ -237,6 +237,7 @@ struct win_script_context {
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
 };
+// NOLINTNEXTLINE(bugprone-sizeof-expression)
 static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
               "win_script_context too large");
 

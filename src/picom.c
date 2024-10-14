@@ -57,9 +57,7 @@
 #include "renderer/command_builder.h"
 #include "renderer/layout.h"
 #include "renderer/renderer.h"
-#include "utils/dynarr.h"
 #include "utils/file_watch.h"
-#include "utils/kernel.h"
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "utils/statistics.h"
@@ -1902,16 +1900,17 @@ static struct window_options win_options_from_config(const struct options *opts)
 	return ret;
 }
 
-/**
- * Initialize a session.
- *
- * @param argc number of command line arguments
- * @param argv command line arguments
- * @param dpy  the X Display
- * @param config_file the path to the config file
- * @param all_xerrors whether we should report all X errors
- * @param fork whether we will fork after initialization
- */
+// NOLINTBEGIN(readability-function-cognitive-complexity)
+
+/// Initialize a session.
+///
+/// @param argc number of command line arguments
+/// @param argv command line arguments
+/// @param dpy  the X Display
+/// @param config_file the path to the config file
+/// @param all_xerrors whether we should report all X errors
+/// @param fork whether we will fork after initialization
+///
 static session_t *session_init(int argc, char **argv, Display *dpy,
                                const char *config_file, bool all_xerrors, bool fork) {
 	static const session_t s_def = {
@@ -2402,6 +2401,8 @@ err:
 	free(ps);
 	return NULL;
 }
+
+// NOLINTEND(readability-function-cognitive-complexity)
 
 /**
  * Destroy a session.

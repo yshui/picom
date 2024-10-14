@@ -666,13 +666,7 @@ resolve_include(config_t *cfg, const char *include_dir, const char *path, const 
 	return ret;
 }
 
-/**
- * Parse a configuration file from default location.
- *
- * Returns if config is successfully parsed.
- */
-bool parse_config_libconfig(options_t *opt, const char *config_file) {
-
+bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(readability-function-cognitive-complexity)*/
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
 	    "If you encounter any problems without this feature, please feel free to "

@@ -1604,7 +1604,7 @@ void win_destroy_start(struct win *w) {
 
 	// Update state flags of a managed window
 	w->state = WSTATE_DESTROYED;
-	w->opacity = 0.0f;
+	w->opacity = 0.0F;
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->in_openclose = true;
 }
@@ -1630,7 +1630,7 @@ void unmap_win_start(struct win *w) {
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPED;
-	w->opacity = 0.0f;
+	w->opacity = 0.0F;
 }
 
 struct win_script_context win_script_context_prepare(struct session *ps, struct win *w) {
@@ -1812,13 +1812,17 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	if (trigger == ANIMATION_TRIGGER_INVALID) {
 		// No state changes, if there's a animation running, we just continue it.
 		return win_advance_animation(w, delta_t, &win_ctx);
-	} else if (w->running_animation_instance &&
-	           (w->running_animation.suppressions & (1 << trigger)) != 0) {
+	}
+
+	if (w->running_animation_instance &&
+	    (w->running_animation.suppressions & (1 << trigger)) != 0) {
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is being suppressed.",
 		          animation_trigger_names[trigger], win_id(w), w->name);
 		return win_advance_animation(w, delta_t, &win_ctx);
-	} else if (w->animation_block[trigger] > 0) {
+	}
+
+	if (w->animation_block[trigger] > 0) {
 		log_debug("Not starting animation %s for window %#010x (%s) because it "
 		          "is blocked.",
 		          animation_trigger_names[trigger], win_id(w), w->name);
@@ -1847,6 +1851,9 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			w->saved_win_image = NULL;
 		}
 		if (ps->drivers & DRIVER_NVIDIA) {
+			// NVIDIA doesn't like us grabbing the new pixmap before releasing
+			// the old one. So we copy the content of the old pixmap so we can
+			// release it.
 			if (w->win_image != NULL) {
 				w->saved_win_image = ps->backend_data->ops.new_image(
 				    ps->backend_data, BACKEND_IMAGE_FORMAT_PIXMAP,
@@ -2117,7 +2124,7 @@ void win_set_properties_stale(struct win *w, const xcb_atom_t *props, int nprops
 	// Reallocate if necessary
 	if (new_capacity > w->stale_props_capacity) {
 		w->stale_props =
-		    realloc(w->stale_props, new_capacity * sizeof(*w->stale_props));
+		    crealloc(w->stale_props, new_capacity * sizeof(*w->stale_props));
 
 		// Clear the content of the newly allocated bytes
 		memset(w->stale_props + w->stale_props_capacity, 0,

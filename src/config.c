@@ -211,12 +211,14 @@ static conv *parse_blur_kern(const char *src, const char **endptr) {
 
 	// Get matrix width and height
 	double val = 0.0;
-	if (src == (pc = parse_readnum(src, &val))) {
+	pc = parse_readnum(src, &val);
+	if (src == pc) {
 		goto err1;
 	}
 	src = pc;
 	width = (int)val;
-	if (src == (pc = parse_readnum(src, &val))) {
+	pc = parse_readnum(src, &val);
+	if (src == pc) {
 		goto err1;
 	}
 	src = pc;
@@ -247,7 +249,8 @@ static conv *parse_blur_kern(const char *src, const char **endptr) {
 			matrix->data[i] = 1;
 			continue;
 		}
-		if (src == (pc = parse_readnum(src, &val))) {
+		pc = parse_readnum(src, &val);
+		if (src == pc) {
 			goto err2;
 		}
 		src = pc;
@@ -356,7 +359,7 @@ struct conv **parse_blur_kern_lst(const char *src, int *count) {
 	*count = 0;
 	for (unsigned int i = 0;
 	     i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i) {
-		if (!strcmp(CONV_KERN_PREDEF[i].name, src)) {
+		if (strcmp(CONV_KERN_PREDEF[i].name, src) == 0) {
 			return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, count);
 		}
 	}
@@ -622,7 +625,7 @@ void *parse_window_shader_prefix(const char *src, const char **end, void *user_d
 	*end = endptr + 1;
 	return shader_source;
 }
-void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, void *) {
+void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, void * /*data*/) {
 	scoped_charp cwd = getcwd(NULL, 0);
 	return parse_window_shader_prefix(src, end, cwd);
 }

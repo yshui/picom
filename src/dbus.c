@@ -75,7 +75,7 @@ typedef uint32_t cdbus_enum_t;
 #define PICOM_WINDOW_INTERFACE "picom.Window"
 #define PICOM_COMPOSITOR_INTERFACE "picom.Compositor"
 
-static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
+static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *ud);
 static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
 
 static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data);
@@ -307,8 +307,8 @@ void cdbus_io_callback(EV_P attr_unused, ev_io *w, int revents) {
 		flags |= DBUS_WATCH_WRITABLE;
 	}
 	dbus_watch_handle(dw->dw, flags);
-	while (dbus_connection_dispatch(dw->cd->dbus_conn) != DBUS_DISPATCH_COMPLETE)
-		;
+	while (dbus_connection_dispatch(dw->cd->dbus_conn) != DBUS_DISPATCH_COMPLETE) {
+	}
 }
 
 /**

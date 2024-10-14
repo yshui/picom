@@ -19,7 +19,6 @@
 #include "common.h"
 #include "config.h"
 #include "log.h"        // XXX clean up
-#include "region.h"
 #include "wm/win.h"
 #include "x.h"
 

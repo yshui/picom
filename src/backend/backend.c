@@ -11,7 +11,6 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
-#include "renderer/layout.h"
 #include "wm/win.h"
 #include "x.h"
 
