@@ -34,10 +34,6 @@
 #include <picom/backend.h>
 #include <picom/types.h>
 
-#ifdef CONFIG_OPENGL
-#include "backend/gl/glx.h"
-#endif
-
 // X resource checker
 #ifdef DEBUG_XRC
 #include "xrescheck.h"
@@ -47,7 +43,6 @@
 #include "backend/driver.h"
 #include "config.h"
 #include "region.h"
-#include "render.h"
 #include "utils/statistics.h"
 #include "wm/defs.h"
 #include "x.h"
@@ -64,52 +59,8 @@
 // Window flags
 
 // === Types ===
-typedef struct glx_fbconfig glx_fbconfig_t;
-struct glx_session;
 struct atom;
 struct conv;
-
-#ifdef CONFIG_OPENGL
-#ifdef DEBUG_GLX_DEBUG_CONTEXT
-typedef GLXContext (*f_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig config,
-                                                   GLXContext share_context, Bool direct,
-                                                   const int *attrib_list);
-typedef void (*GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severity,
-                            GLsizei length, const GLchar *message, GLvoid *userParam);
-typedef void (*f_DebugMessageCallback)(GLDEBUGPROC, void *userParam);
-#endif
-
-typedef struct glx_prog_main {
-	/// GLSL program.
-	GLuint prog;
-	/// Location of uniform "opacity" in window GLSL program.
-	GLint unifm_opacity;
-	/// Location of uniform "invert_color" in blur GLSL program.
-	GLint unifm_invert_color;
-	/// Location of uniform "tex" in window GLSL program.
-	GLint unifm_tex;
-	/// Location of uniform "time" in window GLSL program.
-	GLint unifm_time;
-} glx_prog_main_t;
-
-#define GLX_PROG_MAIN_INIT                                                               \
-	{                                                                                \
-		.prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1,                \
-		.unifm_tex = -1, .unifm_time = -1                                        \
-	}
-
-#else
-struct glx_prog_main {};
-#endif
-
-#define PAINT_INIT                                                                       \
-	{ .pixmap = XCB_NONE, .pict = XCB_NONE }
-
-/// Linked list type of atoms.
-typedef struct _latom {
-	xcb_atom_t atom;
-	struct _latom *next;
-} latom_t;
 
 struct shader_info {
 	char *key;
@@ -117,18 +68,6 @@ struct shader_info {
 	void *backend_shader;
 	uint64_t attributes;
 	UT_hash_handle hh;
-};
-
-struct damage_ring {
-	/// Cache a xfixes region so we don't need to allocate it every time.
-	/// A workaround for yshui/picom#301
-	xcb_xfixes_region_t x_region;
-	/// The region needs to painted on next paint.
-	int cursor;
-	/// The region damaged on the last paint.
-	region_t *damages;
-	/// Number of damage regions we track
-	int count;
 };
 
 /// Structure containing all necessary data for a session.
@@ -174,10 +113,6 @@ typedef struct session {
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;
-	/// Whether the root tile is filled by us.
-	bool root_tile_fill;
-	/// Picture of the root window background.
-	paint_t root_tile_paint;
 	/// The backend data the root pixmap bound to
 	image_handle root_image;
 	/// The root pixmap generation, incremented everytime
@@ -185,23 +120,8 @@ typedef struct session {
 	uint64_t root_image_generation;
 	/// A region of the size of the screen.
 	region_t screen_reg;
-	/// Picture of root window. Destination of painting in no-DBE painting
-	/// mode.
-	xcb_render_picture_t root_picture;
-	/// A Picture acting as the painting target.
-	xcb_render_picture_t tgt_picture;
-	/// Temporary buffer to paint to before sending to display.
-	paint_t tgt_buffer;
 	/// Window ID of the window we register as a symbol.
 	xcb_window_t reg_win;
-#ifdef CONFIG_OPENGL
-	/// Pointer to GLX data.
-	struct glx_session *psglx;
-	/// Custom GLX program used for painting window.
-	// XXX should be in struct glx_session
-	glx_prog_main_t glx_prog_win;
-	struct glx_fbconfig_info argb_fbconfig;
-#endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;
 	/// Whether we are rendering the first frame after screen is redirected
@@ -246,9 +166,8 @@ typedef struct session {
 	/// to the screen that's neither included in the current render, nor on the
 	/// screen.
 	bool render_queued;
-	// TODO(yshui) remove this after we remove the legacy backends
-	/// For tracking damage regions
-	struct damage_ring damage_ring;
+	/// A X region used for various operations. Kept to avoid repeated allocation.
+	xcb_xfixes_region_t x_region;
 	// TODO(yshui) move render related fields into separate struct
 	/// Render planner
 	struct layout_manager *layout_manager;
@@ -261,20 +180,12 @@ typedef struct session {
 	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
 	long long fade_time;
-	// Cached blur convolution kernels.
-	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
 	bool quit : 1;
 	// TODO(yshui) use separate flags for different kinds of updates so we don't
 	// waste our time.
 	/// Whether there are pending updates, like window creation, etc.
 	bool pending_updates : 1;
-
-	// === Expose event related ===
-	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
-	/// This is a reuse temporary buffer for handling root expose events.
-	/// This is a dynarr.
-	rect_t *expose_rects;
 
 	struct wm *wm;
 
@@ -294,12 +205,6 @@ typedef struct session {
 	// === Software-optimization-related ===
 	/// Nanosecond offset of the first painting.
 	long paint_tm_offset;
-
-#ifdef CONFIG_VSYNC_DRM
-	// === DRM VSync related ===
-	/// File descriptor of DRI device file. Used for DRM VSync.
-	int drm_fd;
-#endif
 
 	// === X extension related ===
 	/// Event base number for X Fixes extension.
@@ -348,8 +253,6 @@ typedef struct session {
 	int xsync_event;
 	/// Error base number for X Sync extension.
 	int xsync_error;
-	/// Whether X Render convolution filter exists.
-	bool xrfilter_convolution_exists;
 
 	// === Atoms ===
 	struct atom *atoms;
@@ -358,8 +261,6 @@ typedef struct session {
 	// === DBus related ===
 	struct cdbus_data *dbus_data;
 #endif
-
-	int (*vsync_wait)(session_t *);
 } session_t;
 
 /// Enumeration for window event hints.
@@ -442,13 +343,6 @@ static inline xcb_window_t get_tgt_window(session_t *ps) {
 }
 
 /**
- * Check if current backend uses GLX.
- */
-static inline bool bkend_use_glx(session_t *ps) {
-	return BKEND_GLX == ps->o.legacy_backend || BKEND_XR_GLX_HYBRID == ps->o.legacy_backend;
-}
-
-/**
  * Determine if a window has a specific property.
  *
  * @param ps current session
@@ -482,26 +376,5 @@ static inline void wintype_arr_enable(bool arr[]) {
 
 	for (i = 0; i < NUM_WINTYPES; ++i) {
 		arr[i] = true;
-	}
-}
-
-static inline void damage_ring_advance(struct damage_ring *ring) {
-	ring->cursor--;
-	if (ring->cursor < 0) {
-		ring->cursor += ring->count;
-	}
-	pixman_region32_clear(&ring->damages[ring->cursor]);
-}
-
-static inline void damage_ring_collect(struct damage_ring *ring, region_t *all_region,
-                                       region_t *region, int buffer_age) {
-	if (buffer_age == -1 || buffer_age > ring->count) {
-		pixman_region32_copy(region, all_region);
-	} else {
-		for (int i = 0; i < buffer_age; i++) {
-			auto curr = (ring->cursor + i) % ring->count;
-			pixman_region32_union(region, region, &ring->damages[curr]);
-		}
-		pixman_region32_intersect(region, region, all_region);
 	}
 }

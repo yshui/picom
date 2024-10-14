@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
+#include "compiler.h"
+
 #ifdef CONFIG_DBUS
 
 #include <dbus/dbus.h>

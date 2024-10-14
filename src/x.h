@@ -122,6 +122,7 @@ struct x_monitors {
 };
 
 #define XCB_AWAIT_VOID(func, c, ...)                                                     \
+	/* NOLINTBEGIN(bugprone-assignment-in-if-condition) */                           \
 	({                                                                               \
 		bool __success = true;                                                   \
 		__auto_type __e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));  \
@@ -132,7 +133,7 @@ struct x_monitors {
 			__success = false;                                               \
 		}                                                                        \
 		__success;                                                               \
-	})
+	}) /* NOLINTEND(bugprone-assignment-in-if-condition) */
 
 #define XCB_AWAIT(func, c, ...)                                                          \
 	({                                                                               \
@@ -460,7 +461,7 @@ void x_update_monitors_async(struct x_connection *, struct x_monitors *);
 /// Free memory allocated for a `struct x_monitors`.
 void x_free_monitor_info(struct x_monitors *);
 
-uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);
+uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);        // NOLINT(readability-redundant-declaration)
 
 /// Ask X server to send us a notification for the next end of vblank.
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc);

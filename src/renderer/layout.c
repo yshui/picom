@@ -130,29 +130,46 @@ static void layer_init(struct layer *layer) {
 }
 
 static void layout_deinit(struct layout *layout) {
-	dynarr_free(layout->layers, layer_deinit);
+	dynarr_clear(layout->layers, layer_deinit);
 	command_builder_command_list_free(layout->commands);
-	*layout = (struct layout){};
+	layout->number_of_commands = 0;
+	layout->root_image_generation = 0;
+	layout->size = (ivec2){};
+	layout->first_layer_start = 0;
+	layout->commands = NULL;
 }
 
 struct layout_manager *layout_manager_new(unsigned max_buffer_age) {
-	struct layout_manager *planner = malloc(
-	    sizeof(struct layout_manager) + (max_buffer_age + 1) * sizeof(struct layout));
-	planner->max_buffer_age = max_buffer_age + 1;
-	planner->current = 0;
-	planner->layer_indices = NULL;
-	list_init_head(&planner->free_indices);
-	pixman_region32_init(&planner->scratch_region);
+	struct layout_manager *lm = malloc(sizeof(struct layout_manager) +
+	                                   (max_buffer_age + 1) * sizeof(struct layout));
+	lm->max_buffer_age = max_buffer_age + 1;
+	lm->current = 0;
+	lm->layer_indices = NULL;
+	list_init_head(&lm->free_indices);
+	pixman_region32_init(&lm->scratch_region);
 	for (unsigned i = 0; i <= max_buffer_age; i++) {
-		planner->layouts[i] = (struct layout){};
-		planner->layouts[i].layers = dynarr_new(struct layer, 5);
+		lm->layouts[i] = (struct layout){};
+		lm->layouts[i].layers = dynarr_new(struct layer, 5);
 	}
-	return planner;
+	return lm;
+}
+
+void layout_manager_clear(struct layout_manager *lm) {
+	for (unsigned i = 0; i < lm->max_buffer_age; i++) {
+		layout_deinit(&lm->layouts[i]);
+	}
+	struct layer_index *index, *tmp;
+	HASH_ITER(hh, lm->layer_indices, index, tmp) {
+		HASH_DEL(lm->layer_indices, index);
+		list_insert_after(&lm->free_indices, &index->free_list);
+	}
+	lm->current = 0;
 }
 
 void layout_manager_free(struct layout_manager *lm) {
 	for (unsigned i = 0; i < lm->max_buffer_age; i++) {
 		layout_deinit(&lm->layouts[i]);
+		dynarr_free(lm->layouts[i].layers, layer_deinit);
 	}
 	struct layer_index *index, *tmp;
 	HASH_ITER(hh, lm->layer_indices, index, tmp) {

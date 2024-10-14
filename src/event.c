@@ -21,7 +21,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "utils/dynarr.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"
@@ -375,7 +374,6 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	w->a.override_redirect = ce->override_redirect;
 
 	if (w->state == WSTATE_MAPPED) {
-		add_damage_from_win(ps, w);
 		ps->pending_updates |= changed;
 	}
 }
@@ -515,37 +513,16 @@ static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event
 	log_debug("Moving window %#010x (%s) to the %s", ev->window,
 	          ev_window_name(ps, ev->window), ev->place == PlaceOnTop ? "top" : "bottom");
 	wm_stack_move_to_end(ps->wm, cursor, ev->place == XCB_PLACE_ON_BOTTOM);
-
-	auto w = wm_ref_deref(cursor);
-	if (w != NULL) {
-		add_damage_from_win(ps, w);
-	}
-}
-
-static inline void expose_root(session_t *ps, const rect_t *rects, size_t nrects) {
-	region_t region;
-	pixman_region32_init_rects(&region, rects, (int)nrects);
-	add_damage(ps, &region);
-	pixman_region32_fini(&region);
 }
 
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
-	if (ev->window == ps->c.screen_info->root ||
-	    (ps->overlay && ev->window == ps->overlay)) {
-		dynarr_reserve(ps->expose_rects, ev->count + 1);
+	if (ev->window != ps->c.screen_info->root &&
+	    (ps->overlay == XCB_NONE || ev->window != ps->overlay)) {
+		return;
+	}
 
-		rect_t new_rect = {
-		    .x1 = ev->x,
-		    .y1 = ev->y,
-		    .x2 = ev->x + ev->width,
-		    .y2 = ev->y + ev->height,
-		};
-		dynarr_push(ps->expose_rects, new_rect);
-
-		if (ev->count == 0) {
-			expose_root(ps, ps->expose_rects, dynarr_len(ps->expose_rects));
-			dynarr_clear_pod(ps->expose_rects);
-		}
+	if (ev->count == 0) {
+		force_repaint(ps);
 	}
 }
 
@@ -673,12 +650,11 @@ static inline void repair_win(session_t *ps, struct win *w) {
 		log_debug("Window %#010x (%s) has been damaged the first time", win_id(w),
 		          w->name);
 	} else {
-		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
-		                                  ps->damage_ring.x_region);
+		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, ps->x_region);
 		if (!ps->o.show_all_xerrors) {
 			x_set_error_action_ignore(&ps->c, cookie);
 		}
-		x_fetch_region(&ps->c, ps->damage_ring.x_region, &parts);
+		x_fetch_region(&ps->c, ps->x_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}
@@ -693,16 +669,6 @@ static inline void repair_win(session_t *ps, struct win *w) {
 		pixman_region32_fini(&parts);
 		return;
 	}
-
-	// Remove the part in the damage area that could be ignored
-	region_t without_ignored;
-	pixman_region32_init(&without_ignored);
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
-		pixman_region32_subtract(&without_ignored, &parts, w->reg_ignore);
-	}
-
-	add_damage(ps, &without_ignored);
-	pixman_region32_fini(&without_ignored);
 
 	pixman_region32_translate(&parts, -w->g.x, -w->g.y);
 	pixman_region32_union(&w->damaged, &w->damaged, &parts);
@@ -735,20 +701,6 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	if (w == NULL || w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
 		return;
 	}
-
-	/*
-	 * Empty bounding_shape may indicated an
-	 * unmapped/destroyed window, in which case
-	 * seemingly BadRegion errors would be triggered
-	 * if we attempt to rebuild border_size
-	 */
-	// Mark the old bounding shape as damaged
-	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
-		region_t tmp = win_get_bounding_shape_global_by_val(w);
-		add_damage(ps, &tmp);
-		pixman_region32_fini(&tmp);
-	}
-	w->reg_ignore_valid = false;
 
 	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
 	ps->pending_updates = true;

@@ -1068,7 +1068,7 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 }
 
 char *script_to_c(const struct script *script, const struct script_output_info *outputs) {
-	char **buf = dynarr_new(char *, script->len * 40);
+	char **buf = dynarr_new(char *, (size_t)script->len * 40);
 	char *tmp = NULL;
 	casprintf(&tmp, "{\n"
 	                "    static const struct instruction instrs[] = {\n");
@@ -1135,15 +1135,16 @@ char *script_to_c(const struct script *script, const struct script_output_info *
 }
 
 void script_specialize(struct script *script,
-                       const struct script_specialization_context *spec, unsigned n_context) {
+                       const struct script_specialization_context *context,
+                       unsigned n_context) {
 	for (unsigned i = 0; i < script->len; i++) {
 		if (script->instrs[i].type != INST_LOAD_CTX) {
 			continue;
 		}
 		for (unsigned j = 0; j < n_context; j++) {
-			if (script->instrs[i].ctx == spec[j].offset) {
+			if (script->instrs[i].ctx == context[j].offset) {
 				script->instrs[i].type = INST_IMM;
-				script->instrs[i].imm = spec[j].value;
+				script->instrs[i].imm = context[j].value;
 				break;
 			}
 		}

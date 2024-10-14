@@ -15,8 +15,6 @@ typedef struct pixman_box32 pixman_box32_t;
 typedef pixman_region32_t region_t;
 typedef pixman_box32_t rect_t;
 
-RC_TYPE(region_t, rc_region, pixman_region32_init, pixman_region32_fini, static inline)
-
 static inline void region_free(region_t *region) {
 	if (region) {
 		pixman_region32_fini(region);
@@ -86,7 +84,8 @@ static inline rect_t *from_x_rects(int nrects, const xcb_rectangle_t *rects) {
 /**
  * Resize a region.
  */
-static inline void _resize_region(const region_t *region, region_t *output, int dx, int dy) {
+static inline void
+resize_region_inner(const region_t *region, region_t *output, int dx, int dy) {
 	if (!region || !output) {
 		return;
 	}
@@ -124,12 +123,12 @@ static inline void _resize_region(const region_t *region, region_t *output, int 
 static inline region_t resize_region(const region_t *region, int dx, int dy) {
 	region_t ret;
 	pixman_region32_init(&ret);
-	_resize_region(region, &ret, dx, dy);
+	resize_region_inner(region, &ret, dx, dy);
 	return ret;
 }
 
 static inline void resize_region_in_place(region_t *region, int dx, int dy) {
-	return _resize_region(region, region, dx, dy);
+	return resize_region_inner(region, region, dx, dy);
 }
 
 static inline rect_t region_translate_rect(rect_t rect, ivec2 origin) {

@@ -72,6 +72,7 @@ c2_condition *c2_condition_list_entry(struct list_node *list);
 /// Create a new condition list with a single condition that is always true.
 c2_condition *c2_new_true(struct list_node *list);
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define c2_condition_list_foreach(list, i)                                               \
 	for (c2_condition *i =                                                           \
 	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->next);   \
@@ -86,6 +87,7 @@ c2_condition *c2_new_true(struct list_node *list);
 	         list_is_empty((list)) ? NULL : c2_condition_list_entry((list)->next),   \
 	                  *n = c2_condition_list_next(list, i);                          \
 	     i; i = n, n = c2_condition_list_next(list, i))
+// NOLINTEND(bugprone-macro-parentheses)
 
 /**
  * Destroy a condition list.

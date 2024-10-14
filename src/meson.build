@@ -17,9 +17,7 @@ srcs = [
 		'log.c',
 		'options.c',
 		'picom.c',
-		'render.c',
 		'vblank.c',
-		'vsync.c',
 		'x.c',
 	),
 ]
@@ -90,15 +88,9 @@ if get_option('regex')
 	deps += [pcre]
 endif
 
-if get_option('vsync_drm')
-	cflags += ['-DCONFIG_VSYNC_DRM']
-	deps += [dependency('libdrm', required: true)]
-endif
-
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL']
 	deps += [dependency('epoxy', required: true)]
-	srcs += ['opengl.c']
 endif
 
 if get_option('dbus')
