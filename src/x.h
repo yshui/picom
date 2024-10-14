@@ -112,7 +112,6 @@ struct x_connection {
 	/// events. The only problem, if no events are coming, we will be stuck
 	/// indefinitely, so we have to make our own events.
 	uint32_t event_sync;
-	bool event_sync_sent;
 };
 
 /// Monitor info
@@ -473,6 +472,16 @@ void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_
 static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
+
+/// Flush all X buffers to ensure we don't sleep with outgoing messages not sent.
+///
+/// If there are requests pending replies, an event sync request will
+/// be sent if necessary. See comments on `event_sync` for more information. MUST be
+/// called before sleep to ensure we can handle replies/events in a timely manner. This
+/// function MIGHT read data from X into xcb buffer (because `xcb_flush` might read,
+/// ridiculous, I know), so `x_poll_for_event(queued = true)` MUST be called after this to
+/// drain the buffer.
+bool x_prepare_for_sleep(struct x_connection *c);
 
 /// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
 /// machinery for handling async replies. Calling `xcb_poll_for_event` directly will
