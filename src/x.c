@@ -41,21 +41,6 @@ static inline uint64_t x_widen_sequence(struct x_connection *c, uint32_t sequenc
 
 // === Error handling ===
 
-/// Discard pending error handlers.
-///
-/// We have received reply with sequence number `sequence`, which means all pending
-/// replies with sequence number strictly less than `sequence` will never be received. So
-/// discard them.
-static void x_discard_pending_errors(struct x_connection *c, uint64_t sequence) {
-	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
-		if (x_widen_sequence(c, i->sequence) >= sequence) {
-			break;
-		}
-		list_remove(&i->siblings);
-		free(i);
-	}
-}
-
 enum {
 	XSyncBadCounter = 0,
 	XSyncBadAlarm = 1,
@@ -161,45 +146,6 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
 	}
 }
 
-/// Handle X errors.
-///
-/// This function logs X errors, or aborts the program based on severity of the error.
-static void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
-	x_discard_pending_errors(c, ev->full_sequence);
-	struct pending_x_error *first_error_action = NULL;
-	if (!list_is_empty(&c->pending_x_errors)) {
-		first_error_action =
-		    list_entry(c->pending_x_errors.next, struct pending_x_error, siblings);
-	}
-	if (first_error_action != NULL && first_error_action->sequence == ev->full_sequence) {
-		if (first_error_action->action != PENDING_REPLY_ACTION_IGNORE) {
-			log_error("X error for request in %s at %s:%d: %s",
-			          first_error_action->func, first_error_action->file,
-			          first_error_action->line,
-			          x_error_code_to_string(ev->full_sequence, ev->major_code,
-			                                 ev->minor_code, ev->error_code));
-		} else {
-			log_debug("Expected X error for request in %s at %s:%d: %s",
-			          first_error_action->func, first_error_action->file,
-			          first_error_action->line,
-			          x_error_code_to_string(ev->full_sequence, ev->major_code,
-			                                 ev->minor_code, ev->error_code));
-		}
-		switch (first_error_action->action) {
-		case PENDING_REPLY_ACTION_ABORT:
-			log_fatal("An unrecoverable X error occurred, "
-			          "aborting...");
-			abort();
-		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
-		case PENDING_REPLY_ACTION_IGNORE: break;
-		}
-		return;
-	}
-	log_warn("Stray X error: %s",
-	         x_error_code_to_string(ev->full_sequence, ev->major_code, ev->minor_code,
-	                                ev->error_code));
-}
-
 struct x_generic_async_request {
 	struct x_async_request_base base;
 	enum x_error_action error_action;
@@ -242,6 +188,21 @@ static void x_generic_async_callback(struct x_connection * /*c*/,
 	}
 }
 
+void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
+                        const char *func, const char *file, int line) {
+	auto req = ccalloc(1, struct x_generic_async_request);
+	req->func = func;
+	req->file = file;
+	req->line = line;
+	req->error_action = action;
+	req->base.sequence = sequence;
+	req->base.callback = x_generic_async_callback;
+	req->base.no_reply = true;
+	x_await_request(c, &req->base);
+}
+
+static xcb_generic_event_t *x_feed_event(struct x_connection *c, xcb_generic_event_t *e);
+
 /**
  * Xlib error handler function.
  */
@@ -257,7 +218,7 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	xcb_err.major_code = ev->request_code;
 	xcb_err.minor_code = ev->minor_code;
 	xcb_err.error_code = ev->error_code;
-	x_handle_error(&ps_g->c, &xcb_err);
+	x_feed_event(&ps_g->c, (xcb_generic_event_t *)&xcb_err);
 	return 0;
 }
 
@@ -268,7 +229,6 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 void x_connection_init(struct x_connection *c, Display *dpy) {
 	c->dpy = dpy;
 	c->c = XGetXCBConnection(dpy);
-	list_init_head(&c->pending_x_errors);
 	list_init_head(&c->pending_x_requests);
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
@@ -1036,34 +996,17 @@ void x_free_monitor_info(struct x_monitors *m) {
 	m->count = 0;
 }
 
-static inline xcb_raw_generic_event_t *
-x_ingest_event(struct x_connection *c, xcb_generic_event_t *event) {
+static inline void x_ingest_event(struct x_connection *c, xcb_generic_event_t *event) {
 	if (event != NULL) {
 		assert(event->response_type != 1);
-		uint64_t seq = x_widen_sequence(c, event->full_sequence);
-		if (event->response_type != 0) {
-			// For true events, we can discard pending errors with a lower or
-			// equal sequence number. This is because only a reply or an error
-			// increments the sequence number.
-			seq += 1;
-		}
-		x_discard_pending_errors(c, seq);
 		c->last_sequence = event->full_sequence;
 	}
-	return (xcb_raw_generic_event_t *)event;
 }
 
 static const xcb_raw_generic_event_t no_reply_success = {.response_type = 1};
 
-/// Read the X connection once, and return the first event or unchecked error. If any
-/// replies to pending X requests are read, they will be processed and callbacks will be
-/// called.
-static xcb_raw_generic_event_t *x_poll_for_event_impl(struct x_connection *c, bool queued) {
-	auto e = queued ? xcb_poll_for_queued_event(c->c) : xcb_poll_for_event(c->c);
-	if (e == NULL) {
-		return NULL;
-	}
-
+/// Complete all pending async requests that "come before" the given event.
+static void x_complete_async_requests(struct x_connection *c, xcb_generic_event_t *e) {
 	auto seq = x_widen_sequence(c, e->full_sequence);
 	list_foreach_safe(struct x_async_request_base, i, &c->pending_x_requests, siblings) {
 		auto head_seq = x_widen_sequence(c, i->sequence);
@@ -1095,7 +1038,36 @@ static xcb_raw_generic_event_t *x_poll_for_event_impl(struct x_connection *c, bo
 			free((void *)reply_or_error);
 		}
 	}
-	return x_ingest_event(c, e);
+}
+
+static xcb_generic_event_t *x_feed_event(struct x_connection *c, xcb_generic_event_t *e) {
+	x_complete_async_requests(c, e);
+	x_ingest_event(c, e);
+
+	if (e->response_type != 0) {
+		return e;
+	}
+
+	// We received an error, handle it and return NULL so we try again to see if there
+	// are real events.
+	struct x_async_request_base *head = NULL;
+	xcb_generic_error_t *error = (xcb_generic_error_t *)e;
+	if (!list_is_empty(&c->pending_x_requests)) {
+		head = list_entry(c->pending_x_requests.next, struct x_async_request_base,
+		                  siblings);
+	}
+	if (head != NULL && error->full_sequence == head->sequence) {
+		// This is an error response to the head of pending requests.
+		c->latest_completed_request = head->sequence;
+		list_remove(&head->siblings);
+		head->callback(c, head, (xcb_raw_generic_event_t *)e);
+	} else {
+		log_warn("Stray X error: %s",
+		         x_error_code_to_string(error->full_sequence, error->major_code,
+		                                error->minor_code, error->error_code));
+	}
+	free(e);
+	return NULL;
 }
 
 bool x_prepare_for_sleep(struct x_connection *c) {
@@ -1105,16 +1077,9 @@ bool x_prepare_for_sleep(struct x_connection *c) {
 		if (c->event_sync != last->sequence) {
 			// Send an async request that is guaranteed to error, see comments
 			// on `event_sync` for why.
-			auto req = ccalloc(1, struct x_generic_async_request);
-			req->func = __func__;
-			req->file = __FILE__;
-			req->line = __LINE__;
-			req->error_action = PENDING_REPLY_ACTION_IGNORE;
-			req->base.sequence = xcb_free_pixmap(c->c, XCB_NONE).sequence;
-			req->base.callback = x_generic_async_callback,
-			req->base.no_reply = true;
-			c->event_sync = req->base.sequence;
-			x_await_request(c, &req->base);
+			auto cookie = xcb_free_pixmap(c->c, XCB_NONE);
+			c->event_sync = cookie.sequence;
+			x_set_error_action_ignore(c, cookie);
 			log_trace("Sending event sync request to catch response to "
 			          "pending request, last sequence: %u, event sync: %u",
 			          last->sequence, c->event_sync);
@@ -1126,31 +1091,13 @@ bool x_prepare_for_sleep(struct x_connection *c) {
 }
 
 xcb_generic_event_t *x_poll_for_event(struct x_connection *c, bool queued) {
-	xcb_raw_generic_event_t *ret = NULL;
-	while (true) {
-		ret = x_poll_for_event_impl(c, queued);
-
-		if (ret == NULL || ret->response_type != 0) {
+	xcb_generic_event_t *ret = NULL;
+	while (ret == NULL) {
+		auto e = queued ? xcb_poll_for_queued_event(c->c) : xcb_poll_for_event(c->c);
+		if (e == NULL) {
 			break;
 		}
-
-		// We received an error, handle it and try again to see if there are real
-		// events.
-		struct x_async_request_base *head = NULL;
-		xcb_generic_error_t *error = (xcb_generic_error_t *)ret;
-		if (!list_is_empty(&c->pending_x_requests)) {
-			head = list_entry(c->pending_x_requests.next,
-			                  struct x_async_request_base, siblings);
-		}
-		if (head != NULL && error->full_sequence == head->sequence) {
-			// This is an error response to the head of pending requests.
-			c->latest_completed_request = head->sequence;
-			list_remove(&head->siblings);
-			head->callback(c, head, ret);
-		} else {
-			x_handle_error(c, error);
-		}
-		free(ret);
+		ret = x_feed_event(c, e);
 	}
-	return (xcb_generic_event_t *)ret;
+	return ret;
 }

@@ -51,19 +51,6 @@ enum x_error_action {
 	PENDING_REPLY_ACTION_DEBUG_ABORT,
 };
 
-/// Represents a X request we sent that might error.
-struct pending_x_error {
-	uint32_t sequence;
-	enum x_error_action action;
-
-	// Debug information, where in the code was this request sent.
-	const char *func;
-	const char *file;
-	int line;
-
-	struct list_node siblings;
-};
-
 struct x_connection {
 	// Public fields
 	// These are part of the public ABI, changing these
@@ -76,8 +63,6 @@ struct x_connection {
 	int screen;
 
 	// Private fields
-	/// The error handling list.
-	struct list_node pending_x_errors;
 	/// The list of pending async requests that we have
 	/// yet to receive a reply for.
 	struct list_node pending_x_requests;
@@ -174,18 +159,8 @@ static inline uint32_t x_new_id(struct x_connection *c) {
 /// @param c X connection
 /// @param sequence sequence number of the X request to set error handler for
 /// @param action action to take when error occurs
-static inline void
-x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
-                   const char *func, const char *file, int line) {
-	auto i = cmalloc(struct pending_x_error);
-
-	i->sequence = sequence;
-	i->action = action;
-	i->func = func;
-	i->file = file;
-	i->line = line;
-	list_insert_before(&c->pending_x_errors, &i->siblings);
-}
+void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
+                        const char *func, const char *file, int line);
 
 /// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_IGNORE`
 #define x_set_error_action_ignore(c, cookie)                                             \
@@ -223,10 +198,6 @@ struct x_async_request_base {
 };
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
-	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
-		list_remove(&i->siblings);
-		free(i);
-	}
 	list_foreach_safe(struct x_async_request_base, i, &c->pending_x_requests, siblings) {
 		list_remove(&i->siblings);
 		i->callback(c, i, NULL);
