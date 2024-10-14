@@ -1,5 +1,21 @@
 # Unreleased
 
+## Deprecations
+
+* `--legacy-backends` is now deprecated. Setting it no longer has an effect.
+* `resize-damage`, `glx-no-stencil` and `glx-no-rebind-pixmap` are now deprecated, because they only works on legacy backends.
+* Removed several options that have been deprecated for a long time, this includes:
+  - `glx-fshader-win`
+  - `glx-swap-method`
+  - `glx-use-gpushader4`
+  - `menu-opacity`
+  - `vsync-aggressive`
+  - `respect-prop-shadow`
+  - `sw-opti`
+  - `clear-shadow`
+
+# 12.3 (2024-Oct-14)
+
 ## Improvements
 
 * Extend workaround for missing hardware accelerated convolution to more drivers (#1349)
