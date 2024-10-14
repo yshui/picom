@@ -218,7 +218,7 @@ static void x_generic_async_callback(struct x_connection * /*c*/,
 	auto line = req->line;
 	free(req);
 
-	if (reply_or_error->response_type != 0) {
+	if (reply_or_error == NULL || reply_or_error->response_type != 0) {
 		return;
 	}
 
@@ -1111,7 +1111,7 @@ bool x_prepare_for_sleep(struct x_connection *c) {
 			req->line = __LINE__;
 			req->error_action = PENDING_REPLY_ACTION_IGNORE;
 			req->base.sequence = xcb_free_pixmap(c->c, XCB_NONE).sequence;
-			req->base.callback = x_generic_async_callback,
+			req->base.callback = x_generic_async_callback;
 			req->base.no_reply = true;
 			c->event_sync = req->base.sequence;
 			x_await_request(c, &req->base);
