@@ -164,7 +164,7 @@ static void x_generic_async_callback(struct x_connection * /*c*/,
 	auto line = req->line;
 	free(req);
 
-	if (reply_or_error->response_type != 0) {
+	if (reply_or_error == NULL || reply_or_error->response_type != 0) {
 		return;
 	}
 
