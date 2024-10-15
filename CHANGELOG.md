@@ -14,6 +14,12 @@
   - `sw-opti`
   - `clear-shadow`
 
+# 12.x (unreleased)
+
+## Build fixes
+
+* Fix build on arm32 (#1355)
+
 # 12.3 (2024-Oct-14)
 
 ## Improvements

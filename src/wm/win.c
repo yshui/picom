@@ -450,13 +450,9 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
+	// Save the old window options, so if shadow changes from true to false,
+	// we can release the shadow.
 	auto old_options = win_options(w);
-	region_t extents;
-	pixman_region32_init(&extents);
-	// Save old window extents. If window goes from having a shadow to not
-	// having a shadow, we need to add the old, having-shadow extents to
-	// damage.
-	win_extents(w, &extents);
 
 	// Factor change flags could be set by previous stages, so must be handled
 	// last
@@ -466,15 +462,10 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 	}
 
 	auto new_options = win_options(w);
-	if (win_options_no_damage(&old_options, &new_options)) {
-		pixman_region32_fini(&extents);
-		return;
-	}
 
 	if (new_options.shadow != old_options.shadow && !new_options.shadow) {
 		win_release_shadow(ps->backend_data, w);
 	}
-	pixman_region32_fini(&extents);
 }
 
 void win_process_image_flags(session_t *ps, struct win *w) {

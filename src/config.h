@@ -199,9 +199,6 @@ struct window_maybe_options {
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 };
 
-// Make sure `window_options` has no implicit padding.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic error "-Wpadded"
 /// Like `window_maybe_options`, but all fields are guaranteed to be set.
 struct window_options {
 	double opacity;
@@ -220,14 +217,6 @@ struct window_options {
 
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 };
-#pragma GCC diagnostic pop
-
-static inline bool
-win_options_no_damage(const struct window_options *a, const struct window_options *b) {
-	// Animation changing does not immediately change how window is rendered, so
-	// they don't cause damage.
-	return memcmp(a, b, offsetof(struct window_options, animations)) == 0;
-}
 
 /// Structure representing all options.
 typedef struct options {
