@@ -172,49 +172,6 @@ enum backend_image_capability {
 	BACKEND_IMAGE_CAP_DST = 1 << 1,
 };
 
-enum backend_command_op {
-	BACKEND_COMMAND_INVALID = -1,
-	BACKEND_COMMAND_BLIT,
-	BACKEND_COMMAND_BLUR,
-	BACKEND_COMMAND_COPY_AREA,
-};
-
-/// Symbolic references used as render command source images. The actual `image_handle`
-/// will later be filled in by the renderer using this symbolic reference.
-enum backend_command_source {
-	BACKEND_COMMAND_SOURCE_WINDOW,
-	BACKEND_COMMAND_SOURCE_WINDOW_SAVED,
-	BACKEND_COMMAND_SOURCE_SHADOW,
-	BACKEND_COMMAND_SOURCE_BACKGROUND,
-};
-
-// TODO(yshui) might need better names
-
-struct backend_command {
-	enum backend_command_op op;
-	ivec2 origin;
-	enum backend_command_source source;
-	union {
-		struct {
-			struct backend_blit_args blit;
-			/// Region of the screen that will be covered by this blit
-			/// operations, in screen coordinates.
-			region_t opaque_region;
-		};
-		struct {
-			image_handle source_image;
-			const region_t *region;
-		} copy_area;
-		struct backend_blur_args blur;
-	};
-	/// Source mask for the operation.
-	/// If the `source_mask` of the operation's argument points to this, a mask image
-	/// will be created for the operation for the renderer.
-	struct backend_mask_image source_mask;
-	/// Target mask for the operation.
-	region_t target_mask;
-};
-
 enum backend_quirk {
 	/// Backend cannot do blur quickly. The compositor will avoid using blur to create
 	/// shadows on this backend

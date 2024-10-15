@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include "backend/backend.h"
 #include "common.h"
 #include "layout.h"
 #include "utils/dynarr.h"
