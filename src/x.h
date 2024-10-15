@@ -51,19 +51,6 @@ enum x_error_action {
 	PENDING_REPLY_ACTION_DEBUG_ABORT,
 };
 
-/// Represents a X request we sent that might error.
-struct pending_x_error {
-	uint32_t sequence;
-	enum x_error_action action;
-
-	// Debug information, where in the code was this request sent.
-	const char *func;
-	const char *file;
-	int line;
-
-	struct list_node siblings;
-};
-
 struct x_connection {
 	// Public fields
 	// These are part of the public ABI, changing these
@@ -76,17 +63,9 @@ struct x_connection {
 	int screen;
 
 	// Private fields
-	/// The error handling list.
-	struct list_node pending_x_errors;
 	/// The list of pending async requests that we have
 	/// yet to receive a reply for.
 	struct list_node pending_x_requests;
-	/// The first request that has a reply.
-	struct x_async_request_base *first_request_with_reply;
-	/// A message, either an event or a reply, that is currently being held, because
-	/// there are messages of the opposite type with lower sequence numbers that we
-	/// need to return first.
-	xcb_raw_generic_event_t *message_on_hold;
 	/// Previous handler of X errors
 	XErrorHandler previous_xerror_handler;
 	/// Information about the default screen
@@ -95,8 +74,29 @@ struct x_connection {
 	/// `x_poll_for_message`. Used for sequence number overflow
 	/// detection.
 	uint32_t last_sequence;
-	/// The sequence number of `message_on_hold`
-	uint32_t sequence_on_hold;
+	/// The sequence number of the last completed request.
+	uint32_t latest_completed_request;
+	/// The sequence number of the "event sync" request we sent. This is
+	/// a request we sent that is guaranteed to error, so we can be sure
+	/// `xcb_poll_for_event` will return something. This is akin to `xcb_aux_sync`,
+	/// except that guarantees a reply, this one guarantees an error.
+	///
+	/// # Why do we need this?
+	///
+	/// To understand why we need this, first notice we need a way to fetch replies
+	/// that are already in xcb's buffer, without reading from the X connection.
+	/// Because otherwise we can't going into sleep while being confident that there
+	/// is no buffered events we haven't handled.
+	///
+	/// For events or unchecked errors (we will refer to both of them as events
+	/// without distinction), this is possible with `xcb_poll_for_queued_event`, but
+	/// for replies, there is no `xcb_poll_for_queued_reply` (ridiculous, if you
+	/// ask me). Luckily, if there is a reply already in the buffer,
+	/// `xcb_poll_for_reply` will return it without reading from X. And we can deduce
+	/// whether a reply is already received from the sequence number of received
+	/// events. The only problem, if no events are coming, we will be stuck
+	/// indefinitely, so we have to make our own events.
+	uint32_t event_sync;
 };
 
 /// Monitor info
@@ -106,6 +106,7 @@ struct x_monitors {
 };
 
 #define XCB_AWAIT_VOID(func, c, ...)                                                     \
+	/* NOLINTBEGIN(bugprone-assignment-in-if-condition) */                           \
 	({                                                                               \
 		bool __success = true;                                                   \
 		__auto_type __e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));  \
@@ -116,7 +117,7 @@ struct x_monitors {
 			__success = false;                                               \
 		}                                                                        \
 		__success;                                                               \
-	})
+	}) /* NOLINTEND(bugprone-assignment-in-if-condition) */
 
 #define XCB_AWAIT(func, c, ...)                                                          \
 	({                                                                               \
@@ -158,18 +159,8 @@ static inline uint32_t x_new_id(struct x_connection *c) {
 /// @param c X connection
 /// @param sequence sequence number of the X request to set error handler for
 /// @param action action to take when error occurs
-static inline void
-x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
-                   const char *func, const char *file, int line) {
-	auto i = cmalloc(struct pending_x_error);
-
-	i->sequence = sequence;
-	i->action = action;
-	i->func = func;
-	i->file = file;
-	i->line = line;
-	list_insert_before(&c->pending_x_errors, &i->siblings);
-}
+void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_action action,
+                        const char *func, const char *file, int line);
 
 /// Convenience wrapper for x_set_error_action with action `PENDING_REPLY_ACTION_IGNORE`
 #define x_set_error_action_ignore(c, cookie)                                             \
@@ -207,10 +198,6 @@ struct x_async_request_base {
 };
 
 static inline void attr_unused free_x_connection(struct x_connection *c) {
-	list_foreach_safe(struct pending_x_error, i, &c->pending_x_errors, siblings) {
-		list_remove(&i->siblings);
-		free(i);
-	}
 	list_foreach_safe(struct x_async_request_base, i, &c->pending_x_requests, siblings) {
 		list_remove(&i->siblings);
 		i->callback(c, i, NULL);
@@ -444,7 +431,7 @@ void x_update_monitors_async(struct x_connection *, struct x_monitors *);
 /// Free memory allocated for a `struct x_monitors`.
 void x_free_monitor_info(struct x_monitors *);
 
-uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);
+uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);        // NOLINT(readability-redundant-declaration)
 
 /// Ask X server to send us a notification for the next end of vblank.
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc);
@@ -455,17 +442,23 @@ void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_
 /// `req` store information about the request, including the callback. The callback is
 /// responsible for freeing `req`.
 static inline void x_await_request(struct x_connection *c, struct x_async_request_base *req) {
-	if (c->first_request_with_reply == NULL && !req->no_reply) {
-		c->first_request_with_reply = req;
-	}
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
+
+/// Flush all X buffers to ensure we don't sleep with outgoing messages not sent.
+///
+/// If there are requests pending replies, an event sync request will
+/// be sent if necessary. See comments on `event_sync` for more information. MUST be
+/// called before sleep to ensure we can handle replies/events in a timely manner. This
+/// function MIGHT read data from X into xcb buffer (because `xcb_flush` might read,
+/// ridiculous, I know), so `x_poll_for_event(queued = true)` MUST be called after this to
+/// drain the buffer.
+bool x_prepare_for_sleep(struct x_connection *c);
 
 /// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
 /// machinery for handling async replies. Calling `xcb_poll_for_event` directly will
 /// cause replies to async requests to be lost, so that should never be called.
-xcb_generic_event_t *x_poll_for_event(struct x_connection *c);
-
-static inline bool x_has_pending_requests(struct x_connection *c) {
-	return !list_is_empty(&c->pending_x_requests);
-}
+///
+/// @param[out] queued if true, only return events that are already in the queue, don't
+///                    attempt to read from the X connection.
+xcb_generic_event_t *x_poll_for_event(struct x_connection *c, bool queued);

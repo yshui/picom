@@ -14,7 +14,6 @@
 
 #include "backend/backend.h"
 #include "c2.h"
-#include "common.h"
 #include "config.h"
 #include "log.h"
 #include "options.h"
@@ -141,6 +140,15 @@ static bool store_string(const struct picom_option * /*opt*/, const struct picom
 	char **dst = (char **)(output + arg->offset);
 	free(*dst);
 	*dst = strdup(arg_str);
+	return true;
+}
+
+static bool
+store_fixed_string(const struct picom_option * /*opt*/, const struct picom_arg *arg,
+                   const char * /*arg_str*/, void *output) {
+	char **dst = (char **)(output + arg->offset);
+	free(*dst);
+	*dst = strdup((const char *)arg->user_data);
 	return true;
 }
 
@@ -275,6 +283,11 @@ static bool say_deprecated(const struct picom_option *opt, const struct picom_ar
 		.offset = OFFSET(member), .handler = store_fixed_enum,                   \
 		.user_data = (int[]){value},                                             \
 	}
+#define FIXED_STR(member, str)                                                           \
+	no_argument, {                                                                   \
+		.offset = OFFSET(member), .handler = store_fixed_string,                 \
+		.user_data = (void *)(str)                                               \
+	}
 
 #define SAY_DEPRECATED_(error_, msg, has_arg, ...)                                        \
 	has_arg, {                                                                        \
@@ -308,22 +321,6 @@ store_shadow_color(const struct picom_option * /*opt*/, const struct picom_arg *
 }
 
 static bool
-handle_menu_opacity(const struct picom_option * /*opt*/, const struct picom_arg * /*arg*/,
-                    const char *arg_str, void *output) {
-	struct options *opt = (struct options *)output;
-	const char *endptr = NULL;
-	double tmp = max2(0.0, min2(1.0, strtod_simple(arg_str, &endptr)));
-	if (!endptr || *endptr != '\0') {
-		return false;
-	}
-	opt->wintype_option_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
-	opt->wintype_option_mask[WINTYPE_POPUP_MENU].opacity = true;
-	opt->wintype_option[WINTYPE_POPUP_MENU].opacity = tmp;
-	opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = tmp;
-	return true;
-}
-
-static bool
 store_blur_kern(const struct picom_option * /*opt*/, const struct picom_arg * /*arg*/,
                 const char *arg_str, void *output) {
 	struct options *opt = (struct options *)output;
@@ -347,9 +344,8 @@ store_benchmark_wid(const struct picom_option * /*opt*/, const struct picom_arg 
 static bool store_backend(const struct picom_option * /*opt*/, const struct picom_arg * /*arg*/,
                           const char *arg_str, void *output) {
 	struct options *opt = (struct options *)output;
-	opt->legacy_backend = parse_backend(arg_str);
 	opt->backend = backend_find(arg_str);
-	if (opt->legacy_backend == NUM_BKEND && opt->backend == NULL) {
+	if (opt->backend == NULL) {
 		log_error("Invalid backend: %s", arg_str);
 		return false;
 	}
@@ -435,8 +431,8 @@ static const struct picom_option picom_options[] = {
                                                                              "windows. Affects --shadow-ignore-shaped, --unredir-if-possible, and "
                                                                              "possibly others. You need to turn this on manually if you want to match "
                                                                              "against rounded_corners in conditions."},
-    [298] = {"glx-no-rebind-pixmap"     , ENABLE(glx_no_rebind_pixmap)},
-    [291] = {"glx-no-stencil"           , ENABLE(glx_no_stencil)},
+    [298] = {"glx-no-rebind-pixmap"     , WARN_DEPRECATED(ENABLE(glx_no_rebind_pixmap))},
+    [291] = {"glx-no-stencil"           , WARN_DEPRECATED(ENABLE(glx_no_stencil))},
     [325] = {"no-vsync"                 , DISABLE(vsync)                   , "Disable VSync"},
     [327] = {"transparent-clipping"     , ENABLE(transparent_clipping)     , "Make transparent windows clip other windows like non-transparent windows do, "
                                                                              "instead of blending on top of them"},
@@ -444,7 +440,7 @@ static const struct picom_option picom_options[] = {
                                                                              "rendered screen. Reduces banding artifacts, but might cause performance "
                                                                              "degradation. Only works with OpenGL."},
     [341] = {"no-frame-pacing"          , DISABLE(frame_pacing)            , "Disable frame pacing. This might increase the latency."},
-    [733] = {"legacy-backends"          , ENABLE(use_legacy_backends)          , "Use deprecated version of the backends."},
+    [733] = {"legacy-backends"          , WARN_DEPRECATED(ENABLE(use_legacy_backends)), NULL},
     [800] = {"monitor-repaint"          , ENABLE(monitor_repaint)          , "Highlight the updated area of the screen. For debugging."},
     [801] = {"diagnostics"              , ENABLE(print_diagnostics)        , "Print diagnostic information"},
     [802] = {"debug-mode"               , ENABLE(debug_mode)               , "Render into a separate window, and don't take over the screen. Useful when "
@@ -471,10 +467,9 @@ static const struct picom_option picom_options[] = {
     [283] = {"blur-background"             , FIXED(blur_method, BLUR_METHOD_KERNEL)         , "Blur background of semi-transparent / ARGB windows. May impact performance"},
     [290] = {"backend"                     , DO(store_backend)                              , "Backend. Possible values are: " BACKENDS},
     [293] = {"benchmark"                   , INTEGER(benchmark, 0, INT_MAX)                 , "Benchmark mode. Repeatedly paint until reaching the specified cycles."},
-    [302] = {"resize-damage"               , INTEGER(resize_damage, INT_MIN, INT_MAX)},       // only used by legacy backends
+    [302] = {"resize-damage"               , WARN_DEPRECATED(INTEGER(resize_damage, INT_MIN, INT_MAX))},       // only used by legacy backends
     [309] = {"unredir-if-possible-delay"   , INTEGER(unredir_if_possible_delay, 0, INT_MAX) , "Delay before unredirecting the window, in milliseconds. Defaults to 0."},
     [310] = {"write-pid-path"              , NAMED_STRING(write_pid_path, "PATH")           , "Write process ID to a file."},
-    [317] = {"glx-fshader-win"             , STRING(glx_fshader_win_str)},
     [322] = {"log-file"                    , STRING(logpath)                                , "Path to the log file."},
     [326] = {"max-brightness"              , FLOAT(max_brightness, 0, 1)                    , "Dims windows which average brightness is above this threshold. Requires "
                                                                                               "--no-use-damage. (default: 1.0, meaning no dimming)"},
@@ -483,8 +478,8 @@ static const struct picom_option picom_options[] = {
     [331] = {"blur-strength"               , INTEGER(blur_strength, 0, INT_MAX)             , "The strength level of the 'dual_kawase' blur method."},
     [333] = {"corner-radius"               , INTEGER(corner_radius, 0, INT_MAX)             , "Sets the radius of rounded window corners. When > 0, the compositor will "
                                                                                               "round the corners of windows. (defaults to 0)."},
-    [336] = {"window-shader-fg"            , NAMED_STRING(window_shader_fg, "PATH")         , "Specify GLSL fragment shader path for rendering window contents. Does not"
-                                                                                              " work when `--legacy-backends` is enabled. See man page for more details."},
+    [336] = {"window-shader-fg"            , NAMED_STRING(window_shader_fg, "PATH")         , "Specify GLSL fragment shader path for rendering window contents. See man "
+                                                                                              "page for more details."},
     [294] = {"benchmark-wid"               , DO(store_benchmark_wid)                        , "Specify window ID to repaint in benchmark mode. If omitted or is 0, the whole"
                                                                                               " screen is repainted."},
     [301] = {"blur-kern"                   , DO(store_blur_kern)                            , "Specify the blur convolution kernel, see man page for more details"},
@@ -513,8 +508,7 @@ static const struct picom_option picom_options[] = {
     [337] = {"window-shader-fg-rule"       , NAMED_RULES(window_shader_fg_rules, "PATH", WINDOW_SHADER_RULE),
              "Specify GLSL fragment shader path for rendering window contents using patterns. Pattern should be "
              "in the format of SHADER_PATH:PATTERN, similar to --opacity-rule. SHADER_PATH can be \"default\", "
-             "in which case the default shader will be used. Does not work when --legacy-backends is enabled. See "
-             "man page for more details"},
+             "in which case the default shader will be used. See man page for more details"},
     [340] = {"corner-radius-rules"         , NUMERIC_RULES(corner_radius_rules, "RADIUS", 0, INT_MAX),
              "Window rules for specific rounded corner radii."},
 
@@ -523,34 +517,14 @@ static const struct picom_option picom_options[] = {
              "Log level, possible values are: trace, debug, info, warn, error"},
     [328] = {"blur-method", PARSE_WITH(parse_blur_method, BLUR_METHOD_INVALID, blur_method),
              "The algorithm used for background bluring. Available choices are: 'none' to disable, 'gaussian', "
-	     "'box' or 'kernel' for custom convolution blur with --blur-kern. Note: 'gaussian' and 'box' is not "
-	     "supported by --legacy-backends."},
+	     "'box' or 'kernel' for custom convolution blur with --blur-kern."},
 
     // Deprecated options
-    [274] = {"sw-opti"            , ERROR_DEPRECATED(no_argument)},
-    [275] = {"vsync-aggressive"   , ERROR_DEPRECATED(no_argument)},
-    [277] = {"respect-prop-shadow", ERROR_DEPRECATED(no_argument)},
-    [303] = {"glx-use-gpushader4" , ERROR_DEPRECATED(no_argument)},
     [269] = {"refresh-rate"       , WARN_DEPRECATED(IGNORE(required_argument))},
-
-    // Deprecated options with messages
-#define CLEAR_SHADOW_DEPRECATION                                                         \
-	"Shadows are automatically cleared now. If you want to prevent shadow from "     \
-	"being cleared under certain types of windows, you can use the \"full-shadow\" " \
-	"window type option."
-
-#define MENU_OPACITY_DEPRECATION                                                         \
-	"Use the wintype option `opacity` of `popup_menu` and `dropdown_menu` instead."
-
-    ['m'] = {"menu-opacity"        , SAY_DEPRECATED(false, MENU_OPACITY_DEPRECATION               , DO(handle_menu_opacity))},
-    ['z'] = {"clear-shadow"        , SAY_DEPRECATED(false, CLEAR_SHADOW_DEPRECATION               , IGNORE(no_argument))},
     [272] = {"xinerama-shadow-crop", SAY_DEPRECATED(false, "Use --crop-shadow-to-monitor instead.", ENABLE(crop_shadow_to_monitor))},
     [287] = {"logpath"             , SAY_DEPRECATED(false, "Use --log-file instead."              , STRING(logpath))},
-    [289] = {"opengl"              , SAY_DEPRECATED(false, "Use --backend=glx instead."           , FIXED(legacy_backend, BKEND_GLX))},
+    [289] = {"opengl"              , SAY_DEPRECATED(false, "Use --backend=glx instead."           , FIXED_STR(backend, "glx"))},
     [305] = {"shadow-exclude-reg"  , SAY_DEPRECATED(true,  "Use --clip-shadow-above instead."     , REJECT(required_argument))},
-
-#undef CLEAR_SHADOW_DEPRECATION
-#undef MENU_OPACITY_DEPRECATION
 };
 // clang-format on
 
@@ -811,108 +785,24 @@ static void script_ptr_deinit(struct script **ptr) {
 }
 
 static bool sanitize_options(struct options *opt) {
-	if (opt->use_legacy_backends) {
-		if (opt->legacy_backend == BKEND_EGL) {
-			log_error("The egl backend is not supported with "
-			          "--legacy-backends");
-			return false;
+	if (opt->backend == NULL) {
+		log_error("Backend not specified. You must choose one "
+		          "explicitly. Valid ones are: ");
+		for (auto i = backend_iter(); i; i = backend_iter_next(i)) {
+			log_error("\t%s", backend_name(i));
 		}
+		return false;
+	}
 
-		if (opt->monitor_repaint && opt->legacy_backend != BKEND_XRENDER) {
-			log_warn("For legacy backends, --monitor-repaint is only "
-			         "implemented for "
-			         "xrender.");
-		}
+	if (opt->glx_fshader_win_str) {
+		log_warn("--glx-fshader-win has been replaced by "
+		         "\"--window-shader-fg\" for the new backends.");
+	}
 
-		if (opt->debug_mode) {
-			log_error("Debug mode does not work with the legacy backends.");
-			return false;
-		}
-
-		if (opt->transparent_clipping) {
-			log_error("Transparent clipping does not work with the legacy "
-			          "backends");
-			return false;
-		}
-
-		if (opt->max_brightness < 1.0) {
-			log_warn("--max-brightness is not supported by the legacy "
-			         "backends. Falling back to 1.0.");
-			opt->max_brightness = 1.0;
-		}
-
-		if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE) {
-			log_warn("Dual-kawase blur is not implemented by the legacy "
-			         "backends.");
-			opt->blur_method = BLUR_METHOD_NONE;
-		}
-
-		if (dynarr_len(opt->all_scripts) > 0) {
-			log_warn("Custom animations are not supported by the legacy "
-			         "backends. Disabling animations.");
-			for (size_t i = 0; i < ARR_SIZE(opt->animations); i++) {
-				opt->animations[i].script = NULL;
-			}
-			dynarr_clear(opt->all_scripts, script_ptr_deinit);
-		}
-
-		if (opt->window_shader_fg || !list_is_empty(&opt->window_shader_fg_rules)) {
-			log_warn("The new shader interface is not supported by the "
-			         "legacy glx backend. You may want to use "
-			         "--glx-fshader-win instead.");
-			opt->window_shader_fg = NULL;
-			c2_list_free(&opt->window_shader_fg_rules, free);
-		}
-
-		if (opt->legacy_backend == BKEND_XRENDER) {
-			bool has_neg = false;
-			for (int i = 0; i < opt->blur_kernel_count; i++) {
-				auto kernel = opt->blur_kerns[i];
-				for (int j = 0; j < kernel->h * kernel->w; j++) {
-					if (kernel->data[j] < 0) {
-						has_neg = true;
-						break;
-					}
-				}
-				if (has_neg) {
-					log_warn("A convolution kernel with negative "
-					         "values may not work properly under X "
-					         "Render backend.");
-					break;
-				}
-			}
-		}
-	} else {
-		if (opt->backend == NULL) {
-			auto valid_backend_name =
-			    backend_find(BACKEND_STRS[opt->legacy_backend]) != NULL;
-			if (!valid_backend_name) {
-				log_error("Backend \"%s\" is only available as part of "
-				          "the legacy backends.",
-				          BACKEND_STRS[opt->legacy_backend]);
-			} else {
-				// If the backend name is a valid new backend, then
-				// it must not have been specified by the user, because
-				// otherwise opt->backend wouldn't be NULL.
-				log_error("Backend not specified. You must choose one "
-				          "explicitly. Valid ones are: ");
-				for (auto i = backend_iter(); i; i = backend_iter_next(i)) {
-					log_error("\t%s", backend_name(i));
-				}
-			}
-			return false;
-		}
-
-		if (opt->glx_fshader_win_str) {
-			log_warn("--glx-fshader-win has been replaced by "
-			         "\"--window-shader-fg\" for the new backends.");
-		}
-
-		if (opt->max_brightness < 1.0 && opt->use_damage) {
-			log_warn("--max-brightness requires --no-use-damage. "
-			         "Falling back to 1.0.");
-			opt->max_brightness = 1.0;
-		}
+	if (opt->max_brightness < 1.0 && opt->use_damage) {
+		log_warn("--max-brightness requires --no-use-damage. "
+		         "Falling back to 1.0.");
+		opt->max_brightness = 1.0;
 	}
 
 	if (opt->write_pid_path && *opt->write_pid_path != '/') {

@@ -39,10 +39,6 @@
 #include <picom/types.h>
 #include <test.h>
 
-#ifdef CONFIG_OPENGL
-#include "opengl.h"
-#endif
-
 #include "api_internal.h"
 #include "atom.h"
 #include "backend/backend.h"
@@ -58,13 +54,10 @@
 #include "options.h"
 #include "picom.h"
 #include "region.h"
-#include "render.h"
 #include "renderer/command_builder.h"
 #include "renderer/layout.h"
 #include "renderer/renderer.h"
-#include "utils/dynarr.h"
 #include "utils/file_watch.h"
-#include "utils/kernel.h"
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "utils/statistics.h"
@@ -426,22 +419,6 @@ static inline void get_screen_region(session_t *ps, region_t *res) {
 	pixman_region32_init_rects(res, &b, 1);
 }
 
-void add_damage(session_t *ps, const region_t *damage) {
-	// Ignore damage when screen isn't redirected
-	if (!ps->redirected) {
-		return;
-	}
-
-	if (!damage || ps->damage_ring.count <= 0) {
-		return;
-	}
-	log_trace("Adding damage: ");
-	dump_region(damage);
-
-	auto cursor = &ps->damage_ring.damages[ps->damage_ring.cursor];
-	pixman_region32_union(cursor, cursor, (region_t *)damage);
-}
-
 // === Windows ===
 
 /**
@@ -480,7 +457,6 @@ static void destroy_backend(session_t *ps) {
 			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 			win_release_images(ps->backend_data, w);
 		}
-		free_paint(ps, &w->paint);
 
 		if (w->state == WSTATE_DESTROYED) {
 			win_destroy_finish(ps, w);
@@ -556,94 +532,77 @@ static bool initialize_blur(session_t *ps) {
 
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
-	if (!ps->o.use_legacy_backends) {
-		assert(!ps->backend_data);
-		// Reinitialize win_data
-		ps->backend_data =
-		    backend_init(ps->o.backend, ps, session_get_target_window(ps));
-		api_backend_plugins_invoke(backend_name(ps->o.backend), ps->backend_data);
-		if (!ps->backend_data) {
-			log_fatal("Failed to initialize backend, aborting...");
-			quit(ps);
-			return false;
-		}
+	assert(!ps->backend_data);
+	// Reinitialize win_data
+	ps->backend_data = backend_init(ps->o.backend, ps, session_get_target_window(ps));
+	api_backend_plugins_invoke(backend_name(ps->o.backend), ps->backend_data);
+	if (!ps->backend_data) {
+		log_fatal("Failed to initialize backend, aborting...");
+		quit(ps);
+		return false;
+	}
 
-		if (!initialize_blur(ps)) {
-			log_fatal("Failed to prepare for background blur, aborting...");
-			goto err;
-		}
+	if (!initialize_blur(ps)) {
+		log_fatal("Failed to prepare for background blur, aborting...");
+		goto err;
+	}
 
-		// Create shaders
-		if (!ps->backend_data->ops.create_shader && ps->shaders) {
-			log_warn("Shaders are not supported by selected backend %s, "
-			         "they will be ignored",
-			         backend_name(ps->o.backend));
-		} else {
-			HASH_ITER2(ps->shaders, shader) {
-				assert(shader->backend_shader == NULL);
-				shader->backend_shader = ps->backend_data->ops.create_shader(
-				    ps->backend_data, shader->source);
-				if (shader->backend_shader == NULL) {
-					log_warn("Failed to create shader for shader "
-					         "file %s, this shader will not be used",
-					         shader->key);
-				} else {
-					shader->attributes = 0;
-					if (ps->backend_data->ops.get_shader_attributes) {
-						shader->attributes =
-						    ps->backend_data->ops.get_shader_attributes(
-						        ps->backend_data,
-						        shader->backend_shader);
-					}
-					log_debug("Shader %s has attributes %" PRIu64,
-					          shader->key, shader->attributes);
+	// Create shaders
+	if (!ps->backend_data->ops.create_shader && ps->shaders) {
+		log_warn("Shaders are not supported by selected backend %s, "
+		         "they will be ignored",
+		         backend_name(ps->o.backend));
+	} else {
+		HASH_ITER2(ps->shaders, shader) {
+			assert(shader->backend_shader == NULL);
+			shader->backend_shader = ps->backend_data->ops.create_shader(
+			    ps->backend_data, shader->source);
+			if (shader->backend_shader == NULL) {
+				log_warn("Failed to create shader for shader "
+				         "file %s, this shader will not be used",
+				         shader->key);
+			} else {
+				shader->attributes = 0;
+				if (ps->backend_data->ops.get_shader_attributes) {
+					shader->attributes =
+					    ps->backend_data->ops.get_shader_attributes(
+					        ps->backend_data, shader->backend_shader);
 				}
+				log_debug("Shader %s has attributes %" PRIu64,
+				          shader->key, shader->attributes);
 			}
-		}
-
-		wm_stack_foreach(ps->wm, cursor) {
-			auto w = wm_ref_deref(cursor);
-			if (w != NULL) {
-				assert(w->state != WSTATE_DESTROYED);
-				// We need to reacquire image
-				log_debug("Marking window %#010x (%s) for update after "
-				          "redirection",
-				          win_id(w), w->name);
-				win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
-				ps->pending_updates = true;
-			}
-		}
-		ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
-		                            (struct color){.alpha = ps->o.shadow_opacity,
-		                                           .red = ps->o.shadow_red,
-		                                           .green = ps->o.shadow_green,
-		                                           .blue = ps->o.shadow_blue},
-		                            ps->o.dithered_present);
-		if (!ps->renderer) {
-			log_fatal("Failed to create renderer, aborting...");
-			goto err;
 		}
 	}
 
-	// The old backends binds pixmap lazily, nothing to do here
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL) {
+			assert(w->state != WSTATE_DESTROYED);
+			// We need to reacquire image
+			log_debug("Marking window %#010x (%s) for update after "
+			          "redirection",
+			          win_id(w), w->name);
+			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
+			ps->pending_updates = true;
+		}
+	}
+	ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
+	                            (struct color){.alpha = ps->o.shadow_opacity,
+	                                           .red = ps->o.shadow_red,
+	                                           .green = ps->o.shadow_green,
+	                                           .blue = ps->o.shadow_blue},
+	                            ps->o.dithered_present);
+	if (!ps->renderer) {
+		log_fatal("Failed to create renderer, aborting...");
+		goto err;
+	}
+
 	return true;
 err:
 	ps->backend_data->ops.deinit(ps->backend_data);
 	ps->backend_data = NULL;
 	quit(ps);
 	return false;
-}
-
-static inline void invalidate_reg_ignore(session_t *ps) {
-	// Invalidate reg_ignore from the top
-	wm_stack_foreach(ps->wm, cursor) {
-		auto top_w = wm_ref_deref(cursor);
-		if (top_w != NULL) {
-			rc_region_unref(&top_w->reg_ignore);
-			top_w->reg_ignore_valid = false;
-			break;
-		}
-	}
 }
 
 /// Handle configure event of the root window
@@ -657,23 +616,14 @@ void configure_root(session_t *ps) {
 	}
 
 	log_info("Root configuration changed, new geometry: %dx%d", r->width, r->height);
-	bool has_root_change = false;
 	if (ps->redirected) {
 		// On root window changes
-		if (!ps->o.use_legacy_backends) {
-			assert(ps->backend_data);
-			has_root_change = ps->backend_data->ops.root_change != NULL;
-		} else {
-			// Old backend can handle root change
-			has_root_change = true;
-		}
-
-		if (!has_root_change) {
+		BUG_ON_NULL(ps->backend_data);
+		if (ps->backend_data->ops.root_change == NULL) {
 			// deinit/reinit backend and free up resources if the backend
 			// cannot handle root change
 			destroy_backend(ps);
 		}
-		free_paint(ps, &ps->tgt_buffer);
 	}
 
 	ps->root_width = r->width;
@@ -681,7 +631,6 @@ void configure_root(session_t *ps) {
 	free(r);
 
 	rebuild_screen_reg(ps);
-	invalidate_reg_ignore(ps);
 
 	// Whether a window is fullscreen depends on the new screen
 	// size. So we need to refresh the fullscreen state of all
@@ -693,39 +642,28 @@ void configure_root(session_t *ps) {
 		}
 	}
 
-	if (ps->redirected) {
-		for (int i = 0; i < ps->damage_ring.count; i++) {
-			pixman_region32_clear(&ps->damage_ring.damages[i]);
-		}
-		ps->damage_ring.cursor = ps->damage_ring.count - 1;
-#ifdef CONFIG_OPENGL
-		// GLX root change callback
-		if (BKEND_GLX == ps->o.legacy_backend && ps->o.use_legacy_backends) {
-			glx_on_root_change(ps);
-		}
-#endif
-		if (has_root_change) {
-			if (ps->backend_data != NULL) {
-				ps->backend_data->ops.root_change(ps->backend_data, ps);
-			}
-			// Old backend's root_change is not a specific function
-		} else {
-			if (!initialize_backend(ps)) {
-				log_fatal("Failed to re-initialize backend after root "
-				          "change, aborting...");
-				ps->quit = true;
-				/* TODO(yshui) only event handlers should request
-				 * ev_break, otherwise it's too hard to keep track of what
-				 * can break the event loop */
-				ev_break(ps->loop, EVBREAK_ALL);
-				return;
-			}
-
-			// Re-acquire the root pixmap.
-			root_damaged(ps);
-		}
-		force_repaint(ps);
+	if (!ps->redirected) {
+		return;
 	}
+
+	if (ps->backend_data != NULL) {
+		ps->backend_data->ops.root_change(ps->backend_data, ps);
+	} else {
+		if (!initialize_backend(ps)) {
+			log_fatal("Failed to re-initialize backend after root "
+			          "change, aborting...");
+			ps->quit = true;
+			/* TODO(yshui) only event handlers should request
+			 * ev_break, otherwise it's too hard to keep track of what
+			 * can break the event loop */
+			ev_break(ps->loop, EVBREAK_ALL);
+			return;
+		}
+
+		// Re-acquire the root pixmap.
+		root_damaged(ps);
+	}
+	force_repaint(ps);
 }
 
 /**
@@ -749,19 +687,8 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			continue;
 		}
 
-		const winmode_t mode_old = w->mode;
-		const bool was_painted = w->to_paint;
-
 		if (w->running_animation_instance != NULL) {
 			*animation = true;
-		}
-
-		// Add window to damaged area if its opacity changes
-		// If was_painted == false, and to_paint is also false, we don't care
-		// If was_painted == false, but to_paint is true, damage will be added in
-		// the loop below
-		if (was_painted && w->running_animation_instance != NULL) {
-			add_damage_from_win(ps, w);
 		}
 
 		if (win_has_frame(w)) {
@@ -772,21 +699,13 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 
 		// Update window mode
 		w->mode = win_calc_mode(w);
-
-		// Destroy all reg_ignore above when frame opaque state changes on
-		// SOLID mode
-		if (was_painted && w->mode != mode_old) {
-			w->reg_ignore_valid = false;
-		}
 	}
 
-	// Opacity will not change, from now on.
-	rc_region_t *last_reg_ignore = rc_region_new();
+	// Opacity will not change, from this point onwards.
 
 	bool unredir_possible = false;
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
-	bool reg_ignore_valid = true;
 	wm_stack_foreach_safe(ps->wm, cursor, next_cursor) {
 		__label__ skip_window;
 		auto w = wm_ref_deref(cursor);
@@ -796,7 +715,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
-		const bool was_painted = w->to_paint;
 		const double window_opacity = win_animatable_get(w, WIN_SCRIPT_OPACITY);
 		const double blur_opacity = win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
 		auto window_options = win_options(w);
@@ -805,13 +723,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			HASH_FIND_STR(ps->shaders, window_options.shader, fg_shader);
 		}
 		if (fg_shader != NULL && fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
-			add_damage_from_win(ps, w);
 			*animation = true;
-		}
-
-		// Destroy reg_ignore if some window above us invalidated it
-		if (!reg_ignore_valid) {
-			rc_region_unref(&w->reg_ignore);
 		}
 
 		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
@@ -855,13 +767,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
 		// w->paint_excluded);
 
-		// Add window to damaged area if its painting status changes
-		// or opacity changes
-		if (to_paint != was_painted) {
-			w->reg_ignore_valid = false;
-			add_damage_from_win(ps, w);
-		}
-
 		// to_paint will never change after this point
 		if (!to_paint) {
 			log_trace("|- will not be painted");
@@ -870,33 +775,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 
 		log_trace("|- will be painted");
 		log_verbose("Window %#010x (%s) will be painted", win_id(w), w->name);
-
-		// Generate ignore region for painting to reduce GPU load
-		if (!w->reg_ignore) {
-			w->reg_ignore = rc_region_ref(last_reg_ignore);
-		}
-
-		// If the window is solid, or we enabled clipping for transparent windows,
-		// we add the window region to the ignored region
-		// Otherwise last_reg_ignore shouldn't change
-		if ((w->mode != WMODE_TRANS && !ps->o.force_win_blend) ||
-		    window_options.transparent_clipping) {
-			// w->mode == WMODE_SOLID or WMODE_FRAME_TRANS
-			region_t *tmp = rc_region_new();
-			if (w->mode == WMODE_SOLID) {
-				*tmp =
-				    win_get_bounding_shape_global_without_corners_by_val(w);
-			} else {
-				// w->mode == WMODE_FRAME_TRANS
-				win_get_region_noframe_local_without_corners(w, tmp);
-				pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
-				pixman_region32_translate(tmp, w->g.x, w->g.y);
-			}
-
-			pixman_region32_union(tmp, tmp, last_reg_ignore);
-			rc_region_unref(&last_reg_ignore);
-			last_reg_ignore = tmp;
-		}
 
 		// (Un)redirect screen
 		// We could definitely unredirect the screen when there's no window to
@@ -931,9 +809,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		}
 
 	skip_window:
-		reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
-		w->reg_ignore_valid = true;
-
 		if (w->state == WSTATE_DESTROYED && w->running_animation_instance == NULL) {
 			// the window should be destroyed because it was destroyed
 			// by X server and now its animations are finished
@@ -946,8 +821,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			w->to_paint = to_paint;
 		}
 	}
-
-	rc_region_unref(&last_reg_ignore);
 
 	// If possible, unredirect all windows and stop painting
 	if (ps->o.redirected_force != UNSET) {
@@ -985,10 +858,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 }
 
 void root_damaged(session_t *ps) {
-	if (ps->root_tile_paint.pixmap) {
-		free_root_tile(ps);
-	}
-
 	if (!ps->redirected) {
 		return;
 	}
@@ -1043,13 +912,14 @@ void root_damaged(session_t *ps) {
 	force_repaint(ps);
 }
 
-/**
- * Force a full-screen repaint.
- */
+/// Force a full-screen repaint.
 void force_repaint(session_t *ps) {
-	assert(pixman_region32_not_empty(&ps->screen_reg));
+	// `layout_manager` might be NULL if the screen is not redirected, if a render is
+	// started in this case it will always be a full-screen render.
+	if (ps->layout_manager != NULL) {
+		layout_manager_clear(ps->layout_manager);
+	}
 	queue_redraw(ps);
-	add_damage(ps, &ps->screen_reg);
 }
 
 /**
@@ -1288,10 +1158,9 @@ uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
 		// take over the screen.
-		assert(!ps->o.use_legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (!ps->o.use_legacy_backends && !backend_can_present(ps->o.backend)) {
+	if (!backend_can_present(ps->o.backend)) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -1328,25 +1197,12 @@ static bool redirect_start(session_t *ps) {
 		return false;
 	}
 
-	if (!ps->o.use_legacy_backends) {
-		assert(ps->backend_data);
-		ps->damage_ring.count =
-		    ps->backend_data->ops.max_buffer_age(ps->backend_data);
-		ps->layout_manager = layout_manager_new((unsigned)ps->damage_ring.count);
-	} else {
-		ps->damage_ring.count = maximum_buffer_age(ps);
-	}
-	ps->damage_ring.damages = ccalloc(ps->damage_ring.count, region_t);
-	ps->damage_ring.cursor = ps->damage_ring.count - 1;
-
-	for (int i = 0; i < ps->damage_ring.count; i++) {
-		pixman_region32_init(&ps->damage_ring.damages[i]);
-	}
+	assert(ps->backend_data);
+	auto damage_count = ps->backend_data->ops.max_buffer_age(ps->backend_data);
+	ps->layout_manager = layout_manager_new((unsigned)damage_count);
 
 	ps->frame_pacing = ps->o.frame_pacing && ps->o.vsync;
-	if ((ps->o.use_legacy_backends || ps->o.benchmark ||
-	     !ps->backend_data->ops.last_render_time) &&
-	    ps->frame_pacing) {
+	if ((ps->o.benchmark || !ps->backend_data->ops.last_render_time) && ps->frame_pacing) {
 		// Disable frame pacing if we are using a legacy backend or if we are in
 		// benchmark mode, or if the backend doesn't report render time
 		log_info("Disabling frame pacing.");
@@ -1410,18 +1266,11 @@ static void unredirect(session_t *ps) {
 	xcb_composite_unredirect_subwindows(ps->c.c, ps->c.screen_info->root,
 	                                    session_redirection_mode(ps));
 	// Unmap overlay window
-	if (ps->overlay != XCB_NONE) {
+	if (ps->overlay != XCB_NONE &&
+	    session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL) {
 		xcb_unmap_window(ps->c.c, ps->overlay);
 	}
 
-	// Free the damage ring
-	for (int i = 0; i < ps->damage_ring.count; ++i) {
-		pixman_region32_fini(&ps->damage_ring.damages[i]);
-	}
-	ps->damage_ring.count = 0;
-	free(ps->damage_ring.damages);
-	ps->damage_ring.cursor = 0;
-	ps->damage_ring.damages = NULL;
 	if (ps->layout_manager) {
 		layout_manager_free(ps->layout_manager);
 		ps->layout_manager = NULL;
@@ -1448,41 +1297,46 @@ static void unredirect(session_t *ps) {
 /// keeps an internal queue of events, so we have to be 100% sure no events are
 /// left in that queue before we go to sleep.
 static void handle_x_events(struct session *ps) {
-	bool wm_was_consistent = wm_is_consistent(ps->wm);
+	uint32_t latest_completed = ps->c.latest_completed_request;
+	while (true) {
+		if (!x_prepare_for_sleep(&ps->c)) {
+			log_fatal("X connection broke.");
+			exit(1);
+		}
 
-	if (ps->vblank_scheduler) {
-		vblank_handle_x_events(ps->vblank_scheduler);
+		// If we send any new requests, we should loop again to flush them. There
+		// is no direct way to do this from xcb. So if we called `ev_handle`, or
+		// if any pending requests were completed, we conservatively loop again.
+		bool needs_flush = false;
+		if (ps->vblank_scheduler) {
+			vblank_handle_x_events(ps->vblank_scheduler);
+		}
+
+		xcb_generic_event_t *ev;
+		while ((ev = x_poll_for_event(&ps->c, true))) {
+			ev_handle(ps, (xcb_generic_event_t *)ev);
+			needs_flush = true;
+			free(ev);
+		};
+
+		if (ps->c.latest_completed_request != latest_completed) {
+			needs_flush = true;
+			latest_completed = ps->c.latest_completed_request;
+		}
+
+		if (!needs_flush) {
+			break;
+		}
 	}
 
-	// Flush because if we go into sleep when there is still requests in the
-	// outgoing buffer, they will not be sent for an indefinite amount of
-	// time. Use XFlush here too, we might still use some Xlib functions
-	// because OpenGL.
-	//
-	// Also note, after we have flushed here, we won't flush again in this
-	// function before going into sleep. This is because `xcb_flush`/`XFlush`
-	// may _read_ more events from the server (yes, this is ridiculous, I
-	// know). And we can't have that, see the comments above this function.
-	//
-	// This means if functions called ev_handle need to send some events,
-	// they need to carefully make sure those events are flushed, one way or
-	// another.
-	XFlush(ps->c.dpy);
-	xcb_flush(ps->c.c);
-
-	xcb_generic_event_t *ev;
-	while ((ev = x_poll_for_event(&ps->c))) {
-		ev_handle(ps, (xcb_generic_event_t *)ev);
-		free(ev);
-	};
 	int err = xcb_connection_has_error(ps->c.c);
 	if (err) {
 		log_fatal("X11 server connection broke (error %d)", err);
 		exit(1);
 	}
 
-	if (wm_is_consistent(ps->wm) != wm_was_consistent && !wm_was_consistent) {
-		log_debug("Window tree has just become consistent, queueing redraw.");
+	if (wm_has_tree_changes(ps->wm)) {
+		log_debug("Window tree changed, queueing redraw.");
 		ps->pending_updates = true;
 		queue_redraw(ps);
 	}
@@ -1593,7 +1447,7 @@ static void handle_new_windows(session_t *ps) {
 		case WM_TREE_CHANGE_TOPLEVEL_KILLED:
 			w = wm_ref_deref(wm_change.toplevel);
 			if (w != NULL) {
-				win_destroy_start(ps, w);
+				win_destroy_start(w);
 			} else {
 				// This window is not managed, no point keeping the zombie
 				// around.
@@ -1616,7 +1470,7 @@ static void handle_new_windows(session_t *ps) {
 			}
 			ev_update_focused(ps);
 			break;
-		case WM_TREE_CHANGE_TOPLEVEL_RESTACKED: invalidate_reg_ignore(ps); break;
+		case WM_TREE_CHANGE_TOPLEVEL_RESTACKED: break;
 		default: unreachable();
 		}
 	}
@@ -1780,8 +1634,13 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			w = wm_ref_toplevel_of(ps->wm, w);
 
 			auto win = w == NULL ? NULL : wm_ref_deref(w);
-			if (win != NULL) {
-				add_damage_from_win(ps, win);
+			if (win == NULL) {
+				region_t tmp;
+				pixman_region32_init(&tmp);
+				win_extents(win, &tmp);
+				pixman_region32_translate(&tmp, -win->g.x, -win->g.y);
+				pixman_region32_union(&win->damaged, &win->damaged, &tmp);
+				pixman_region32_fini(&tmp);
 			} else {
 				force_repaint(ps);
 			}
@@ -1827,71 +1686,65 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		static int paint = 0;
 
 		log_verbose("Render start, frame %d", paint);
-		if (!ps->o.use_legacy_backends) {
-			uint64_t after_damage_us = 0;
-			now = get_time_timespec();
-			auto render_start_us =
-			    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
-			if (ps->backend_data->ops.device_status &&
-			    ps->backend_data->ops.device_status(ps->backend_data) !=
-			        DEVICE_STATUS_NORMAL) {
-				log_error("Device reset detected");
-				// Wait for reset to complete
-				// Although ideally the backend should return
-				// DEVICE_STATUS_NORMAL after a reset is completed, it's
-				// not always possible.
-				//
-				// According to ARB_robustness (emphasis mine):
-				//
-				//     "If a reset status other than NO_ERROR is returned
-				//     and subsequent calls return NO_ERROR, the context
-				//     reset was encountered and completed. If a reset
-				//     status is repeatedly returned, the context **may**
-				//     be in the process of resetting."
-				//
-				//  Which means it may also not be in the process of
-				//  resetting. For example on AMDGPU devices, Mesa OpenGL
-				//  always return CONTEXT_RESET after a reset has started,
-				//  completed or not.
-				//
-				//  So here we blindly wait 5 seconds and hope ourselves
-				//  best of the luck.
-				sleep(5);
-				log_info("Resetting picom after device reset");
-				reset_enable(ps->loop, NULL, 0);
-				return;
+		uint64_t after_damage_us = 0;
+		now = get_time_timespec();
+		auto render_start_us =
+		    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+		if (ps->backend_data->ops.device_status &&
+		    ps->backend_data->ops.device_status(ps->backend_data) !=
+		        DEVICE_STATUS_NORMAL) {
+			log_error("Device reset detected");
+			// Wait for reset to complete
+			// Although ideally the backend should return
+			// DEVICE_STATUS_NORMAL after a reset is completed, it's
+			// not always possible.
+			//
+			// According to ARB_robustness (emphasis mine):
+			//
+			//     "If a reset status other than NO_ERROR is returned
+			//     and subsequent calls return NO_ERROR, the context
+			//     reset was encountered and completed. If a reset
+			//     status is repeatedly returned, the context **may**
+			//     be in the process of resetting."
+			//
+			//  Which means it may also not be in the process of
+			//  resetting. For example on AMDGPU devices, Mesa OpenGL
+			//  always return CONTEXT_RESET after a reset has started,
+			//  completed or not.
+			//
+			//  So here we blindly wait 5 seconds and hope ourselves
+			//  best of the luck.
+			sleep(5);
+			log_info("Resetting picom after device reset");
+			reset_enable(ps->loop, NULL, 0);
+			return;
+		}
+		layout_manager_append_layout(
+		    ps->layout_manager, ps->wm, ps->root_image_generation,
+		    (ivec2){.width = ps->root_width, .height = ps->root_height});
+		bool succeeded = renderer_render(
+		    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
+		    ps->command_builder, ps->backend_blur_context, render_start_us,
+		    ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
+		    ps->o.force_win_blend, ps->o.blur_background_frame,
+		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
+		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->shaders,
+		    &after_damage_us);
+		if (!succeeded) {
+			log_fatal("Render failure");
+			abort();
+		}
+		did_render = true;
+		if (ps->next_render > 0) {
+			log_verbose("Render schedule deviation: %ld us (%s) %" PRIu64
+			            " %" PRIu64,
+			            labs((long)after_damage_us - (long)ps->next_render),
+			            after_damage_us < ps->next_render ? "early" : "late",
+			            after_damage_us, ps->next_render);
+			ps->last_schedule_delay = 0;
+			if (after_damage_us > ps->next_render) {
+				ps->last_schedule_delay = after_damage_us - ps->next_render;
 			}
-			layout_manager_append_layout(
-			    ps->layout_manager, ps->wm, ps->root_image_generation,
-			    (ivec2){.width = ps->root_width, .height = ps->root_height});
-			bool succeeded = renderer_render(
-			    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
-			    ps->command_builder, ps->backend_blur_context, render_start_us,
-			    ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
-			    ps->o.force_win_blend, ps->o.blur_background_frame,
-			    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-			    ps->shaders, &after_damage_us);
-			if (!succeeded) {
-				log_fatal("Render failure");
-				abort();
-			}
-			did_render = true;
-			if (ps->next_render > 0) {
-				log_verbose(
-				    "Render schedule deviation: %ld us (%s) %" PRIu64
-				    " %" PRIu64,
-				    labs((long)after_damage_us - (long)ps->next_render),
-				    after_damage_us < ps->next_render ? "early" : "late",
-				    after_damage_us, ps->next_render);
-				ps->last_schedule_delay = 0;
-				if (after_damage_us > ps->next_render) {
-					ps->last_schedule_delay =
-					    after_damage_us - ps->next_render;
-				}
-			}
-		} else {
-			paint_all(ps, bottom);
 		}
 		log_verbose("Render end");
 
@@ -1948,9 +1801,18 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 	}
 }
 
-static void x_event_callback(EV_P attr_unused, ev_io * /*w*/, int revents attr_unused) {
-	// This function is intentionally left blank, events are actually read and handled
-	// in the ev_prepare listener.
+static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
+	// Make sure the X connection is being read from at least once every time
+	// we woke up because of readability of the X connection.
+	//
+	// `handle_x_events` is not guaranteed to read from X, so if we don't do
+	// it here we could dead lock.
+	struct session *ps = session_ptr(w, xiow);
+	auto ev = x_poll_for_event(&ps->c, false);
+	if (ev) {
+		ev_handle(ps, (xcb_generic_event_t *)ev);
+		free(ev);
+	}
 }
 
 static void config_file_change_cb(void *_ps) {
@@ -2030,16 +1892,17 @@ static struct window_options win_options_from_config(const struct options *opts)
 	return ret;
 }
 
-/**
- * Initialize a session.
- *
- * @param argc number of command line arguments
- * @param argv command line arguments
- * @param dpy  the X Display
- * @param config_file the path to the config file
- * @param all_xerrors whether we should report all X errors
- * @param fork whether we will fork after initialization
- */
+// NOLINTBEGIN(readability-function-cognitive-complexity)
+
+/// Initialize a session.
+///
+/// @param argc number of command line arguments
+/// @param argv command line arguments
+/// @param dpy  the X Display
+/// @param config_file the path to the config file
+/// @param all_xerrors whether we should report all X errors
+/// @param fork whether we will fork after initialization
+///
 static session_t *session_init(int argc, char **argv, Display *dpy,
                                const char *config_file, bool all_xerrors, bool fork) {
 	static const session_t s_def = {
@@ -2048,20 +1911,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .root_width = 0,
 	    // .root_damage = XCB_NONE,
 	    .overlay = XCB_NONE,
-	    .root_tile_fill = false,
-	    .root_tile_paint = PAINT_INIT,
-	    .tgt_picture = XCB_NONE,
-	    .tgt_buffer = PAINT_INIT,
 	    .reg_win = XCB_NONE,
-#ifdef CONFIG_OPENGL
-	    .glx_prog_win = GLX_PROG_MAIN_INIT,
-#endif
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
 	    .quit = false,
-
-	    .expose_rects = NULL,
 
 	    .black_picture = XCB_NONE,
 	    .cshadow_picture = XCB_NONE,
@@ -2069,10 +1923,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .shadow_context = NULL,
 
 	    .last_msc = 0,
-
-#ifdef CONFIG_VSYNC_DRM
-	    .drm_fd = -1,
-#endif
 
 	    .xfixes_event = 0,
 	    .xfixes_error = 0,
@@ -2092,7 +1942,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .glx_exists = false,
 	    .glx_event = 0,
 	    .glx_error = 0,
-	    .xrfilter_convolution_exists = false,
 
 #ifdef CONFIG_DBUS
 	    .dbus_data = NULL,
@@ -2187,9 +2036,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                                    XCB_XFIXES_MINOR_VERSION)
 	                               .sequence);
 
-	ps->damage_ring.x_region = x_new_id(&ps->c);
-	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c.c, ps->damage_ring.x_region,
-	                    0, NULL)) {
+	ps->x_region = x_new_id(&ps->c);
+	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c.c, ps->x_region, 0, NULL)) {
 		log_fatal("Failed to create a XFixes region");
 		goto err;
 	}
@@ -2283,12 +2131,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			log_debug("Shader %s:", shader->key);
 			log_debug("%s", shader->source);
 		}
-	}
-
-	if (ps->o.use_legacy_backends) {
-		ps->shadow_context =
-		    (void *)gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
-		sum_kernel_preprocess((conv *)ps->shadow_context);
 	}
 
 	// Query X Shape
@@ -2405,37 +2247,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	if (bkend_use_glx(ps) && ps->o.use_legacy_backends) {
-		auto gl_logger = gl_string_marker_logger_new();
-		if (gl_logger) {
-			log_info("Enabling gl string marker");
-			log_add_target_tls(gl_logger);
-		}
-	}
-
 	// Monitor screen changes if vsync_sw is enabled and we are using
 	// an auto-detected refresh rate, or when X RandR features are enabled
 	if (ps->randr_exists) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 		x_update_monitors_async(&ps->c, &ps->monitors);
-	}
-
-	{
-		xcb_render_create_picture_value_list_t pa = {
-		    .subwindowmode = IncludeInferiors,
-		};
-
-		ps->root_picture = x_create_picture_with_visual_and_pixmap(
-		    &ps->c, ps->c.screen_info->root_visual, ps->c.screen_info->root,
-		    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-		if (ps->overlay != XCB_NONE) {
-			ps->tgt_picture = x_create_picture_with_visual_and_pixmap(
-			    &ps->c, ps->c.screen_info->root_visual, ps->overlay,
-			    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-		} else {
-			ps->tgt_picture = ps->root_picture;
-		}
 	}
 
 	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->c.dpy), EV_READ);
@@ -2487,7 +2304,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	wm_import_start(ps->wm, &ps->c, ps->atoms, ps->c.screen_info->root, NULL);
 
 	ps->command_builder = command_builder_new();
-	ps->expose_rects = dynarr_new(rect_t, 0);
 
 	// wm_complete_import will set event masks on the root window, but its event
 	// mask is missing things we need, so we need to set it again.
@@ -2515,12 +2331,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	free(r);
 	rebuild_screen_reg(ps);
 
-	// Initialize filters, must be preceded by OpenGL context creation
-	if (ps->o.use_legacy_backends && !init_render(ps)) {
-		log_fatal("Failed to initialize the backend");
-		exit(1);
-	}
-
 	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL && compositor_running) {
 		// Don't take the overlay when there is another compositor
 		// running, so we don't disrupt it.
@@ -2539,12 +2349,26 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		// We are here if we don't really function as a compositor, so we are not
 		// taking over the screen, and we don't need to register as a compositor
 
+		// We still need to know what the overlay window is, so we won't be
+		// confused when we get events for the overlay window. Since
+		// CompositeGetOverlayWindow also maps the overlay, we need to immediately
+		// release it.
+		auto get_overlay =
+		    xcb_composite_get_overlay_window(ps->c.c, ps->c.screen_info->root);
+		XCB_AWAIT_VOID(xcb_composite_release_overlay_window, ps->c.c,
+		               ps->c.screen_info->root);
+		auto overlay_reply =
+		    xcb_composite_get_overlay_window_reply(ps->c.c, get_overlay, NULL);
+		if (overlay_reply) {
+			ps->overlay = overlay_reply->overlay_win;
+			free(overlay_reply);
+		}
+
 		// If we are in debug mode, we need to create a window for rendering if
 		// the backend supports presenting.
 
 		// The old backends doesn't have a automatic redirection mode
 		log_info("The compositor is started in automatic redirection mode.");
-		assert(!ps->o.use_legacy_backends);
 
 		if (backend_can_present(ps->o.backend)) {
 			// If the backend has `present`, we couldn't be in automatic
@@ -2569,6 +2393,8 @@ err:
 	free(ps);
 	return NULL;
 }
+
+// NOLINTEND(readability-function-cognitive-complexity)
 
 /**
  * Destroy a session.
@@ -2614,21 +2440,7 @@ static void session_destroy(session_t *ps) {
 	options_destroy(&ps->o);
 	c2_state_free(ps->c2_state);
 
-	// Free tgt_{buffer,picture} and root_picture
-	if (ps->tgt_buffer.pict == ps->tgt_picture) {
-		ps->tgt_buffer.pict = XCB_NONE;
-	}
-
-	if (ps->tgt_picture != ps->root_picture) {
-		x_free_picture(&ps->c, ps->tgt_picture);
-	}
-	x_free_picture(&ps->c, ps->root_picture);
-	ps->tgt_picture = ps->root_picture = XCB_NONE;
-
-	free_paint(ps, &ps->tgt_buffer);
-
 	pixman_region32_fini(&ps->screen_reg);
-	dynarr_free_pod(ps->expose_rects);
 
 	x_free_monitor_info(&ps->monitors);
 
@@ -2645,16 +2457,8 @@ static void session_destroy(session_t *ps) {
 		free(shader);
 	}
 
-#ifdef CONFIG_VSYNC_DRM
-	// Close file opened for DRM VSync
-	if (ps->drm_fd >= 0) {
-		close(ps->drm_fd);
-		ps->drm_fd = -1;
-	}
-#endif
-
 	// Release overlay window
-	if (ps->overlay) {
+	if (ps->overlay && session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL) {
 		xcb_composite_release_overlay_window(ps->c.c, ps->overlay);
 		ps->overlay = XCB_NONE;
 	}
@@ -2675,31 +2479,17 @@ static void session_destroy(session_t *ps) {
 		ps->debug_window = XCB_NONE;
 	}
 
-	if (ps->damage_ring.x_region != XCB_NONE) {
-		xcb_xfixes_destroy_region(ps->c.c, ps->damage_ring.x_region);
-		ps->damage_ring.x_region = XCB_NONE;
+	if (ps->x_region != XCB_NONE) {
+		xcb_xfixes_destroy_region(ps->c.c, ps->x_region);
+		ps->x_region = XCB_NONE;
 	}
 
-	if (!ps->o.use_legacy_backends) {
-		// backend is deinitialized in unredirect()
-		assert(ps->backend_data == NULL);
-	} else {
-		deinit_render(ps);
-	}
-
-#if CONFIG_OPENGL
-	if (glx_has_context(ps)) {
-		// GLX context created, but not for rendering
-		glx_destroy(ps);
-	}
-#endif
+	// backend is deinitialized in unredirect()
+	assert(ps->backend_data == NULL);
 
 	// Flush all events
 	xcb_aux_sync(ps->c.c);
 	ev_io_stop(ps->loop, &ps->xiow);
-	if (ps->o.use_legacy_backends) {
-		free_conv((conv *)ps->shadow_context);
-	}
 	destroy_atoms(ps->atoms);
 
 #ifdef DEBUG_XRC

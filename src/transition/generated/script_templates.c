@@ -445,7 +445,7 @@ static bool win_script_preset__appear(struct win_script *output, config_setting_
 }
 static struct script *script_template__slide_out(int *output_slots) {
 	static const struct instruction instrs[] = {
-	    {.type = INST_BRANCH_ONCE, .rel = 42},
+	    {.type = INST_BRANCH_ONCE, .rel = 55},
 	    {.type = INST_LOAD, .slot = 15},
 	    {.type = INST_LOAD, .slot = 14},
 	    {.type = INST_OP, .op = OP_SUB},
@@ -490,11 +490,27 @@ static struct script *script_template__slide_out(int *output_slots) {
 	    {.type = INST_STORE, .slot = 7},
 	    {.type = INST_LOAD_CTX, .ctx = 24},
 	    {.type = INST_STORE, .slot = 8},
+	    {.type = INST_LOAD, .slot = 18},
+	    {.type = INST_LOAD, .slot = 17},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 12},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 19},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_LINEAR},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 17},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 9},
 	    {.type = INST_LOAD, .slot = 9},
 	    {.type = INST_STORE, .slot = 10},
 	    {.type = INST_LOAD, .slot = 9},
 	    {.type = INST_STORE, .slot = 11},
-	    {.type = INST_BRANCH_ONCE, .rel = 17},
+	    {.type = INST_BRANCH_ONCE, .rel = 21},
 	    {.type = INST_HALT},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_STORE_OVER_NAN, .slot = 14},
@@ -508,12 +524,22 @@ static struct script *script_template__slide_out(int *output_slots) {
 	    {.type = INST_OP, .op = OP_MUL},
 	    {.type = INST_OP, .op = OP_ADD},
 	    {.type = INST_STORE, .slot = 15},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 9},
-	    {.type = INST_BRANCH, .rel = -55},
+	    {.type = INST_LOAD_CTX, .ctx = 64},
+	    {.type = INST_STORE_OVER_NAN, .slot = 17},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 19},
+	    {.type = INST_LOAD_CTX, .ctx = 64},
+	    {.type = INST_STORE, .slot = 18},
+	    {.type = INST_BRANCH, .rel = -72},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_STORE, .slot = 13},
 	    {.type = INST_LOAD, .slot = 16},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 13},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 13},
+	    {.type = INST_LOAD, .slot = 19},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_OP, .op = OP_ADD},
 	    {.type = INST_LOAD, .slot = 13},
@@ -524,7 +550,7 @@ static struct script *script_template__slide_out(int *output_slots) {
 	struct script *ret = malloc(offsetof(struct script, instrs) + sizeof(instrs));
 	ret->len = ARR_SIZE(instrs);
 	ret->elapsed_slot = 12;
-	ret->n_slots = 17;
+	ret->n_slots = 20;
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
@@ -604,6 +630,11 @@ static struct script *script_template__slide_out(int *output_slots) {
 	{
 		struct overridable_slot *override = malloc(sizeof(*override));
 		*override = (struct overridable_slot){.name = strdup("v-timing"), .slot = 14};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("opacity"), .slot = 17};
 		HASH_ADD_STR(ret->overrides, name, override);
 	}
 	output_slots[0] = 1;
@@ -872,7 +903,7 @@ static bool win_script_preset__slide_in(struct win_script *output, config_settin
 }
 static struct script *script_template__fly_out(int *output_slots) {
 	static const struct instruction instrs[] = {
-	    {.type = INST_BRANCH_ONCE, .rel = 30},
+	    {.type = INST_BRANCH_ONCE, .rel = 47},
 	    {.type = INST_LOAD, .slot = 11},
 	    {.type = INST_LOAD, .slot = 10},
 	    {.type = INST_OP, .op = OP_SUB},
@@ -909,34 +940,64 @@ static struct script *script_template__fly_out(int *output_slots) {
 	    {.type = INST_STORE, .slot = 3},
 	    {.type = INST_LOAD, .slot = 2},
 	    {.type = INST_STORE, .slot = 4},
-	    {.type = INST_BRANCH_ONCE, .rel = 25},
+	    {.type = INST_LOAD, .slot = 14},
+	    {.type = INST_LOAD, .slot = 13},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 8},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_SUB},
+	    {.type = INST_LOAD, .slot = 15},
+	    {.type = INST_OP, .op = OP_DIV},
+	    {
+	        .type = INST_CURVE,
+	        .curve = {.type = CURVE_LINEAR},
+	    },
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_LOAD, .slot = 13},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE, .slot = 5},
+	    {.type = INST_LOAD, .slot = 5},
+	    {.type = INST_STORE, .slot = 6},
+	    {.type = INST_LOAD, .slot = 5},
+	    {.type = INST_STORE, .slot = 7},
+	    {.type = INST_BRANCH_ONCE, .rel = 29},
 	    {.type = INST_HALT},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_STORE_OVER_NAN, .slot = 10},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
 	    {.type = INST_STORE, .slot = 12},
 	    {.type = INST_LOAD_CTX, .ctx = 24},
-	    {.type = INST_LOAD_CTX, .ctx = 8},
-	    {.type = INST_OP, .op = OP_ADD},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741832},
 	    {.type = INST_OP, .op = OP_MUL},
-	    {.type = INST_LOAD_CTX, .ctx = 16},
-	    {.type = INST_LOAD_CTX, .ctx = 0},
+	    {.type = INST_LOAD_CTX, .ctx = 8},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741844},
+	    {.type = INST_OP, .op = OP_MUL},
 	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD_CTX, .ctx = 16},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741828},
 	    {.type = INST_OP, .op = OP_MUL},
 	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD_CTX, .ctx = 0},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741840},
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_OP, .op = OP_ADD},
 	    {.type = INST_STORE, .slot = 11},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 5},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 6},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 7},
-	    {.type = INST_BRANCH, .rel = -51},
+	    {.type = INST_LOAD_CTX, .ctx = 64},
+	    {.type = INST_STORE_OVER_NAN, .slot = 13},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
+	    {.type = INST_STORE, .slot = 15},
+	    {.type = INST_LOAD_CTX, .ctx = 64},
+	    {.type = INST_STORE, .slot = 14},
+	    {.type = INST_BRANCH, .rel = -72},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_STORE, .slot = 9},
 	    {.type = INST_LOAD, .slot = 12},
+	    {.type = INST_IMM, .imm = 0x0p+0},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = 9},
+	    {.type = INST_LOAD, .slot = 15},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_OP, .op = OP_ADD},
 	    {.type = INST_LOAD, .slot = 9},
@@ -947,7 +1008,7 @@ static struct script *script_template__fly_out(int *output_slots) {
 	struct script *ret = malloc(offsetof(struct script, instrs) + sizeof(instrs));
 	ret->len = ARR_SIZE(instrs);
 	ret->elapsed_slot = 8;
-	ret->n_slots = 13;
+	ret->n_slots = 16;
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
@@ -1003,6 +1064,11 @@ static struct script *script_template__fly_out(int *output_slots) {
 	{
 		struct overridable_slot *override = malloc(sizeof(*override));
 		*override = (struct overridable_slot){.name = strdup("v-timing"), .slot = 10};
+		HASH_ADD_STR(ret->overrides, name, override);
+	}
+	{
+		struct overridable_slot *override = malloc(sizeof(*override));
+		*override = (struct overridable_slot){.name = strdup("opacity"), .slot = 13};
 		HASH_ADD_STR(ret->overrides, name, override);
 	}
 	output_slots[0] = 1;
@@ -1033,22 +1099,32 @@ static bool win_script_preset__fly_out(struct win_script *output, config_setting
 	double placeholder1_direction;
 	double placeholder2_direction;
 	double placeholder3_direction;
+	double placeholder4_direction;
+	double placeholder5_direction;
 	if (strcmp(knob_direction, "up") == 0) {
 		placeholder1_direction = 0x0p+0;
 		placeholder2_direction = -0x1p+0;
 		placeholder3_direction = 0x0p+0;
+		placeholder4_direction = 0x0p+0;
+		placeholder5_direction = -0x1p+0;
 	} else if (strcmp(knob_direction, "down") == 0) {
 		placeholder1_direction = 0x0p+0;
 		placeholder2_direction = 0x1p+0;
 		placeholder3_direction = 0x0p+0;
+		placeholder4_direction = 0x0p+0;
+		placeholder5_direction = 0x0p+0;
 	} else if (strcmp(knob_direction, "left") == 0) {
 		placeholder1_direction = -0x1p+0;
 		placeholder2_direction = 0x0p+0;
 		placeholder3_direction = 0x1p+0;
+		placeholder4_direction = -0x1p+0;
+		placeholder5_direction = 0x0p+0;
 	} else if (strcmp(knob_direction, "right") == 0) {
 		placeholder1_direction = 0x1p+0;
 		placeholder2_direction = 0x0p+0;
 		placeholder3_direction = 0x1p+0;
+		placeholder4_direction = 0x0p+0;
+		placeholder5_direction = 0x0p+0;
 	} else {
 		log_error("Invalid choice \"%s\" for option \"direction\". Line %d.",
 		          knob_direction,
@@ -1064,6 +1140,8 @@ static bool win_script_preset__fly_out(struct win_script *output, config_setting
 	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 4, .value = placeholder1_direction},
 	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 8, .value = placeholder2_direction},
 	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 12, .value = placeholder3_direction},
+	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 16, .value = placeholder4_direction},
+	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 20, .value = placeholder5_direction},
 	};
 	script_specialize(output->script, spec, ARR_SIZE(spec));
 	return true;
@@ -1072,12 +1150,12 @@ static struct script *script_template__fly_in(int *output_slots) {
 	static const struct instruction instrs[] = {
 	    {.type = INST_BRANCH_ONCE, .rel = 30},
 	    {.type = INST_IMM, .imm = 0x0p+0},
-	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_LOAD, .slot = 7},
 	    {.type = INST_OP, .op = OP_SUB},
-	    {.type = INST_LOAD, .slot = 8},
+	    {.type = INST_LOAD, .slot = 5},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_OP, .op = OP_SUB},
-	    {.type = INST_LOAD, .slot = 11},
+	    {.type = INST_LOAD, .slot = 8},
 	    {.type = INST_OP, .op = OP_DIV},
 	    {
 	        .type = INST_CURVE,
@@ -1090,7 +1168,7 @@ static struct script *script_template__fly_in(int *output_slots) {
 	                             .cy = 0x1.0147ae147ae16p+1}},
 	    },
 	    {.type = INST_OP, .op = OP_MUL},
-	    {.type = INST_LOAD, .slot = 10},
+	    {.type = INST_LOAD, .slot = 7},
 	    {.type = INST_OP, .op = OP_ADD},
 	    {.type = INST_STORE, .slot = 0},
 	    {.type = INST_LOAD, .slot = 0},
@@ -1107,36 +1185,41 @@ static struct script *script_template__fly_in(int *output_slots) {
 	    {.type = INST_STORE, .slot = 3},
 	    {.type = INST_LOAD, .slot = 2},
 	    {.type = INST_STORE, .slot = 4},
-	    {.type = INST_BRANCH_ONCE, .rel = 16},
+	    {.type = INST_BRANCH_ONCE, .rel = 21},
 	    {.type = INST_HALT},
 	    {.type = INST_LOAD_CTX, .ctx = 24},
-	    {.type = INST_OP, .op = OP_NEG},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741832},
+	    {.type = INST_OP, .op = OP_MUL},
 	    {.type = INST_LOAD_CTX, .ctx = 8},
-	    {.type = INST_OP, .op = OP_SUB},
-	    {.type = INST_STORE_OVER_NAN, .slot = 10},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741844},
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD_CTX, .ctx = 16},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741828},
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_LOAD_CTX, .ctx = 0},
+	    {.type = INST_LOAD_CTX, .ctx = 1073741840},
+	    {.type = INST_OP, .op = OP_MUL},
+	    {.type = INST_OP, .op = OP_ADD},
+	    {.type = INST_STORE_OVER_NAN, .slot = 7},
 	    {.type = INST_LOAD_CTX, .ctx = 1073741824},
-	    {.type = INST_STORE, .slot = 11},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 5},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 6},
-	    {.type = INST_IMM, .imm = 0x1p+0},
-	    {.type = INST_STORE, .slot = 7},
-	    {.type = INST_BRANCH, .rel = -42},
+	    {.type = INST_STORE, .slot = 8},
+	    {.type = INST_BRANCH, .rel = -47},
 	    {.type = INST_IMM, .imm = 0x0p+0},
-	    {.type = INST_STORE, .slot = 9},
-	    {.type = INST_LOAD, .slot = 11},
+	    {.type = INST_STORE, .slot = 6},
+	    {.type = INST_LOAD, .slot = 8},
 	    {.type = INST_IMM, .imm = 0x0p+0},
 	    {.type = INST_OP, .op = OP_ADD},
-	    {.type = INST_LOAD, .slot = 9},
+	    {.type = INST_LOAD, .slot = 6},
 	    {.type = INST_OP, .op = OP_MAX},
-	    {.type = INST_STORE, .slot = 9},
+	    {.type = INST_STORE, .slot = 6},
 	    {.type = INST_HALT},
 	};
 	struct script *ret = malloc(offsetof(struct script, instrs) + sizeof(instrs));
 	ret->len = ARR_SIZE(instrs);
-	ret->elapsed_slot = 8;
-	ret->n_slots = 12;
+	ret->elapsed_slot = 5;
+	ret->n_slots = 9;
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
@@ -1172,35 +1255,17 @@ static struct script *script_template__fly_in(int *output_slots) {
 		HASH_ADD_STR(ret->vars, name, var);
 	}
 	{
-		struct variable_allocation *var = malloc(sizeof(*var));
-		*var = (struct variable_allocation){
-		    .name = strdup("opacity"), .slot = 5, .index = 5};
-		HASH_ADD_STR(ret->vars, name, var);
-	}
-	{
-		struct variable_allocation *var = malloc(sizeof(*var));
-		*var = (struct variable_allocation){
-		    .name = strdup("shadow-opacity"), .slot = 6, .index = 6};
-		HASH_ADD_STR(ret->vars, name, var);
-	}
-	{
-		struct variable_allocation *var = malloc(sizeof(*var));
-		*var = (struct variable_allocation){
-		    .name = strdup("blur-opacity"), .slot = 7, .index = 7};
-		HASH_ADD_STR(ret->vars, name, var);
-	}
-	{
 		struct overridable_slot *override = malloc(sizeof(*override));
-		*override = (struct overridable_slot){.name = strdup("v-timing"), .slot = 10};
+		*override = (struct overridable_slot){.name = strdup("v-timing"), .slot = 7};
 		HASH_ADD_STR(ret->overrides, name, override);
 	}
 	output_slots[0] = 1;
 	output_slots[1] = 2;
 	output_slots[2] = 3;
 	output_slots[3] = 4;
-	output_slots[4] = 5;
-	output_slots[5] = 7;
-	output_slots[6] = 6;
+	output_slots[4] = -1;
+	output_slots[5] = -1;
+	output_slots[6] = -1;
 	output_slots[7] = -1;
 	output_slots[8] = -1;
 	output_slots[9] = -1;
@@ -1222,22 +1287,32 @@ static bool win_script_preset__fly_in(struct win_script *output, config_setting_
 	double placeholder1_direction;
 	double placeholder2_direction;
 	double placeholder3_direction;
+	double placeholder4_direction;
+	double placeholder5_direction;
 	if (strcmp(knob_direction, "up") == 0) {
 		placeholder1_direction = 0x0p+0;
 		placeholder2_direction = -0x1p+0;
 		placeholder3_direction = 0x0p+0;
+		placeholder4_direction = 0x0p+0;
+		placeholder5_direction = -0x1p+0;
 	} else if (strcmp(knob_direction, "down") == 0) {
 		placeholder1_direction = 0x0p+0;
 		placeholder2_direction = 0x1p+0;
 		placeholder3_direction = 0x0p+0;
+		placeholder4_direction = 0x0p+0;
+		placeholder5_direction = 0x0p+0;
 	} else if (strcmp(knob_direction, "left") == 0) {
 		placeholder1_direction = -0x1p+0;
 		placeholder2_direction = 0x0p+0;
 		placeholder3_direction = 0x1p+0;
+		placeholder4_direction = -0x1p+0;
+		placeholder5_direction = 0x0p+0;
 	} else if (strcmp(knob_direction, "right") == 0) {
 		placeholder1_direction = 0x1p+0;
 		placeholder2_direction = 0x0p+0;
 		placeholder3_direction = 0x1p+0;
+		placeholder4_direction = 0x0p+0;
+		placeholder5_direction = 0x0p+0;
 	} else {
 		log_error("Invalid choice \"%s\" for option \"direction\". Line %d.",
 		          knob_direction,
@@ -1253,6 +1328,8 @@ static bool win_script_preset__fly_in(struct win_script *output, config_setting_
 	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 4, .value = placeholder1_direction},
 	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 8, .value = placeholder2_direction},
 	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 12, .value = placeholder3_direction},
+	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 16, .value = placeholder4_direction},
+	    {.offset = SCRIPT_CTX_PLACEHOLDER_BASE + 20, .value = placeholder5_direction},
 	};
 	script_specialize(output->script, spec, ARR_SIZE(spec));
 	return true;

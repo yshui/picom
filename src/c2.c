@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <fnmatch.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -68,16 +69,12 @@ struct c2_tracked_property {
 	UT_hash_handle hh;
 	struct c2_tracked_property_key key;
 	unsigned int id;
-	/// Highest indices of this property that
-	/// are tracked. -1 mean all indices are tracked.
-	int max_indices;
 };
 
 struct c2_state {
 	struct c2_tracked_property *tracked_properties;
 	struct atom *atoms;
 	xcb_get_property_cookie_t *cookies;
-	uint32_t *propert_lengths;
 };
 
 // TODO(yshui) this has some overlap with winprop_t, consider merging them.
@@ -85,13 +82,16 @@ struct c2_property_value {
 	union {
 		struct {
 			char *string;
+			/// Number of bytes allocated for the string.
+			unsigned int string_capacity;
 		};
 		struct {
 			int64_t numbers[4];
 		};
 		struct {
 			int64_t *array;
-			unsigned int capacity;
+			/// Number of bytes allocated for the array.
+			unsigned int array_capacity;
 		};
 	};
 	/// Number of items if the property is a number type,
@@ -101,6 +101,7 @@ struct c2_property_value {
 		C2_PROPERTY_TYPE_STRING,
 		C2_PROPERTY_TYPE_NUMBER,
 		C2_PROPERTY_TYPE_ATOM,
+		C2_PROPERTY_TYPE_NONE,
 	} type;
 	bool valid;
 	bool needs_update;
@@ -465,7 +466,6 @@ TEST_CASE(c2_parse) {
 	HASH_ITER2(state->tracked_properties, prop) {
 		TEST_EQUAL(prop->key.property,
 		           get_atom_with_nul(state->atoms, "_GTK_FRAME_EXTENTS", NULL));
-		TEST_EQUAL(prop->max_indices, 0);
 	}
 	c2_state_free(state);
 	destroy_atoms(atoms);
@@ -1220,11 +1220,6 @@ c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_condition_node_
 			property->id = HASH_COUNT(state->tracked_properties);
 			HASH_ADD_KEYPTR(hh, state->tracked_properties, &property->key,
 			                sizeof(property->key), property);
-			property->max_indices = pleaf->index;
-		} else if (pleaf->index == -1) {
-			property->max_indices = -1;
-		} else if (property->max_indices >= 0 && pleaf->index > property->max_indices) {
-			property->max_indices = pleaf->index;
 		}
 		pleaf->target_id = property->id;
 	}
@@ -1971,7 +1966,6 @@ void c2_state_free(struct c2_state *state) {
 		HASH_DEL(state->tracked_properties, property);
 		free(property);
 	}
-	free(state->propert_lengths);
 	free(state->cookies);
 	free(state);
 }
@@ -2020,6 +2014,8 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 	auto len = to_u32_checked(xcb_get_property_value_length(reply));
 	void *data = xcb_get_property_value(reply);
 	bool property_is_string = x_is_type_string(state->atoms, reply->type);
+	unsigned int external_capacity = 0;
+	char *external_storage = NULL;
 	value->needs_update = false;
 	value->valid = false;
 	if (reply->type == XCB_ATOM_NONE) {
@@ -2037,29 +2033,44 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 		return;
 	}
 
+	if (value->type == C2_PROPERTY_TYPE_STRING) {
+		external_capacity = value->string_capacity;
+		external_storage = value->string;
+	} else if (value->type == C2_PROPERTY_TYPE_NUMBER &&
+	           value->length > ARR_SIZE(value->numbers)) {
+		external_capacity = value->array_capacity;
+		external_storage = (char *)value->array;
+	}
 	log_verbose("Updating property %s, length = %u, format = %d",
 	            get_atom_name_cached(state->atoms, property), len, reply->format);
 	value->valid = true;
 	if (len == 0) {
 		value->length = 0;
-		return;
-	}
-	if (property_is_string) {
+		value->type = C2_PROPERTY_TYPE_NONE;
+	} else if (property_is_string) {
 		bool nul_terminated = ((char *)data)[len - 1] == '\0';
 		value->length = len;
 		value->type = C2_PROPERTY_TYPE_STRING;
 		if (!nul_terminated) {
 			value->length += 1;
 		}
-		value->string = crealloc(value->string, value->length);
+		if (value->length > external_capacity) {
+			value->string = crealloc(external_storage, value->length);
+			value->string_capacity = value->length;
+		} else {
+			value->string = external_storage;
+			value->string_capacity = external_capacity;
+		}
+		external_capacity = 0;
+		external_storage = NULL;
 		memcpy(value->string, data, len);
 		if (!nul_terminated) {
 			value->string[len] = '\0';
 		}
 	} else {
-		size_t step = reply->format / 8;
+		unsigned step = reply->format / 8;
 		bool is_signed = reply->type == XCB_ATOM_INTEGER;
-		value->length = len * 8 / reply->format;
+		value->length = len / step;
 		if (reply->type == XCB_ATOM_ATOM) {
 			value->type = C2_PROPERTY_TYPE_ATOM;
 		} else {
@@ -2068,14 +2079,20 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 
 		int64_t *storage = value->numbers;
 		if (value->length > ARR_SIZE(value->numbers)) {
-			if (value->capacity < value->length) {
-				value->array = crealloc(value->array, value->length);
-				value->capacity = value->length;
+			const unsigned size = value->length * sizeof(*value->array);
+			if (external_capacity < size) {
+				value->array = (int64_t *)crealloc(external_storage, size);
+				value->array_capacity = size;
+			} else {
+				value->array = (int64_t *)external_storage;
+				value->array_capacity = external_capacity;
 			}
+			external_capacity = 0;
+			external_storage = NULL;
 			storage = value->array;
 		}
 		for (uint32_t i = 0; i < value->length; i++) {
-			auto item = (char *)data + i * step;
+			auto item = (char *)data + (size_t)i * step;
 			if (is_signed) {
 				switch (reply->format) {
 				case 8: storage[i] = *(int8_t *)item; break;
@@ -2101,12 +2118,14 @@ c2_window_state_update_one_from_reply(struct c2_state *state,
 			}
 		}
 	}
+
+	free(external_storage);
 }
 
 static void c2_window_state_update_from_replies(struct c2_state *state,
                                                 struct c2_window_state *window_state,
                                                 xcb_connection_t *c, xcb_window_t client_win,
-                                                xcb_window_t frame_win, bool refetch) {
+                                                xcb_window_t frame_win) {
 	HASH_ITER2(state->tracked_properties, p) {
 		if (!window_state->values[p->id].needs_update) {
 			continue;
@@ -2122,25 +2141,8 @@ static void c2_window_state_update_from_replies(struct c2_state *state,
 			window_state->values[p->id].needs_update = false;
 			continue;
 		}
-		bool property_is_string = x_is_type_string(state->atoms, reply->type);
-		if (reply->bytes_after > 0 && (property_is_string || p->max_indices < 0)) {
-			if (!refetch) {
-				log_warn("Did property %d for window %#010x change while "
-				         "we were fetching it? some window rules might "
-				         "not work.",
-				         p->id, window);
-				window_state->values[p->id].valid = false;
-				window_state->values[p->id].needs_update = false;
-			} else {
-				state->propert_lengths[p->id] += reply->bytes_after;
-				state->cookies[p->id] = xcb_get_property(
-				    c, 0, window, p->key.property, XCB_GET_PROPERTY_TYPE_ANY,
-				    0, (state->propert_lengths[p->id] + 3) / 4);
-			}
-		} else {
-			c2_window_state_update_one_from_reply(
-			    state, &window_state->values[p->id], p->key.property, reply, c);
-		}
+		c2_window_state_update_one_from_reply(state, &window_state->values[p->id],
+		                                      p->key.property, reply, c);
 		free(reply);
 	}
 }
@@ -2152,47 +2154,24 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
 	if (!state->cookies) {
 		state->cookies = ccalloc(property_count, xcb_get_property_cookie_t);
 	}
-	if (!state->propert_lengths) {
-		state->propert_lengths = ccalloc(property_count, uint32_t);
-	}
 	memset(state->cookies, 0, property_count * sizeof(xcb_get_property_cookie_t));
 
 	log_verbose("Updating c2 window state for window %#010x (frame %#010x)",
 	            client_win, frame_win);
 
-	// Because we don't know the length of all properties (i.e. if they are string
-	// properties, or for properties matched with `[*]`). We do this in 3 steps:
-	//   1. Send requests to all properties we need. Use `max_indices` to determine
-	//      the length, or use 0 if it's unknown.
-	//   2. From the replies to (1), for properties we know the length of, we update
-	//      the values. For those we don't, use the length information from the
-	//      replies to send a new request with the correct length.
-	//   3. Update the rest of the properties.
-
-	// Step 1
 	HASH_ITER2(state->tracked_properties, p) {
 		if (!window_state->values[p->id].needs_update) {
 			continue;
-		}
-		uint32_t length = 0;
-		if (p->max_indices >= 0) {
-			// length is in 4 bytes units
-			length = (uint32_t)p->max_indices + 1;
 		}
 
 		xcb_window_t window = p->key.is_on_client ? client_win : frame_win;
 		// xcb_get_property long_length is in units of 4-byte,
 		// so use `ceil(length / 4)`. same below.
 		state->cookies[p->id] = xcb_get_property(
-		    c, 0, window, p->key.property, XCB_GET_PROPERTY_TYPE_ANY, 0, length);
-		state->propert_lengths[p->id] = length * 4;
+		    c, 0, window, p->key.property, XCB_GET_PROPERTY_TYPE_ANY, 0, UINT32_MAX);
 	}
 
-	// Step 2
-	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win, true);
-	// Step 3
-	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win,
-	                                    false);
+	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win);
 }
 
 bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {

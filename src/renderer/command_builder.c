@@ -16,7 +16,7 @@
 /// @return                  number of commands generated
 static inline unsigned
 commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
-                         const region_t *frame_region, bool inactive_dim_fixed,
+                         const region_t *frame_region, bool inactive_dim_fixed, bool force_blend,
                          double max_brightness, const struct shader_info *shaders) {
 	auto w = layer->win;
 	auto cmd = cmd_base;
@@ -39,7 +39,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask, frame_region);
 	}
 	pixman_region32_init(&cmd->opaque_region);
-	if ((mode == WMODE_SOLID || mode == WMODE_FRAME_TRANS) && layer->opacity == 1.0) {
+	if ((mode == WMODE_SOLID || mode == WMODE_FRAME_TRANS) && layer->opacity == 1.0 &&
+	    !force_blend) {
 		pixman_region32_copy(&cmd->opaque_region, &cmd->target_mask);
 		if (mode == WMODE_FRAME_TRANS) {
 			pixman_region32_subtract(&cmd->opaque_region, &cmd->opaque_region,
@@ -450,8 +451,8 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 		                          layer->window.origin.y);
 
 		// Add window body
-		cmd -= commands_for_window_body(
-		    layer, cmd, &frame_region, inactive_dim_fixed, max_brightness, shaders);
+		cmd -= commands_for_window_body(layer, cmd, &frame_region, inactive_dim_fixed,
+		                                force_blend, max_brightness, shaders);
 
 		// Add shadow
 		cmd -= command_for_shadow(layer, cmd, monitors, last + 1);
