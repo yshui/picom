@@ -763,7 +763,8 @@ resolve_include(config_t *cfg, const char *include_dir, const char *path, const 
 	return ret;
 }
 
-bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *release_cfg) { /*NOLINT(readability-function-cognitive-complexity)*/
+bool parse_config_libconfig(options_t *opt, const char *config_file,
+                            config_t *release_cfg) { /*NOLINT(readability-function-cognitive-complexity)*/
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
 	    "If you encounter any problems without this feature, please feel free to "
