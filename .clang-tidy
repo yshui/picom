@@ -14,7 +14,6 @@ Checks: >
   -readability-magic-numbers,
   -readability-identifier-length,
   -bugprone-easily-swappable-parameters
-AnalyzeTemporaryDtors: false
 FormatStyle:     file
 CheckOptions:
   - key: readability-magic-numbers.IgnoredIntegerValues
@@ -29,3 +28,5 @@ CheckOptions:
     value: true
   - key: bugprone-signed-char-misuse.CharTypdefsToIgnore
     value: int8_t
+  - key: bugprone-suspicious-string-compare.WarnOnLogicalNotComparison
+    value: true

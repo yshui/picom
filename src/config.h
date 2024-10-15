@@ -251,8 +251,6 @@ typedef struct options {
 	char *write_pid_path;
 	/// Name of the backend
 	struct backend_info *backend;
-	/// The backend in use (for legacy backends).
-	int legacy_backend;
 	/// Log level.
 	int log_level;
 	/// Whether to sync X drawing with X Sync fence to avoid certain delay
@@ -477,14 +475,9 @@ void parse_debug_options(struct debug_options *);
 const char *xdg_config_home(void);
 char **xdg_config_dirs(void);
 
-/// Parse a configuration file
-/// Returns the actually config_file name used, allocated on heap
-/// Outputs:
-///   shadow_enable = whether shadow is enabled globally
-///   fading_enable = whether fading is enabled globally
-///   win_option_mask = whether option overrides for specific window type is set for given
-///                     options
-///   hasneg = whether the convolution kernel has negative values
+/// Parse a configuration file from default location.
+///
+/// @return if config is successfully parsed.
 bool parse_config_libconfig(options_t *, const char *config_file, config_t *release_cfg);
 
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
@@ -498,18 +491,18 @@ bool parse_config(options_t *, const char *config_file, config_t *release_cfg);
  */
 static inline attr_pure int parse_backend(const char *str) {
 	for (int i = 0; BACKEND_STRS[i]; ++i) {
-		if (!strcasecmp(str, BACKEND_STRS[i])) {
+		if (strcasecmp(str, BACKEND_STRS[i]) == 0) {
 			return i;
 		}
 	}
 	// Keep compatibility with an old revision containing a spelling mistake...
-	if (!strcasecmp(str, "xr_glx_hybird")) {
+	if (strcasecmp(str, "xr_glx_hybird") == 0) {
 		log_warn("backend xr_glx_hybird should be xr_glx_hybrid, the misspelt "
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
 	// cju wants to use dashes
-	if (!strcasecmp(str, "xr-glx-hybrid")) {
+	if (strcasecmp(str, "xr-glx-hybrid") == 0) {
 		log_warn("backend xr-glx-hybrid should be xr_glx_hybrid, the alternative "
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;

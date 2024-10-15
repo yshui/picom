@@ -6,7 +6,6 @@
 #include <xcb/xcb.h>
 
 #include "atom.h"
-#include "common.h"
 #include "compiler.h"
 #include "log.h"
 #include "utils/cache.h"

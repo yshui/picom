@@ -67,7 +67,7 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 }
 
 /// Create a new dynamic array with capacity `cap` for type `type`.
-#define dynarr_new(type, cap) ((type *)dynarr_new_impl(sizeof(type), cap))
+#define dynarr_new(type, cap) ((type *)dynarr_new_impl(sizeof(type), (cap)))
 /// Free a dynamic array, destructing each element with `dtor`.
 #define dynarr_free(arr, dtor)                                                           \
 	do {                                                                             \
@@ -136,8 +136,9 @@ static inline void dynarr_remove_swap_impl(size_t size, void *arr, size_t idx) {
 #define dynarr_truncate(arr, n, dtor)                                                    \
 	do {                                                                             \
 		if ((dtor) != NULL) {                                                    \
-			for (size_t i = n; i < dynarr_len(arr); i++) {                   \
-				(dtor)((arr) + i);                                       \
+			for (size_t __dynarr_i = n; __dynarr_i < dynarr_len(arr);        \
+			     __dynarr_i++) {                                             \
+				(dtor)((arr) + __dynarr_i);                              \
 			}                                                                \
 		}                                                                        \
 		dynarr_len(arr) = n;                                                     \

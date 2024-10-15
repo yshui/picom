@@ -409,7 +409,7 @@ static void handle_present_complete_notify(struct present_vblank_scheduler *self
 
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	auto now_us = (unsigned long)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
+	auto now_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 
 	// X sometimes sends duplicate/bogus MSC events, when screen has just been turned
 	// off. Don't use the msc value in these events. We treat this as not receiving a

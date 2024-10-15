@@ -52,9 +52,6 @@ enum win_flags {
 	WIN_FLAGS_PIXMAP_STALE = 1,
 	/// there was an error binding the window pixmap
 	WIN_FLAGS_PIXMAP_ERROR = 4,
-	/// Window is damaged, and should be added to the damage region
-	/// (only used by the legacy backends, remove)
-	WIN_FLAGS_DAMAGED = 8,
 	/// the client window needs to be updated
 	WIN_FLAGS_CLIENT_STALE = 32,
 	/// the window is mapped by X, we need to call map_win_start for it

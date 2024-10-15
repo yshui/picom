@@ -636,7 +636,7 @@ static enum window_unredir_option parse_unredir_option(config_setting_t *setting
 		return WINDOW_UNREDIR_INVALID;
 	}
 	if (strcmp(sval, "yes") == 0 || strcmp(sval, "true") == 0 ||
-	    strcmp(sval, "default") == 0 || strcmp(sval, "when-possible-else-terminate")) {
+	    strcmp(sval, "default") == 0 || strcmp(sval, "when-possible-else-terminate") == 0) {
 		return WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE;
 	}
 	if (strcmp(sval, "preferred") == 0 || strcmp(sval, "when-possible") == 0) {
@@ -763,13 +763,7 @@ resolve_include(config_t *cfg, const char *include_dir, const char *path, const 
 	return ret;
 }
 
-/**
- * Parse a configuration file from default location.
- *
- * Returns if config is successfully parsed.
- */
-bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *release_cfg) {
-
+bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *release_cfg) { /*NOLINT(readability-function-cognitive-complexity)*/
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
 	    "If you encounter any problems without this feature, please feel free to "
@@ -825,6 +819,16 @@ bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *r
 		}
 	}
 	config_set_auto_convert(&cfg, 1);
+
+	// --log-level
+	if (config_lookup_string(&cfg, "log-level", &sval)) {
+		opt->log_level = string_to_log_level(sval);
+		if (opt->log_level == LOG_LEVEL_INVALID) {
+			log_warn("Invalid log level, defaults to WARN");
+		} else {
+			log_set_level_tls(opt->log_level);
+		}
+	}
 
 	// Get options from the configuration file. We don't do range checking
 	// right now. It will be done later
@@ -1033,20 +1037,10 @@ bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *r
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
 	if (config_lookup_string(&cfg, "backend", &sval)) {
-		opt->legacy_backend = parse_backend(sval);
 		opt->backend = backend_find(sval);
-		if (opt->legacy_backend >= NUM_BKEND && opt->backend == NULL) {
+		if (opt->backend == NULL) {
 			log_fatal("Invalid backend: %s", sval);
 			goto out;
-		}
-	}
-	// --log-level
-	if (config_lookup_string(&cfg, "log-level", &sval)) {
-		opt->log_level = string_to_log_level(sval);
-		if (opt->log_level == LOG_LEVEL_INVALID) {
-			log_warn("Invalid log level, defaults to WARN");
-		} else {
-			log_set_level_tls(opt->log_level);
 		}
 	}
 	// --log-file
@@ -1056,11 +1050,6 @@ bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *r
 			         "absolute path");
 		}
 		opt->logpath = strdup(sval);
-	}
-	// --sw-opti
-	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
-		log_error("The sw-opti %s", deprecation_message);
-		goto out;
 	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
@@ -1156,32 +1145,19 @@ bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *r
 		}
 	}
 	// --resize-damage
-	config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);
-	// --glx-no-stencil
-	lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
-	// --glx-no-rebind-pixmap
-	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
-	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
-	// --glx-swap-method
-	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
-		char *endptr;
-		long val = strtol(sval, &endptr, 10);
-		bool should_remove = true;
-		if (*endptr || !(*sval)) {
-			// sval is not a number, or an empty string
-			val = -1;
-		}
-		if (strcmp(sval, "undefined") != 0 && val != 0) {
-			// If not undefined, we will use damage and buffer-age to limit
-			// the rendering area.
-			should_remove = false;
-		}
-		log_error("glx-swap-method has been removed, your setting "
-		          "\"%s\" should be %s.",
-		          sval,
-		          !should_remove ? "replaced by `use-damage = true`" : "removed");
-		goto out;
+	if (config_lookup_int(&cfg, "resize-damage", &opt->resize_damage)) {
+		log_warn("resize-damage is deprecated. Please remove it from your "
+		         "configuration file.");
 	}
+	// --glx-no-stencil
+	if (lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil)) {
+		log_warn("glx-no-stencil %s", deprecation_message);
+	}
+	// --glx-no-rebind-pixmap
+	if (lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap)) {
+		log_warn("glx-no-rebind-pixmap %s", deprecation_message);
+	}
+	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
 
@@ -1199,19 +1175,8 @@ bool parse_config_libconfig(options_t *opt, const char *config_file, config_t *r
 		    locate_auxiliary_file("shaders", sval, config_get_include_dir(&cfg));
 	}
 
-	// --glx-use-gpushader4
-	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
-		log_error("glx-use-gpushader4 has been removed, please remove it "
-		          "from your config file");
-		goto out;
-	}
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
-
-	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval)) {
-		log_warn("\"clear-shadow\" is removed as an option, and is always"
-		         " enabled now. Consider removing it from your config file");
-	}
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {

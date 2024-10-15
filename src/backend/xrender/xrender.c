@@ -242,9 +242,8 @@ xrender_process_mask(struct xrender_data *xd, const struct backend_mask_image *m
 	    (xcb_render_create_picture_value_list_t[]){XCB_RENDER_REPEAT_NONE});
 	xrender_set_picture_repeat(xd, inner->pict, XCB_RENDER_REPEAT_NONE);
 	xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC, inner->pict, XCB_NONE,
-	                     ret, to_i16_checked(extent.x1 - mask->origin.x),
-	                     to_i16_checked(extent.y1 - mask->origin.y), 0, 0, 0, 0,
-	                     w_u16, h_u16);
+	                     ret, to_i16_checked(extent.x1), to_i16_checked(extent.y1), 0,
+	                     0, 0, 0, w_u16, h_u16);
 	if (mask->corner_radius != 0) {
 		if (inner->rounded_rectangle != NULL &&
 		    inner->rounded_rectangle->radius != (int)mask->corner_radius) {
@@ -290,7 +289,9 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->source_mask != NULL) {
 		ivec2 mask_origin = args->source_mask->origin;
-		mask_pict = xrender_process_mask(xd, args->source_mask, extent,
+		auto extent_to_mask =
+		    region_translate_rect(extent, ivec2_neg(ivec2_add(mask_origin, origin)));
+		mask_pict = xrender_process_mask(xd, args->source_mask, extent_to_mask,
 		                                 args->opacity < 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_origin, &mask_allocated);
 		mask_pict_dst_x = to_i16_checked(-mask_origin.x);
@@ -569,8 +570,8 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	if (args->source_mask != NULL) {
 		// Translate the target mask region to the mask's coordinate
 		auto mask_extent = *pixman_region32_extents(args->target_mask);
-		region_translate_rect(
-		    mask_extent, ivec2_neg(ivec2_add(origin, args->source_mask->origin)));
+		mask_extent =
+		    region_translate_rect(mask_extent, ivec2_neg(args->source_mask->origin));
 		mask_pict_origin = args->source_mask->origin;
 		mask_pict = xrender_process_mask(xd, args->source_mask, mask_extent,
 		                                 args->opacity != 1.0 ? mask_pict : XCB_NONE,
@@ -583,39 +584,26 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 
 	// For more than 1 pass, we do:
 	//   source -(pass 1)-> tmp0 -(pass 2)-> tmp1 ...
-	//   -(pass n-1)-> tmp0 or tmp1 -(pass n)-> target
+	//   -(pass n)-> tmp0 or tmp1 -(composite)-> target
 	// For 1 pass, we do:
-	// (if source == target)
-	//   source -(pass 1)-> tmp0 -(copy)-> target
-	// (if source != target)
-	//   source -(pass 1)-> target
-	xcb_render_picture_t dst_pict = target == source ? tmp_picture[0] : target->pict;
+	//   source -(pass 1)-> tmp0 -(composite)-> target
+	xcb_render_picture_t dst_pict = tmp_picture[0];
 	ivec2 src_origin = {.x = extent_resized->x1, .y = extent_resized->y1};
-	ivec2 dst_origin = {};
 	int npasses = bctx->x_blur_kernel_count;
-	if (source == target && npasses == 1) {
-		npasses = 2;
-	}
 	for (int i = 0; i < npasses; i++) {
 		// Copy from source picture to destination. The filter must
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
-		xcb_render_picture_t pass_mask_pict =
-		    dst_pict == target->pict ? mask_pict : XCB_NONE;
-		const uint8_t op = dst_pict == target->pict ? XCB_RENDER_PICT_OP_OVER
-		                                            : XCB_RENDER_PICT_OP_SRC;
-		if (i < bctx->x_blur_kernel_count) {
-			xcb_render_set_picture_filter(
-			    c->c, src_pict, to_u16_checked(strlen(filter)), filter,
-			    to_u32_checked(bctx->x_blur_kernel[i]->size),
-			    bctx->x_blur_kernel[i]->kernel);
-		}
+		xcb_render_set_picture_filter(c->c, src_pict,
+		                              to_u16_checked(strlen(filter)), filter,
+		                              to_u32_checked(bctx->x_blur_kernel[i]->size),
+		                              bctx->x_blur_kernel[i]->kernel);
 
 		// clang-format off
-		xcb_render_composite(c->c, op, src_pict, pass_mask_pict, dst_pict,
+		xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE, dst_pict,
 		    to_i16_checked(src_origin.x)         , to_i16_checked(src_origin.y),
-		    to_i16_checked(-mask_pict_origin.x)  , to_i16_checked(-mask_pict_origin.y),
-		    to_i16_checked(dst_origin.x)         , to_i16_checked(dst_origin.y),
+		    0                                    , 0                           ,
+		    0                                    , 0                           ,
 		    width_resized                        , height_resized);
 		// clang-format on
 
@@ -625,18 +613,16 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 
 		auto next_tmp = src_pict == source->pict ? tmp_picture[1] : src_pict;
 		src_pict = dst_pict;
-		if (i + 1 == npasses - 1) {
-			// Intermediary to target
-			dst_pict = target->pict;
-			dst_origin = (ivec2){.x = origin.x + extent_resized->x1,
-			                     .y = origin.y + extent_resized->y1};
-		} else {
-			// Intermediary to intermediary
-			dst_pict = next_tmp;
-			dst_origin = (ivec2){.x = 0, .y = 0};
-		}
+		dst_pict = next_tmp;
 		src_origin = (ivec2){.x = 0, .y = 0};
 	}
+
+	// Finally, we composite the last pass to the target picture
+	xcb_render_composite(
+	    c->c, XCB_RENDER_PICT_OP_OVER, src_pict, mask_pict, target->pict, 0, 0,
+	    to_i16_checked(-mask_pict_origin.x), to_i16_checked(-mask_pict_origin.y),
+	    to_i16_checked(origin.x + extent_resized->x1),
+	    to_i16_checked(origin.y + extent_resized->y1), width_resized, height_resized);
 
 	if (mask_allocated) {
 		x_free_picture(c, mask_pict);
@@ -956,8 +942,9 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	xd->back_image.pict = xd->vsync ? xd->back[xd->curr_back] : xd->target;
 
 	auto drivers = detect_driver(xd->base.c->c, &xd->base, xd->target_win);
-	if (drivers & DRIVER_MODESETTING) {
-		// I believe other xf86-video drivers have accelerated blur?
+	if (drivers & (DRIVER_MODESETTING | DRIVER_NVIDIA | DRIVER_NOUVEAU |
+	               DRIVER_AMDGPU | DRIVER_RADEON | DRIVER_FGLRX)) {
+		// I believe xf86-video-intel have accelerated convolution?
 		xd->quirks |= BACKEND_QUIRK_SLOW_BLUR;
 	}
 

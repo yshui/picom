@@ -1,10 +1,84 @@
+# Unreleased
+
+## Deprecations
+
+* `--legacy-backends` is now deprecated. Setting it no longer has an effect.
+* `resize-damage`, `glx-no-stencil` and `glx-no-rebind-pixmap` are now deprecated, because they only works on legacy backends.
+* Removed several options that have been deprecated for a long time, this includes:
+  - `glx-fshader-win`
+  - `glx-swap-method`
+  - `glx-use-gpushader4`
+  - `menu-opacity`
+  - `vsync-aggressive`
+  - `respect-prop-shadow`
+  - `sw-opti`
+  - `clear-shadow`
+
+# 12.3 (2024-Oct-14)
+
+## Improvements
+
+* Extend workaround for missing hardware accelerated convolution to more drivers (#1349)
+
+## Bug fixes
+
+* Fix memory corruption that can happen when handling window property changes (#1350)
+* Fix `force-win-blend` having no effect (#1354)
+* Fix shadow being rendered incorrectly in xrender backend (#1352)
+
+# 12.2 (2024-Oct-10)
+
+## Improvements
+
+* fly-out/slide-out animation presets no longer cause jumps in window opacity
+
+## Bug fixes
+
+* Random delays before screen is updated (#1345 #1330)
+* Fix building on 32-bit systems (#1346)
+* Fix blank screen on 32-bit systems
+* Fix fly-in/fly-out animation presets so they work with directions other than up and left
+
+# v12.1 (2024-Sep-29)
+
+## Bug fixes
+
+* picom stops rendering correctly after monitor configuration changes (#1338, thanks to @Suyooo)
+
+# v12 (2024-Sep-27)
+
+## Bug fixes
+
+* Fix crash related to window leader updates (#1337 + extra).
+* Remove an invalid assertion.
+
+# v12-rc4 (2024-Sep-08)
+
+## Bug fixes
+
+* Windows become completely black when `rules` and `inactive-dim` are set at the same time
+* Fix segmentation fault during unredirection if the geometry change animation is used (#1333, thanks to @monsterovich)
+* Fix many rare race conditions in the window management code (#1334)
+
+# v12-rc3 (2024-Aug-30)
+
+## Bug fixes
+
+* `transparent-clipping` has no effect (#1317)
+* `unredir` in window rules not being parsed correctly
+* Changing window opacity with `picom-trans` does not take effect immediately (#1315)
+
+## Documentation
+
+* Document behavior change around rounded corners and fullscreen windows (#1323)
+
 # v12-rc2 (2024-Aug-17)
 
 ## Bug fixes
 
-* Setting corner-radius to 0 cause all windows to not render: #1311
+* Setting corner-radius to 0 cause all windows to not render (#1311)
 * Setting corner-radius causes windows to have a 1-pixel transparent border
-* Window shaders no longer work: #1312
+* Window shaders no longer work (#1312)
 
 # v12-rc1 (2024-Aug-12)
 

@@ -75,7 +75,7 @@ typedef uint32_t cdbus_enum_t;
 #define PICOM_WINDOW_INTERFACE "picom.Window"
 #define PICOM_COMPOSITOR_INTERFACE "picom.Compositor"
 
-static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
+static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *ud);
 static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
 
 static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data);
@@ -307,8 +307,8 @@ void cdbus_io_callback(EV_P attr_unused, ev_io *w, int revents) {
 		flags |= DBUS_WATCH_WRITABLE;
 	}
 	dbus_watch_handle(dw->dw, flags);
-	while (dbus_connection_dispatch(dw->cd->dbus_conn) != DBUS_DISPATCH_COMPLETE)
-		;
+	while (dbus_connection_dispatch(dw->cd->dbus_conn) != DBUS_DISPATCH_COMPLETE) {
+	}
 }
 
 /**
@@ -593,7 +593,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 	}
 
 #define append(tgt, type, expr)                                                          \
-	if (!strcmp(#tgt, target)) {                                                     \
+	if (strcmp(#tgt, target) == 0) {                                                 \
 		if (!cdbus_append_##type(reply, (expr))) {                               \
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;                          \
 		}                                                                        \
@@ -609,7 +609,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 	append(Leader, wid_variant, wm_ref_win_id(wm_ref_leader(w->tree_ref)));
 	append_win_property(Name, name, string_variant);
 
-	if (!strcmp("Type", target)) {
+	if (strcmp("Type", target) == 0) {
 		DBusMessageIter iter, sub;
 		dbus_message_iter_init_append(reply, &iter);
 		if (!dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "s", &sub)) {
@@ -630,7 +630,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	if (!strcmp("Next", target)) {
+	if (strcmp("Next", target) == 0) {
 		cdbus_window_t next_id = 0;
 		auto below = wm_ref_below(cursor);
 		if (below != NULL) {
@@ -722,7 +722,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	}
 #define append_win_property(tgt, type) append(tgt, type, w->tgt)
 
-	if (!strcmp("next", target)) {
+	if (strcmp("next", target) == 0) {
 		auto below = wm_ref_below(cursor);
 		xcb_window_t next_id = below ? wm_ref_win_id(below) : XCB_NONE;
 		if (!cdbus_append_wid(reply, next_id)) {
@@ -808,15 +808,15 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 	}
 
 	bool changed = false;
-	if (!strcmp("shadow_force", target)) {
+	if (strcmp("shadow_force", target) == 0) {
 		w->options_override.shadow =
 		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
 		changed = true;
-	} else if (!strcmp("fade_force", target)) {
+	} else if (strcmp("fade_force", target) == 0) {
 		w->options_override.fade =
 		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
 		changed = true;
-	} else if (!strcmp("invert_color_force", target)) {
+	} else if (strcmp("invert_color_force", target) == 0) {
 		w->options_override.invert_color =
 		    val == UNSET ? TRI_UNKNOWN : (val == ON ? TRI_TRUE : TRI_FALSE);
 		changed = true;
@@ -826,7 +826,6 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 	if (changed) {
-		add_damage_from_win(ps, w);
 		queue_redraw(ps);
 	}
 
@@ -853,7 +852,7 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 
 	xcb_window_t wid = XCB_NONE;
 
-	if (!strcmp("client", target)) {
+	if (strcmp("client", target) == 0) {
 		// Find window by client window
 		cdbus_window_t client = XCB_NONE;
 		if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_WINDOW, &client)) {
@@ -864,7 +863,7 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		if (w) {
 			wid = wm_ref_win_id(w);
 		}
-	} else if (!strcmp("focused", target)) {
+	} else if (strcmp("focused", target) == 0) {
 		// Find focused window
 		auto focused_win = wm_focused_win(ps->wm);
 		auto w = wm_ref_deref(focused_win);
@@ -899,7 +898,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	}
 
 #define append(tgt, type, ret)                                                           \
-	if (!strcmp(#tgt, target)) {                                                     \
+	if (strcmp(#tgt, target) == 0) {                                                 \
 		if (reply != NULL && !cdbus_append_##type(reply, ret)) {                 \
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;                          \
 		}                                                                        \
@@ -907,19 +906,15 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	}
 #define append_session_option(tgt, type) append(tgt, type, ps->o.tgt)
 
-	if (!strcmp("backend", target)) {
-		assert(!ps->o.use_legacy_backends ||
-		       (size_t)ps->o.legacy_backend < ARR_SIZE(BACKEND_STRS));
-		const char *name = ps->o.use_legacy_backends
-		                       ? BACKEND_STRS[ps->o.legacy_backend]
-		                       : backend_name(ps->o.backend);
+	if (strcmp("backend", target) == 0) {
+		const char *name = backend_name(ps->o.backend);
 		if (reply != NULL && !cdbus_append_string(reply, name)) {
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;
 		}
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	append(version, string, PICOM_VERSION);
+	append(version, string, PICOM_FULL_VERSION);
 	append(pid, int32, getpid());
 	append(display, string, DisplayString(ps->c.dpy));
 	append(config_file, string, "Unknown");
@@ -930,7 +925,6 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	append(unredir_if_possible_delay, int32, (int32_t)ps->o.unredir_if_possible_delay);
 	append(refresh_rate, int32, 0);
 	append(sw_opti, boolean, false);
-	append(backend, string, BACKEND_STRS[ps->o.legacy_backend]);
 
 	append_session_option(unredir_if_possible, boolean);
 	append_session_option(write_pid_path, string);
@@ -983,9 +977,6 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
-// XXX Remove this after header clean up
-void queue_redraw(session_t *ps);
-
 /**
  * Process a opts_set D-Bus request.
  */
@@ -1012,7 +1003,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		goto cdbus_process_opts_set_success;                                     \
 	}
 
-	if (!strcmp("clear_shadow", target) || !strcmp("track_focus", target)) {
+	if (strcmp("clear_shadow", target) == 0 || strcmp("track_focus", target) == 0) {
 		goto cdbus_process_opts_set_success;
 	}
 
@@ -1022,7 +1013,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	opts_set_do(no_fading_openclose, BOOLEAN, bool, val);
 	opts_set_do(stoppaint_force, UINT32, cdbus_enum_t, val);
 
-	if (!strcmp("unredir_if_possible", target)) {
+	if (strcmp("unredir_if_possible", target) == 0) {
 		dbus_bool_t val = FALSE;
 		get_msg_arg(BOOLEAN, val);
 		if (ps->o.unredir_if_possible != val) {
@@ -1032,7 +1023,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		goto cdbus_process_opts_set_success;
 	}
 
-	if (!strcmp("redirected_force", target)) {
+	if (strcmp("redirected_force", target) == 0) {
 		cdbus_enum_t val = UNSET;
 		get_msg_arg(UINT32, val);
 		if (ps->o.redirected_force != val) {

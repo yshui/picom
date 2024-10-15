@@ -45,8 +45,6 @@ enum script_evaluation_result {
 	SCRIPT_EVAL_OK,
 };
 typedef struct config_setting_t config_setting_t;
-static_assert(alignof(double) > alignof(unsigned), "double/unsigned has unexpected "
-                                                   "alignment");
 
 #define SCRIPT_CTX_PLACEHOLDER_BASE (0x40000000)
 
@@ -74,7 +72,7 @@ unsigned script_elapsed_slot(const struct script *script);
 /// Specialize a script instance with a context. During evaluation of the resulting
 /// script, what would have been read from the context will be replaced with the hardcoded
 /// value in the specialization context.
-void script_specialize(struct script *instance,
+void script_specialize(struct script *script,
                        const struct script_specialization_context *context,
                        unsigned n_context);
 

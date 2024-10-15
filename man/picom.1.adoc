@@ -67,9 +67,6 @@ OPTIONS
 *--log-file*::
 	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to written to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
 
-*--legacy-backends*::
-	Use the old version of the backends. This option can not be set from the config file.
-
 *--show-all-xerrors*::
 	Show all X errors (for debugging).
 
@@ -214,9 +211,6 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 [[blur-background-exclude]]*--blur-background-exclude* _CONDITION_::
 	Exclude conditions for background blur.
 
-*--resize-damage* _INTEGER_::
-	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use `--resize-damage 1`, with a 5x5 one you use `--resize-damage 2`, and so on). May or may not work with *--glx-no-stencil*. Only works with *--legacy-backends*. Shrinking doesn't function correctly.
-
 [[invert-color-include]]*--invert-color-include* _CONDITION_::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to do this.
 
@@ -235,23 +229,14 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 * `xr_glx_hybrid` backend renders the updated screen contents with X Render and presents it on the screen with GLX. It attempts to address the rendering issues some users encountered with GLX backend and enables the better VSync of GLX backends. *--vsync-use-glfinish* might fix some rendering issues with this backend.
 --
 
-*--glx-no-stencil*::
-  GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content (but never practically happened) and may not work with *--blur-background*. My tests show a 15% performance boost. Recommended.
-
-*--glx-no-rebind-pixmap*::
-	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe, xf86-video-intel, etc.). Recommended if it works.
-
 *--no-use-damage*::
 	Disable the use of damage information. This cause the whole screen to be redrawn every time, instead of the part of the screen has actually changed. Potentially degrades the performance, but might fix some artifacts.
 
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 
-*--glx-fshader-win* _SHADER_::
-	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples. Only works with *--legacy-backends* enabled.
-
 *--force-win-blend*::
-	Force all windows to be painted with blending. Useful if you have a *--glx-fshader-win* that could turn opaque pixels transparent.
+	Force all windows to be painted with blending. Useful if you have a window shader that could turn opaque pixels transparent.
 
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
@@ -275,10 +260,10 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Specify a list of conditions of windows that should never have transparent clipping applied. Useful for screenshot tools, where you need to be able to see through transparent parts of the window.
 
 *--window-shader-fg* _SHADER_::
-	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
+	Specify GLSL fragment shader path for rendering window contents. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
 
 [[window-shader-fg-rule]]*--window-shader-fg-rule* _SHADER_:__CONDITION__::
-	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled. Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
+	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
 
 *--dithered-present*::
 	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
@@ -291,9 +276,9 @@ Following is a list of all the options that are superseded by window rules:
 
 <<shadow-ignore-shaped>>, <<inactive-opacity>>, <<active-opacity>>, <<inactive-opacity-override>>, <<inactive-dim>>, <<mark-wmwin-focused>>, <<mark-ovredir-focused>>, <<invert-color-include>>, <<shadow-exclude>>, <<fade-exclude>>, <<focus-exclude>>, <<rounded-corners-exclude>>, <<blur-background-exclude>>, <<opacity-rule>>, <<corner-radius-rules>>, <<window-shader-fg-rule>>, <<clip-shadow-above>>. As well as the xref:wintypes[*wintypes*] configuration file option.
 
-If window rules option is used, none of the above options will have any effect. And warning messages will be issued.
+If window rules option is used, none of the above options will have any effect. And warning messages will be issued. When the window rules option is used, the compositor will also behave somewhat differently in certain cases. One such case is that fullscreen windows will no longer have their rounded corners disabled by default.
 
-If you are currently using some of these options and want to switch to window rules, see the xref:_migrating_old_rules[*Migrating old rules*] section for how to convert them.
+If you are currently using some of these options and want to switch to window rules, or if you want to keep the existing behavior, see the xref:_migrating_old_rules[*Migrating old rules*] section for how to convert them.
 
 === Syntax
 
@@ -359,8 +344,18 @@ Most of the rule options should 1:1 map to the new window rules. Here is a list 
 
 *Inactive dimming and opacity*:: This includes options <<inactive-opacity>>, <<inactive-dim>>, <<active-opacity>>,
 <<inactive-opacity-override>>, <<mark-wmwin-focused>>, and <<mark-ovredir-focused>>. When using the window rules, the compositor no longer have an "active window" concept, as it is easy to achieve with window rules. You can use `match = "focused || group_focused"` to match windows that would have been considered active with the old options. Then you can set the opacity and dim level for matched windows accordingly. <<mark-wmwin-focused>> and <<mark-ovredir-focused>> can be achieved by adding `|| wmwin` and `|| override_redirect` to the match string, respectively. <<inactive-opacity-override>> can be achieved by setting `opacity-override = true`.
++
+NOTE: Setting _opacity_ explicitly with a rule will override the opacity value from the window properties (i.e. _pass:[_]NET_WM_WINDOW_OPACITY_), which is used by tools like `picom-trans` for setting the opacity of window. If you would like to keep using tools like `picom-trans`, you can choose to set the opacity only for windows without the opacity property by matching `! _NET_WM_WINDOW_OPACITY`.
 
 *Active window*:: This includes option <<focus-exclude>>. This option was only used to influence what windows are considered active, to apply inactive opacity and dimming. Since with window rules you no longer need the compositor to help you decide what is active and what is not (see above), this option is no longer needed.
+
+*Rounded corners and fullscreen windows*:: Rounded corners are no longer automatically disabled for fullscreen windows. If you want to disable rounded corners for fullscreen windows, you can use the following rule:
++
+----
+rules = (
+	{ match = "fullscreen"; corner-radius = 0; },
+)
+----
 
 FORMAT OF CONDITIONS
 --------------------
@@ -755,7 +750,7 @@ If you have created an animation script that you think is particularly cool, you
 SHADER INTERFACE
 ----------------
 
-This secion describes the interface of a custom shader, how it is used by picom, and what parameters are passed by picom to the shader. This does not apply to the legacy backends.
+This secion describes the interface of a custom shader, how it is used by picom, and what parameters are passed by picom to the shader.
 
 A custom shader is a GLSL fragment shader program, which can be used to override the default way of how a window is rendered. If a custom shader is used, the default picom effects (e.g. dimming, color inversion, etc.) will no longer be automatically applied. It would be the custom shader's responsibility to apply these effects.
 
@@ -876,7 +871,6 @@ Available options of the _blur_ section are: ::
   *method*:::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
       _none_ to disable blurring; _gaussian_ for gaussian blur; _box_ for box blur; _kernel_ for convolution blur with a custom kernel; _dual_kawase_ for dual-filter kawase blur.
-    Note: _gaussian_, _box_ and _dual_kawase_ blur methods are not supported by the legacy backends.
     (default: none)
 
   *size*:::

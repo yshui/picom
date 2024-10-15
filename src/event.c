@@ -21,7 +21,6 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
-#include "utils/dynarr.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"
@@ -201,7 +200,7 @@ struct ev_ewmh_active_win_request {
 /// returned could not be found.
 static void
 update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base *req_base,
-                       xcb_raw_generic_event_t *reply_or_error) {
+                       const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
 
@@ -219,7 +218,7 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 	}
 
 	// Search for the window
-	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_property_reply_t *)reply_or_error;
 	if (reply->type == XCB_NONE || xcb_get_property_value_length(reply) < 4) {
 		log_debug("EWMH _NET_ACTIVE_WINDOW not set.");
 		return;
@@ -248,7 +247,7 @@ struct ev_recheck_focus_request {
  * @return struct _win of currently focused window, NULL if not found
  */
 static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_base *req_base,
-                          xcb_raw_generic_event_t *reply_or_error) {
+                          const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
 
@@ -268,7 +267,7 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 		return;
 	}
 
-	auto reply = (xcb_get_input_focus_reply_t *)reply_or_error;
+	auto reply = (const xcb_get_input_focus_reply_t *)reply_or_error;
 	xcb_window_t wid = reply->focus;
 	log_debug("Current focused window is %#010x", wid);
 	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||
@@ -352,7 +351,6 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto cursor = wm_find(ps->wm, ce->window);
-	auto below = wm_find(ps->wm, ce->above_sibling);
 
 	if (!cursor) {
 		if (wm_is_consistent(ps->wm)) {
@@ -363,17 +361,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		return;
 	}
 
-	if (below == NULL && ce->above_sibling != XCB_NONE) {
-		log_error("Configure event received for window %#010x, but its sibling "
-		          "window %#010x is not in our tree. Expect malfunction.",
-		          ce->window, ce->above_sibling);
-		assert(false);
-	} else if (below != NULL) {
-		wm_stack_move_to_above(ps->wm, cursor, below);
-	} else {
-		// above_sibling being XCB_NONE means the window is put at the bottom.
-		wm_stack_move_to_end(ps->wm, cursor, true);
-	}
+	wm_stack_move_to_above(ps->wm, cursor, ce->above_sibling);
 
 	auto w = wm_ref_deref(cursor);
 	if (!w) {
@@ -386,7 +374,6 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	w->a.override_redirect = ce->override_redirect;
 
 	if (w->state == WSTATE_MAPPED) {
-		add_damage_from_win(ps, w);
 		ps->pending_updates |= changed;
 	}
 }
@@ -402,16 +389,30 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 	if (ev->window == ps->c.screen_info->root) {
 		configure_root(ps);
 	} else {
+		if (ev->window == ev->event) {
+			return;
+		}
+
 		configure_win(ps, ev);
 	}
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	log_debug("{ event: %#010x, id: %#010x }", ev->event, ev->window);
-	wm_destroy(ps->wm, ev->window);
+	// If we hit an ABA problem, it is possible to get a DestroyNotify event from a
+	// parent for its child, but not from the child for itself.
+	if (ev->event != ev->window) {
+		wm_disconnect(ps->wm, ev->window, ev->event, XCB_NONE);
+	} else {
+		wm_destroy(ps->wm, ev->window);
+	}
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
+	if (ev->window == ev->event) {
+		return;
+	}
+
 	// Unmap overlay window if it got mapped but we are currently not
 	// in redirected state.
 	if (ps->overlay && ev->window == ps->overlay) {
@@ -461,6 +462,10 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 		return;
 	}
 
+	if (ev->event == ev->window) {
+		return;
+	}
+
 	auto cursor = wm_find(ps->wm, ev->window);
 	if (cursor == NULL) {
 		if (wm_is_consistent(ps->wm)) {
@@ -479,10 +484,21 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d, "
 	          "send_event: %#010x",
 	          ev->window, ev->parent, ev->override_redirect, ev->event);
-	wm_reparent(ps->wm, ev->window, ev->parent);
+	if (ev->event == ev->window) {
+		return;
+	}
+	if (ev->parent != ev->event) {
+		wm_disconnect(ps->wm, ev->window, ev->event, ev->parent);
+	} else {
+		wm_reparent(ps->wm, &ps->c, ps->atoms, ev->window, ev->parent);
+	}
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
+	if (ev->event == ev->window) {
+		return;
+	}
+
 	auto cursor = wm_find(ps->wm, ev->window);
 
 	if (cursor == NULL) {
@@ -497,37 +513,16 @@ static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event
 	log_debug("Moving window %#010x (%s) to the %s", ev->window,
 	          ev_window_name(ps, ev->window), ev->place == PlaceOnTop ? "top" : "bottom");
 	wm_stack_move_to_end(ps->wm, cursor, ev->place == XCB_PLACE_ON_BOTTOM);
-
-	auto w = wm_ref_deref(cursor);
-	if (w != NULL) {
-		add_damage_from_win(ps, w);
-	}
-}
-
-static inline void expose_root(session_t *ps, const rect_t *rects, size_t nrects) {
-	region_t region;
-	pixman_region32_init_rects(&region, rects, (int)nrects);
-	add_damage(ps, &region);
-	pixman_region32_fini(&region);
 }
 
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
-	if (ev->window == ps->c.screen_info->root ||
-	    (ps->overlay && ev->window == ps->overlay)) {
-		dynarr_reserve(ps->expose_rects, ev->count + 1);
+	if (ev->window != ps->c.screen_info->root &&
+	    (ps->overlay == XCB_NONE || ev->window != ps->overlay)) {
+		return;
+	}
 
-		rect_t new_rect = {
-		    .x1 = ev->x,
-		    .y1 = ev->y,
-		    .x2 = ev->x + ev->width,
-		    .y2 = ev->y + ev->height,
-		};
-		dynarr_push(ps->expose_rects, new_rect);
-
-		if (ev->count == 0) {
-			expose_root(ps, ps->expose_rects, dynarr_len(ps->expose_rects));
-			dynarr_clear_pod(ps->expose_rects);
-		}
+	if (ev->count == 0) {
+		force_repaint(ps);
 	}
 }
 
@@ -655,12 +650,11 @@ static inline void repair_win(session_t *ps, struct win *w) {
 		log_debug("Window %#010x (%s) has been damaged the first time", win_id(w),
 		          w->name);
 	} else {
-		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
-		                                  ps->damage_ring.x_region);
+		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, ps->x_region);
 		if (!ps->o.show_all_xerrors) {
 			x_set_error_action_ignore(&ps->c, cookie);
 		}
-		x_fetch_region(&ps->c, ps->damage_ring.x_region, &parts);
+		x_fetch_region(&ps->c, ps->x_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}
@@ -675,16 +669,6 @@ static inline void repair_win(session_t *ps, struct win *w) {
 		pixman_region32_fini(&parts);
 		return;
 	}
-
-	// Remove the part in the damage area that could be ignored
-	region_t without_ignored;
-	pixman_region32_init(&without_ignored);
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
-		pixman_region32_subtract(&without_ignored, &parts, w->reg_ignore);
-	}
-
-	add_damage(ps, &without_ignored);
-	pixman_region32_fini(&without_ignored);
 
 	pixman_region32_translate(&parts, -w->g.x, -w->g.y);
 	pixman_region32_union(&w->damaged, &w->damaged, &parts);
@@ -717,20 +701,6 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	if (w == NULL || w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
 		return;
 	}
-
-	/*
-	 * Empty bounding_shape may indicated an
-	 * unmapped/destroyed window, in which case
-	 * seemingly BadRegion errors would be triggered
-	 * if we attempt to rebuild border_size
-	 */
-	// Mark the old bounding shape as damaged
-	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
-		region_t tmp = win_get_bounding_shape_global_by_val(w);
-		add_damage(ps, &tmp);
-		pixman_region32_fini(&tmp);
-	}
-	w->reg_ignore_valid = false;
 
 	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
 	ps->pending_updates = true;

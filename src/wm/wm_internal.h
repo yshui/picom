@@ -29,6 +29,8 @@ struct wm_tree {
 	struct list_node free_changes;
 };
 
+struct wm_query_tree_request;
+
 struct wm_tree_node {
 	UT_hash_handle hh;
 
@@ -65,6 +67,12 @@ struct wm_tree_node {
 	/// window cannot be found in the wm_tree hash table.
 	bool is_zombie : 1;
 	bool visited : 1;
+	/// Whether we have set up event masks on this window. This means we can reliably
+	/// detect if the window is destroyed.
+	bool receiving_events : 1;
+	/// If the initial query tree request has completed. This means the children list
+	/// of this window is complete w.r.t. the event stream.
+	bool tree_queried : 1;
 };
 
 /// Describe a change of a toplevel's client window.
@@ -125,6 +133,7 @@ void wm_tree_move_to_end(struct wm_tree *tree, struct wm_tree_node *node, bool t
 struct wm_tree_change wm_tree_dequeue_change(struct wm_tree *tree);
 void wm_tree_reap_zombie(struct wm_tree_node *zombie);
 void wm_tree_set_wm_state(struct wm_tree *tree, struct wm_tree_node *node, bool has_wm_state);
+struct wm_tree_node *attr_pure wm_tree_find_client(struct wm_tree_node *subroot);
 
 static inline void wm_tree_init(struct wm_tree *tree) {
 	tree->nodes = NULL;
