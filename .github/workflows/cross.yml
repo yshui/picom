@@ -1,0 +1,16 @@
+name: cross
+on: push
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: cachix/install-nix-action@v27
+      with:
+        nix_path: nixpkgs=channel:nixpkgs-unstable
+    - uses: DeterminateSystems/magic-nix-cache-action@main
+    - run: nix build '.#picom-cross.merged' -L
+
