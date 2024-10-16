@@ -249,8 +249,6 @@ typedef struct options {
 	bool glx_no_stencil;
 	/// Whether to avoid rebinding pixmap on window damage.
 	bool glx_no_rebind_pixmap;
-	/// Custom fragment shader for painting windows, as a string.
-	char *glx_fshader_win_str;
 	/// Whether to detect rounded corners.
 	bool detect_rounded_corners;
 	/// Force painting of window content with blending.

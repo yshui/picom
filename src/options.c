@@ -794,11 +794,6 @@ static bool sanitize_options(struct options *opt) {
 		return false;
 	}
 
-	if (opt->glx_fshader_win_str) {
-		log_warn("--glx-fshader-win has been replaced by "
-		         "\"--window-shader-fg\" for the new backends.");
-	}
-
 	if (opt->max_brightness < 1.0 && opt->use_damage) {
 		log_warn("--max-brightness requires --no-use-damage. "
 		         "Falling back to 1.0.");
@@ -975,7 +970,6 @@ void options_destroy(struct options *options) {
 		free(options->blur_kerns[i]);
 	}
 	free(options->blur_kerns);
-	free(options->glx_fshader_win_str);
 
 	dynarr_free(options->all_scripts, script_ptr_deinit);
 	memset(options->animations, 0, sizeof(options->animations));

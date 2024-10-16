@@ -830,16 +830,6 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
 	lcfg_lookup_bool(&cfg, "shadow", &opt->shadow_enable);
-	// -m (menu_opacity)
-	if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
-		log_warn("Option `menu-opacity` is deprecated, and will be removed."
-		         "Please use the wintype option `opacity` of `popup_menu`"
-		         "and `dropdown_menu` instead.");
-		opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
-		opt->wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
-		opt->wintype_option_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
-		opt->wintype_option_mask[WINTYPE_POPUP_MENU].opacity = true;
-	}
 	// -f (fading_enable)
 	if (config_lookup_bool(&cfg, "fading", &ival)) {
 		opt->fading_enable = ival;
