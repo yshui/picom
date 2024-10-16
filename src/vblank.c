@@ -82,7 +82,7 @@ struct sgi_video_sync_vblank_scheduler {
 	// Since glXWaitVideoSyncSGI blocks, we need to run it in a separate thread.
 	// ... and all the thread shenanigans that come with it.
 	_Atomic unsigned int current_msc;
-	_Atomic uint64_t current_ust;
+	alignas(8) _Atomic uint64_t current_ust;
 	ev_async notify;
 	pthread_t sync_thread;
 	bool running, error, vblank_requested;

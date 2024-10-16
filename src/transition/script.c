@@ -93,7 +93,7 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 	case INST_LOAD: logv("load %u", inst->slot); break;
 	case INST_STORE: logv("store %u", inst->slot); break;
 	case INST_STORE_OVER_NAN: logv("store/nan %u", inst->slot); break;
-	case INST_LOAD_CTX: logv("load_ctx *(%ld)", inst->ctx); break;
+	case INST_LOAD_CTX: logv("load_ctx *(%td)", inst->ctx); break;
 	}
 #undef logv
 }
@@ -129,7 +129,7 @@ char *instruction_to_c(struct instruction i) {
 		casprintf(&buf, "{.type = INST_STORE_OVER_NAN, .slot = %u},", i.slot);
 		break;
 	case INST_LOAD_CTX:
-		casprintf(&buf, "{.type = INST_LOAD_CTX, .ctx = %ld},", i.ctx);
+		casprintf(&buf, "{.type = INST_LOAD_CTX, .ctx = %td},", i.ctx);
 		break;
 	}
 	return buf;

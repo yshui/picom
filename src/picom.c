@@ -1854,8 +1854,8 @@ static bool load_shader_source(session_t *ps, const char *path) {
 	auto read_bytes = fread(shader->source, sizeof(char), num_bytes, f);
 	if (read_bytes < num_bytes || ferror(f)) {
 		// This is a difficult to hit error case, review thoroughly.
-		log_error("Failed to read custom shader at %s. (read %lu bytes, expected "
-		          "%lu bytes)",
+		log_error("Failed to read custom shader at %s. (read %zu bytes, expected "
+		          "%zu bytes)",
 		          path, read_bytes, num_bytes);
 		goto err;
 	}

@@ -439,7 +439,7 @@ gl_blit_inner(struct gl_data *gd, GLuint target_fbo, int nrects, GLfloat *coord,
 	glBufferData(GL_ARRAY_BUFFER, vert_attribs->stride * nrects * 4, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
 	             indices, GL_STREAM_DRAW);
-	for (ptrdiff_t i = 0; i < vert_attribs->count; i++) {
+	for (unsigned i = 0; i < vert_attribs->count; i++) {
 		auto attrib = &vert_attribs->attribs[i];
 		glEnableVertexAttribArray(attrib->loc);
 		glVertexAttribPointer(attrib->loc, 2, attrib->type, GL_FALSE,
@@ -917,7 +917,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 
 	glBindTexture(GL_TEXTURE_2D, gd->default_mask_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE,
-	             (GLbyte[]){'\xff'});
+	             (GLubyte[]){0xff});
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Initialize shaders
