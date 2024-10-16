@@ -7,5 +7,6 @@ srcs += [
 		'misc.c',
 		'statistics.c',
 		'str.c',
+		'ui.c',
 	),
 ]
