@@ -97,10 +97,6 @@ struct win {
 	vec2 saved_win_image_scale;
 	image_handle shadow_image;
 	image_handle mask_image;
-	// TODO(yshui) only used by legacy backends, remove.
-	/// Pointer to the next higher window to paint.
-	struct win *prev_trans;
-	// TODO(yshui) rethink reg_ignore
 
 	// Core members
 	winstate_t state;

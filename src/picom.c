@@ -794,7 +794,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			unredir_possible = true;
 		}
 
-		w->prev_trans = bottom;
 		bottom = w;
 
 		// If the screen is not redirected check if the window's unredir setting
