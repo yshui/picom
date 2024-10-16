@@ -31,7 +31,6 @@ typedef struct session session_t;
 enum backend {
 	BKEND_XRENDER,
 	BKEND_GLX,
-	BKEND_XR_GLX_HYBRID,
 	BKEND_DUMMY,
 	BKEND_EGL,
 	NUM_BKEND,
@@ -470,18 +469,6 @@ static inline attr_pure int parse_backend(const char *str) {
 		if (strcasecmp(str, BACKEND_STRS[i]) == 0) {
 			return i;
 		}
-	}
-	// Keep compatibility with an old revision containing a spelling mistake...
-	if (strcasecmp(str, "xr_glx_hybird") == 0) {
-		log_warn("backend xr_glx_hybird should be xr_glx_hybrid, the misspelt "
-		         "version will be removed soon.");
-		return BKEND_XR_GLX_HYBRID;
-	}
-	// cju wants to use dashes
-	if (strcasecmp(str, "xr-glx-hybrid") == 0) {
-		log_warn("backend xr-glx-hybrid should be xr_glx_hybrid, the alternative "
-		         "version will be removed soon.");
-		return BKEND_XR_GLX_HYBRID;
 	}
 	return NUM_BKEND;
 }
