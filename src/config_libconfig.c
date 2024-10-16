@@ -122,6 +122,103 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 }
 
 /**
+ * Convert legacy *-exclude parameters into rules.
+ *
+ * For example:
+ * shadow-exclude = [
+ *     "name = 'Program'"
+ * ];
+ *
+ * will be added to rules as entry:
+ *
+ * { match = "name = 'Program'", shadow = false; }
+ */
+void create_rules_compat(const config_t *pcfg, config_setting_t *rules_setting,
+                         const rule_replacement_t *replacement) {
+	config_setting_t *setting = config_lookup(pcfg, replacement->exclude);
+	if (setting == NULL) {
+		return;
+	}
+
+	if (config_setting_is_array(setting)) {
+		int len = config_setting_length(setting);
+
+		if (len > 0) {
+			log_warn("Trying to convert parameters of \"%s\" into rules.",
+			         replacement->exclude);
+		}
+
+		for (int i = 0; i < len; i++) {
+			auto rule =
+			    config_setting_add(rules_setting, NULL, CONFIG_TYPE_GROUP);
+			auto match = config_setting_add(rule, "match", CONFIG_TYPE_STRING);
+			config_setting_set_string(
+			    match, config_setting_get_string_elem(setting, i));
+			auto param = config_setting_add(rule, replacement->parameter,
+			                                replacement->type);
+			if (replacement->type == CONFIG_TYPE_BOOL) {
+				config_setting_set_bool(param, replacement->value.boolean);
+			} else if (replacement->type == CONFIG_TYPE_FLOAT) {
+				config_setting_set_float(param, replacement->value.floating);
+			}
+		}
+	} else if (config_setting_is_group(setting) &&
+	           !strcmp(config_setting_name(setting), "wintypes")) {
+		int len = config_setting_length(setting);
+
+		if (len > 0) {
+			log_warn("Trying to convert wintypes into rules.");
+		}
+
+		for (unsigned i = 0; i < (unsigned)len; i++) {
+			auto wintype = config_setting_get_elem(setting, i);
+
+			auto rule =
+			    config_setting_add(rules_setting, NULL, CONFIG_TYPE_GROUP);
+			auto match = config_setting_add(rule, "match", CONFIG_TYPE_STRING);
+			char *match_str;
+			asprintf(&match_str, "window_type = '%s'",
+			         config_setting_name(wintype));
+			config_setting_set_string(match, match_str);
+			free(match_str);
+
+			for (unsigned j = 0; j < (unsigned)config_setting_length(wintype); j++) {
+				auto param = config_setting_get_elem(wintype, j);
+				const char *param_name = config_setting_name(param);
+
+				if (!strcmp(param_name, "redir-ignore")) {
+					param_name = "unredir";
+				} else if (!strcmp(param_name, "focus")) {
+					log_warn("Rules have no equevalent for wintypes' "
+					         "\"focus\" parameter.");
+					continue;
+				}
+
+				auto new_param = config_setting_add(
+				    rule, param_name, config_setting_type(param));
+
+				if (config_setting_type(param) == CONFIG_TYPE_BOOL) {
+					bool val = config_setting_get_bool(param);
+
+					if (!strcmp(param_name, "unredir")) {
+						val = !val;
+					}
+
+					config_setting_set_bool(new_param, val);
+				} else if (config_setting_type(param) == CONFIG_TYPE_FLOAT) {
+					config_setting_set_float(
+					    new_param, config_setting_get_float(param));
+				} else {
+					log_warn("Data type %d is not yet implemented "
+					         "for converting wintypes!",
+					         config_setting_type(param));
+				}
+			}
+		}
+	}
+}
+
+/**
  * Parse a condition list in configuration file.
  */
 bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg, const char *name) {
@@ -666,7 +763,8 @@ resolve_include(config_t *cfg, const char *include_dir, const char *path, const 
 	return ret;
 }
 
-bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(readability-function-cognitive-complexity)*/
+bool parse_config_libconfig(options_t *opt, const char *config_file,
+                            config_t *release_cfg) { /*NOLINT(readability-function-cognitive-complexity)*/
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
 	    "If you encounter any problems without this feature, please feel free to "
@@ -769,6 +867,23 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
+		static const rule_replacement_t replacements[] = {
+		    {"blur-background-exclude", "blur-background", CONFIG_TYPE_BOOL, {.boolean = false}},
+		    {"shadow-exclude", "shadow", CONFIG_TYPE_BOOL, {.boolean = false}},
+		    {"fade-exclude", "fade", CONFIG_TYPE_BOOL, {.boolean = false}},
+		    {"rounded-corners-exclude", "corner-radius", CONFIG_TYPE_FLOAT, {.floating = 0.0f}},
+		    {"unredir-if-possible-exclude", "unredir", CONFIG_TYPE_BOOL, {.boolean = false}},
+		    {"invert-color-include", "invert-color", CONFIG_TYPE_BOOL, {.boolean = true}},
+		    {"transparent-clipping-exclude",
+		     "transparent-clipping",
+		     CONFIG_TYPE_BOOL,
+		     {.boolean = false}},
+		    {"wintypes", NULL, 0, 0}};
+
+		for (size_t i = 0; i < sizeof(replacements) / sizeof(*replacements); i++) {
+			create_rules_compat(&cfg, rules, &replacements[i]);
+		}
+
 		parse_rules(&opt->rules, rules, &opt->all_scripts);
 		c2_condition_list_foreach(&opt->rules, i) {
 			auto data = (struct window_maybe_options *)c2_condition_get_data(i);
@@ -953,21 +1068,9 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
 
 	if (!list_is_empty(&opt->rules)) {
-		static const char *rule_list[] = {
-		    "transparent-clipping-exclude",
-		    "shadow-exclude",
-		    "clip-shadow-above",
-		    "fade-exclude",
-		    "focus-exclude",
-		    "invert-color-include",
-		    "blur-background-exclude",
-		    "unredir-if-possible-exclude",
-		    "rounded-corners-exclude",
-		    "corner-radius-rules",
-		    "opacity-rule",
-		    "window-shader-fg-rule",
-		    "wintypes",
-		};
+		static const char *rule_list[] = {"clip-shadow-above", "focus-exclude",
+		                                  "corner-radius-rules", "opacity-rule",
+		                                  "window-shader-fg-rule"};
 		for (size_t i = 0; i < sizeof(rule_list) / sizeof(rule_list[0]); i++) {
 			if (config_lookup(&cfg, rule_list[i])) {
 				log_warn_both_style_of_rules(rule_list[i]);
@@ -1123,7 +1226,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	succeeded = true;
 
 out:
-	config_destroy(&cfg);
+	*release_cfg = cfg;
 	free(path);
 	return succeeded;
 }
