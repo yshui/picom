@@ -174,7 +174,7 @@ const char blit_shader_glsl[] = GLSL(330,
 			// For anti-aliasing, we estimate how much of the pixel is covered by the rounded
 			// rectangle. This differs depends on at what angle the circle sweeps through the
 			// pixel. e.g. if it goes from corner to corner, then the coverage goes from 0 to
-			// 1 when the distance goes from -sqrt(2)/2 to +sqrt(2)/2; if it goes from egde to
+			// 1 when the distance goes from -sqrt(2)/2 to +sqrt(2)/2; if it goes from edge to
 			// edge, then the coverage goes from 0 to 1 when the distance goes from -0.5 to 0.5.
 			// The chord length returned by `rectangle_sdf` is an approximation of this.
 			float rect_distance = sdf.x - corner_radius + sdf.y / 2.0f;

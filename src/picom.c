@@ -453,7 +453,7 @@ static void destroy_backend(session_t *ps) {
 			//      handled until they are mapped.
 			//   2. If we haven't had chance to handle the stale flags. This
 			//      could happen if we received a root ConfigureNotify
-			//      _immidiately_ after we redirected.
+			//      _immediately_ after we redirected.
 			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 			win_release_images(ps->backend_data, w);
 		}

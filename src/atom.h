@@ -79,7 +79,7 @@ const char *get_atom_name_cached(struct atom *a, xcb_atom_t atom);
 void destroy_atoms(struct atom *a);
 
 /// A mock atom object for unit testing. Successive calls to get_atom will return
-/// secutive integers as atoms, starting from 1. Calling get_atom_name with atoms
+/// consecutive integers as atoms, starting from 1. Calling get_atom_name with atoms
 /// previously seen will result in the string that was used to create the atom; if
 /// the atom was never returned by get_atom, it will abort.
 struct atom *init_mock_atoms(void);
