@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <xcb/randr.h>
 #include <xcb/xcb_event.h>
 
 #include "log.h"
@@ -81,6 +82,59 @@ ui_message_box_draw_text(struct ui *ui, struct x_connection *c, xcb_window_t win
 	xcb_free_gc(c->c, gc);
 	return pixmap;
 }
+
+void ui_message_box_place(struct x_connection *c, struct ui_message_box_content *content,
+                          int16_t *x, int16_t *y) {
+	auto r =
+	    XCB_AWAIT(xcb_randr_get_screen_resources_current, c->c, c->screen_info->root);
+	if (r == NULL) {
+		return;
+	}
+	auto pointer = XCB_AWAIT(xcb_query_pointer, c->c, c->screen_info->root);
+	if (pointer == NULL) {
+		free(r);
+		return;
+	}
+
+	auto num_crtc = xcb_randr_get_screen_resources_current_crtcs_length(r);
+	auto crtcs = xcb_randr_get_screen_resources_current_crtcs(r);
+	for (int i = 0; i < num_crtc; i++) {
+		auto crtc_info_ptr =
+		    XCB_AWAIT(xcb_randr_get_crtc_info, c->c, crtcs[i], r->config_timestamp);
+		if (crtc_info_ptr == NULL ||
+		    crtc_info_ptr->status != XCB_RANDR_SET_CONFIG_SUCCESS) {
+			free(crtc_info_ptr);
+			continue;
+		}
+
+		auto crtc_info = *crtc_info_ptr;
+		free(crtc_info_ptr);
+
+		if (content->scale == 0) {
+			content->scale = crtc_info.width / 1280.0;
+		}
+
+		vec2 size = {
+		    (content->size.width + (int)content->margin * 2) * content->scale,
+		    (content->size.height + (int)content->margin * 2) * content->scale,
+		};
+
+		if (pointer->root_x >= crtc_info.x &&
+		    pointer->root_x < crtc_info.x + crtc_info.width &&
+		    pointer->root_y >= crtc_info.y &&
+		    pointer->root_y < crtc_info.y + crtc_info.height) {
+			auto tmp_x =
+			    crtc_info.x + max2((crtc_info.width - size.width) / 2, 0);
+			auto tmp_y =
+			    crtc_info.y + max2((crtc_info.height - size.height) / 2, 0);
+			*x = (int16_t)clamp(tmp_x, INT16_MIN, INT16_MAX);
+			*y = (int16_t)clamp(tmp_y, INT16_MIN, INT16_MAX);
+			break;
+		}
+	}
+	free(pointer);
+	free(r);
+}
 const int64_t FPS = 60;
 bool ui_message_box_show(struct ui *ui, struct x_connection *c,
                          struct ui_message_box_content *content, unsigned timeout) {
@@ -91,6 +145,9 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 	}
 	struct timespec close_time = next_render;
 	close_time.tv_sec += (long)timeout;
+
+	int16_t x = 0, y = 0;
+	ui_message_box_place(c, content, &x, &y);
 
 	ivec2 size = ivec2_add(
 	    content->size, (ivec2){(int)content->margin * 2, (int)content->margin * 2});
@@ -110,8 +167,7 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 	                          XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_POINTER_MOTION |
 	                          XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW};
 	bool success = XCB_AWAIT_VOID(xcb_create_window, c->c, c->screen_info->root_depth,
-	                              win, c->screen_info->root,
-	                              /*x=*/1, /*y=*/1, width, height,
+	                              win, c->screen_info->root, x, y, width, height,
 	                              /*border_width=*/0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
 	                              c->screen_info->root_visual, mask, values);
 	if (!success) {
