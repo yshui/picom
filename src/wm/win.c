@@ -472,8 +472,15 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 	// Assert that the MAPPED flag is already handled.
 	assert(!win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
-	if (w->state != WSTATE_MAPPED) {
-		// Flags of invisible windows are processed when they are mapped
+	if (w->state != WSTATE_MAPPED || !win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE)) {
+		// 1. Flags of invisible windows are processed when they are mapped
+		// 2. We don't need to update window image if pixmap is not stale
+		return;
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_ERROR)) {
+		// We have previously failed to bind the pixmap, don't try again.
+		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 		return;
 	}
 
