@@ -209,6 +209,7 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 		clock_gettime(CLOCK_MONOTONIC, &now);
 
 		int wait_time = 0;
+		double remaining = 0;
 		bool should_render = false;
 		if (timespec_cmp(now, next_render) < 0) {
 			wait_time = (int)((next_render.tv_sec - now.tv_sec) * 1000 +
@@ -222,6 +223,9 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 		}
 		if (timespec_cmp(close_time, now) <= 0) {
 			quit = true;
+		} else {
+			remaining = (double)(close_time.tv_sec - now.tv_sec) +
+			            (double)(close_time.tv_nsec - now.tv_nsec) / 1000000000;
 		}
 		while ((event = xcb_poll_for_event(c->c)) != NULL) {
 			switch (XCB_EVENT_RESPONSE_TYPE(event)) {
@@ -235,6 +239,7 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 				                     content_picture, XCB_NONE,
 				                     target_picture, 0, 0, 0, 0, margin,
 				                     margin, inner_width, inner_height);
+				should_render = true;
 				break;
 			case XCB_KEY_RELEASE:;
 				xcb_key_release_event_t *kr = (xcb_key_release_event_t *)event;
@@ -254,8 +259,29 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 			free(event);
 		}
 		if (should_render) {
+			const uint16_t bar_height = (uint16_t)(10 * content->scale);
+			const uint16_t bar_width =
+			    to_u16_saturated(width * remaining / timeout);
 			next_render.tv_sec = now.tv_sec;
 			next_render.tv_nsec = now.tv_nsec + 1000000000 / FPS;
+			xcb_render_fill_rectangles(
+			    c->c, XCB_RENDER_PICT_OP_SRC, target_picture,
+			    (xcb_render_color_t){}, 1,
+			    (const xcb_rectangle_t[]){
+			        {.x = 0,
+			         .y = (int16_t)clamp(height - bar_height, 0, INT16_MAX),
+			         .width = width,
+			         .height = bar_height}});
+			xcb_render_fill_rectangles(
+			    c->c, XCB_RENDER_PICT_OP_SRC, target_picture,
+			    (xcb_render_color_t){
+			        .alpha = 0xffff, .red = 0xffff, .green = 0xffff, .blue = 0xffff},
+			    1,
+			    (const xcb_rectangle_t[]){
+			        {.x = (int16_t)((width - bar_width) / 2),
+			         .y = (int16_t)clamp(height - bar_height, 0, INT16_MAX),
+			         .width = bar_width,
+			         .height = bar_height}});
 			if (next_render.tv_nsec >= 1000000000) {
 				next_render.tv_sec++;
 				next_render.tv_nsec -= 1000000000;
