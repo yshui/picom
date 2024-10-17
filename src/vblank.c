@@ -214,6 +214,8 @@ static void *sgi_video_sync_thread(void *data) {
 	pthread_cond_signal(&args->start_cnd);
 	pthread_mutex_unlock(&args->start_mtx);
 
+	unsigned int last_msc = 0;
+
 	pthread_mutex_lock(&self->vblank_requested_mtx);
 	while (self->running) {
 		if (!self->vblank_requested) {
@@ -223,10 +225,9 @@ static void *sgi_video_sync_thread(void *data) {
 		}
 		pthread_mutex_unlock(&self->vblank_requested_mtx);
 
-		unsigned int last_msc;
 		glXWaitVideoSyncSGI(1, 0, &last_msc);
 
-		struct timespec now;
+		struct timespec now = {};
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		atomic_store(&self->current_msc, last_msc);
 		atomic_store(&self->current_ust,
