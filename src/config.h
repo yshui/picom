@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+#include <uthash.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
@@ -217,8 +218,16 @@ struct window_options {
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 };
 
+struct option_name {
+	UT_hash_handle hh;
+	const char *name;
+};
+
 /// Structure representing all options.
 typedef struct options {
+	// === Deprecation ===
+	struct option_name *problematic_options;
+
 	// === Config ===
 	/// Path to the config file
 	char *config_file_path;
@@ -429,6 +438,26 @@ typedef struct options {
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 bool load_plugin(const char *name, const char *include_dir);
+static inline void record_problematic_option(struct options *opt, const char *name) {
+	struct option_name *record = calloc(1, sizeof(*record));
+	record->name = name;
+	HASH_ADD_STR(opt->problematic_options, name, record);
+}
+
+static inline void
+report_deprecated_option(struct options *opt, const char *name, bool error) {
+	struct option_name *record = NULL;
+	HASH_FIND_STR(opt->problematic_options, name, record);
+	if (record != NULL) {
+		return;
+	}
+	enum log_level level = error ? LOG_LEVEL_ERROR : LOG_LEVEL_WARN;
+	LOG_(level,
+	     "Option \"%s\" is deprecated, please remove it from your config file and/or "
+	     "command line options.",
+	     name);
+	record_problematic_option(opt, name);
+}
 
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
@@ -485,10 +514,12 @@ static inline bool parse_vsync(const char *str) {
 /// Generate animation script for legacy fading options
 void generate_fading_config(struct options *opt);
 
-static inline void log_warn_both_style_of_rules(const char *option_name) {
+static inline void log_warn_both_style_of_rules(struct options *opt, const char *option_name) {
 	log_warn("Option \"%s\" is set along with \"rules\". \"rules\" will take "
 	         "precedence, and \"%s\" will have no effect.",
 	         option_name, option_name);
+	opt->has_both_style_of_rules = true;
+	record_problematic_option(opt, option_name);
 }
 enum animation_trigger parse_animation_trigger(const char *trigger);
 

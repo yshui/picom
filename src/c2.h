@@ -24,7 +24,8 @@ struct win;
 struct list_node;
 
 typedef void (*c2_userdata_free)(void *);
-struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void *data);
+struct c2_condition *
+c2_parse(struct list_node *list, const char *pattern, void *data, bool *deprecated);
 
 /// Parse a condition that has a prefix. The prefix is parsed by `parse_prefix`. If
 /// `free_value` is not NULL, it will be called to free the value returned by
@@ -32,7 +33,7 @@ struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void 
 c2_condition *
 c2_parse_with_prefix(struct list_node *list, const char *pattern,
                      void *(*parse_prefix)(const char *input, const char **end, void *),
-                     void (*free_value)(void *), void *user_data);
+                     void (*free_value)(void *), void *user_data, bool *deprecated);
 
 void c2_free_condition(c2_condition *lp, c2_userdata_free f);
 
