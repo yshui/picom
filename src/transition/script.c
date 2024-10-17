@@ -998,8 +998,8 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 		struct script_context_info_internal *info, *next_info;
 		HASH_ITER(hh, context_table, info, next_info) {
 			HASH_DEL(context_table, info);
-			free(info);
 		}
+		free(info);
 	}
 	for (int i = 0; cfg.output_info && cfg.output_info[i].name; i++) {
 		struct variable_allocation *alloc = NULL;
