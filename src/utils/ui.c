@@ -191,6 +191,12 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 		return false;
 	}
 
+	const char filter_name[] = "nearest";
+	if (!XCB_AWAIT_VOID(xcb_render_set_picture_filter, c->c, content_picture,
+	                    ARR_SIZE(filter_name) - 1, filter_name, 0, NULL)) {
+		return false;
+	}
+
 	if (!XCB_AWAIT_VOID(xcb_map_window, c->c, win)) {
 		xcb_destroy_window(c->c, win);
 		return false;
