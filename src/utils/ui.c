@@ -127,8 +127,8 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 	}
 
 	xcb_render_transform_t transform = {
-	    .matrix11 = DOUBLE_TO_XFIXED(1.0F / (double)content->scale),
-	    .matrix22 = DOUBLE_TO_XFIXED(1.0F / (double)content->scale),
+	    .matrix11 = DOUBLE_TO_XFIXED(1.0F / content->scale),
+	    .matrix22 = DOUBLE_TO_XFIXED(1.0F / content->scale),
 	    .matrix33 = DOUBLE_TO_XFIXED(1.0),
 	};
 	if (!XCB_AWAIT_VOID(xcb_render_set_picture_transform, c->c, content_picture, transform)) {

@@ -30,7 +30,7 @@ struct ui_message_box_content {
 	unsigned num_lines;
 	ivec2 size;
 	unsigned margin;
-	unsigned scale;
+	double scale;
 	struct ui_message_box_line lines[];
 };
 
