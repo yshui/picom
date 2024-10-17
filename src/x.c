@@ -222,23 +222,30 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
-/// Initialize x_connection struct from an Xlib Display.
-///
-/// Note this function doesn't take ownership of the Display, the caller is still
-/// responsible for closing it after `free_x_connection` is called.
-void x_connection_init(struct x_connection *c, Display *dpy) {
-	c->dpy = dpy;
-	c->c = XGetXCBConnection(dpy);
+static void x_connection_init_inner(struct x_connection *c) {
 	list_init_head(&c->pending_x_requests);
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
-	c->screen = DefaultScreen(dpy);
 	c->screen_info = xcb_aux_get_screen(c->c, c->screen);
 
 	// Do a round trip to fetch the current sequence number
 	auto cookie = xcb_get_input_focus(c->c);
 	free(xcb_get_input_focus_reply(c->c, cookie, NULL));
 	c->last_sequence = cookie.sequence;
+}
+
+void x_connection_init(struct x_connection *c, Display *dpy) {
+	c->dpy = dpy;
+	c->c = XGetXCBConnection(dpy);
+	c->screen = DefaultScreen(dpy);
+	x_connection_init_inner(c);
+}
+
+void x_connection_init_xcb(struct x_connection *c, xcb_connection_t *conn, int screen) {
+	c->c = conn;
+	c->dpy = NULL;
+	c->screen = screen;
+	x_connection_init_inner(c);
 }
 
 /**

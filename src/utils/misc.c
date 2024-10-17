@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/uio.h>
+#include <xcb/randr.h>
+#include <xcb/render.h>
 
 #include "compiler.h"
 #include "misc.h"

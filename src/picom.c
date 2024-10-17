@@ -60,6 +60,7 @@
 #include "utils/file_watch.h"
 #include "utils/list.h"
 #include "utils/misc.h"
+#include "utils/process.h"
 #include "utils/statistics.h"
 #include "utils/str.h"
 #include "utils/uthash_extra.h"

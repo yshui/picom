@@ -211,6 +211,7 @@ static inline void attr_unused free_x_connection(struct x_connection *c) {
 /// Note this function doesn't take ownership of the Display, the caller is still
 /// responsible for closing it after `free_x_connection` is called.
 void x_connection_init(struct x_connection *c, Display *dpy);
+void x_connection_init_xcb(struct x_connection *c, xcb_connection_t *conn, int screen);
 
 /**
  * Get a specific attribute of a window.
