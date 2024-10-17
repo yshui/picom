@@ -71,8 +71,7 @@ static bool set_rule_flag(const struct picom_option *arg_opt, const struct picom
                           const char * /*arg_str*/, void *output) {
 	auto opt = (struct options *)output;
 	if (!list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules(arg_opt->long_name);
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, arg_opt->long_name);
 		return true;
 	}
 	*(bool *)(output + arg->offset) = true;
@@ -115,8 +114,7 @@ static bool store_rule_float(const struct picom_option *arg_opt, const struct pi
                              const char *arg_str, void *output) {
 	auto opt = (struct options *)output;
 	if (!list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules(arg_opt->long_name);
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, arg_opt->long_name);
 		return true;
 	}
 	return store_float(arg_opt, arg, arg_str, output);
@@ -157,16 +155,24 @@ static bool store_rules(const struct picom_option *arg_opt, const struct picom_a
 	const struct picom_rules_parser *parser = arg->user_data;
 	struct options *opt = (struct options *)output;
 	if (!list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules(arg_opt->long_name);
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, arg_opt->long_name);
 		return true;
 	}
 	auto rules = (struct list_node *)(output + arg->offset);
+	bool deprecated = false, succeeded;
 	if (!parser->parse_prefix) {
-		return c2_parse(rules, arg_str, NULL) != NULL;
+		succeeded = c2_parse(rules, arg_str, NULL, &deprecated) != NULL;
+	} else {
+		succeeded = c2_parse_with_prefix(rules, arg_str, parser->parse_prefix,
+		                                 parser->free_value, parser->user_data,
+		                                 &deprecated);
 	}
-	return c2_parse_with_prefix(rules, arg_str, parser->parse_prefix,
-	                            parser->free_value, parser->user_data);
+	if (deprecated) {
+		log_warn("Rule option --%s contains deprecated syntax (see above).",
+		         arg_opt->long_name);
+		record_problematic_option(opt, arg_opt->long_name);
+	}
+	return succeeded;
 }
 
 static bool store_fixed_enum(const struct picom_option * /*opt*/, const struct picom_arg *arg,
@@ -189,10 +195,7 @@ static bool reject(const struct picom_option * /*opt*/, const struct picom_arg *
 static bool say_deprecated(const struct picom_option *opt, const struct picom_arg *arg,
                            const char *arg_str, void *output) {
 	const struct picom_deprecated_arg *deprecation = arg->user_data;
-	enum log_level level = deprecation->error ? LOG_LEVEL_ERROR : LOG_LEVEL_WARN;
-	log_printf(tls_logger, level, __func__,
-	           "Option `--%s` has been deprecated. Please remove it. %s",
-	           opt->long_name, deprecation->message);
+	report_deprecated_option(output, opt->long_name, deprecation->error);
 	return deprecation->inner.handler(opt, &deprecation->inner, arg_str, output);
 }
 
@@ -979,6 +982,13 @@ void options_destroy(struct options *options) {
 		free(i->path);
 		list_remove(&i->siblings);
 		free(i);
+	}
+
+	struct option_name *bad_opt, *next_bad_opt;
+	HASH_ITER(hh, options->problematic_options, bad_opt, next_bad_opt) {
+		HASH_DEL(options->problematic_options, bad_opt);
+		free((void *)bad_opt->name);
+		free(bad_opt);
 	}
 }
 

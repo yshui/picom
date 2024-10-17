@@ -277,39 +277,6 @@ void ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
 // === Functions ===
 
 /**
- * Subtracting two struct timespec values.
- *
- * Taken from glibc manual.
- *
- * Subtract the `struct timespec' values X and Y,
- * storing the result in RESULT.
- * Return 1 if the difference is negative, otherwise 0.
- */
-static inline int
-timespec_subtract(struct timespec *result, struct timespec *x, struct timespec *y) {
-	/* Perform the carry for the later subtraction by updating y. */
-	if (x->tv_nsec < y->tv_nsec) {
-		long nsec = (y->tv_nsec - x->tv_nsec) / NS_PER_SEC + 1;
-		y->tv_nsec -= NS_PER_SEC * nsec;
-		y->tv_sec += nsec;
-	}
-
-	if (x->tv_nsec - y->tv_nsec > NS_PER_SEC) {
-		long nsec = (x->tv_nsec - y->tv_nsec) / NS_PER_SEC;
-		y->tv_nsec += NS_PER_SEC * nsec;
-		y->tv_sec -= nsec;
-	}
-
-	/* Compute the time remaining to wait.
-	   tv_nsec is certainly positive. */
-	result->tv_sec = x->tv_sec - y->tv_sec;
-	result->tv_nsec = x->tv_nsec - y->tv_nsec;
-
-	/* Return 1 if result is negative. */
-	return x->tv_sec < y->tv_sec;
-}
-
-/**
  * Get current time in struct timeval.
  */
 static inline struct timeval get_time_timeval(void) {

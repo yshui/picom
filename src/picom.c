@@ -60,8 +60,10 @@
 #include "utils/file_watch.h"
 #include "utils/list.h"
 #include "utils/misc.h"
+#include "utils/process.h"
 #include "utils/statistics.h"
 #include "utils/str.h"
+#include "utils/ui.h"
 #include "utils/uthash_extra.h"
 #include "vblank.h"
 #include "wm/defs.h"
@@ -794,7 +796,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			unredir_possible = true;
 		}
 
-		w->prev_trans = bottom;
 		bottom = w;
 
 		// If the screen is not redirected check if the window's unredir setting
@@ -1854,8 +1855,8 @@ static bool load_shader_source(session_t *ps, const char *path) {
 	auto read_bytes = fread(shader->source, sizeof(char), num_bytes, f);
 	if (read_bytes < num_bytes || ferror(f)) {
 		// This is a difficult to hit error case, review thoroughly.
-		log_error("Failed to read custom shader at %s. (read %lu bytes, expected "
-		          "%lu bytes)",
+		log_error("Failed to read custom shader at %s. (read %zu bytes, expected "
+		          "%zu bytes)",
 		          path, read_bytes, num_bytes);
 		goto err;
 	}
@@ -1889,6 +1890,72 @@ static struct window_options win_options_from_config(const struct options *opts)
 	};
 	memcpy(ret.animations, opts->animations, sizeof(ret.animations));
 	return ret;
+}
+
+static void show_config_warning_message_box(struct options *opt) {
+	if (opt->problematic_options == NULL) {
+		return;
+	}
+
+	struct x_connection c;
+	if (spawn_picomling(&c) != 0) {
+		return;
+	}
+
+	struct ui *ui = ui_new(&c);
+	if (ui == NULL) {
+		exit(1);
+	}
+
+	auto lines = HASH_COUNT(opt->problematic_options) + 4;
+	struct ui_message_box_line normal_line_template = {
+	    .text = NULL,
+	    .color = UI_COLOR_WHITE,
+	    .style = UI_STYLE_NORMAL,
+	    .justify = UI_JUSTIFY_LEFT,
+	    .pad_bottom = 3,
+	};
+	struct ui_message_box_content *content =
+	    malloc(sizeof(*content) + lines * sizeof(struct ui_message_box_line));
+	content->num_lines = lines;
+	content->margin = 10;
+	content->scale = 0;
+	content->lines[0] = (struct ui_message_box_line){
+	    .text = "picom Warning!",
+	    .color = UI_COLOR_YELLOW,
+	    .style = UI_STYLE_BOLD,
+	    .justify = UI_JUSTIFY_CENTER,
+	    .pad_bottom = 15,
+	};
+	content->lines[1] = normal_line_template;
+	content->lines[1].text =
+	    "Some of your settings have generated warnings. Check the console";
+	content->lines[2] = normal_line_template;
+	content->lines[2].text =
+	    "output of picom for more information. Offending options are:";
+	content->lines[2].pad_bottom = 10;
+	struct option_name *o, *no;
+	unsigned pos = 3;
+	HASH_ITER(hh, opt->problematic_options, o, no) {
+		char *buf = NULL;
+		casprintf(&buf, "    * %s", o->name);
+		content->lines[pos] = normal_line_template;
+		content->lines[pos].text = buf;
+		pos++;
+	}
+	content->lines[pos - 1].pad_bottom = 10;
+	content->lines[pos] = normal_line_template;
+	content->lines[pos].text = "(Press ESC to close)";
+	content->lines[pos].pad_bottom = 10;
+	content->lines[pos].justify = UI_JUSTIFY_CENTER;
+	ui_message_box_content_plan(ui, &c, content);
+	ui_message_box_show(ui, &c, content, 15);
+
+	for (unsigned i = 3; i < lines - 1; i++) {
+		free((void *)content->lines[i].text);
+	}
+	free(content);
+	exit(0);
 }
 
 // NOLINTBEGIN(readability-function-cognitive-complexity)
@@ -2059,6 +2126,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		          "invalid options.");
 		return NULL;
 	}
+
+	show_config_warning_message_box(&ps->o);
 
 	const char *basename = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
 

@@ -126,7 +126,7 @@ safe_isinf(double a) {
 
 #define to_i16_checked(val)                                                              \
 	({                                                                               \
-		int64_t __to_tmp = (val);                                                \
+		int64_t __to_tmp = (int64_t)(val);                                       \
 		ASSERT_IN_RANGE(__to_tmp, INT16_MIN, INT16_MAX);                         \
 		(int16_t) __to_tmp;                                                      \
 	})
@@ -166,12 +166,16 @@ static inline uint16_t i64_to_u16_saturated(int64_t val) {
 	}
 	return (uint16_t)val;
 }
+static inline uint16_t int_to_u16_saturated(int val) {
+	return i64_to_u16_saturated(val);
+}
 
 #define to_u16_saturated(val)                                                            \
 	_Generic((val),                                                                  \
 	    double: double_to_u16_saturated,                                             \
 	    float: double_to_u16_saturated,                                              \
 	    uint64_t: u64_to_u16_saturated,                                              \
+	    int: int_to_u16_saturated,                                                   \
 	    default: i64_to_u16_saturated)((val))
 
 static inline int32_t double_to_i32_saturated(double val) {
@@ -374,5 +378,15 @@ static inline int timespec_get(struct timespec *ts, int base) {
 	return clock_gettime(CLOCK_REALTIME, ts);
 }
 #endif
+
+static inline int long_cmp(const long a, const long b) {
+	return a < b ? -1 : a > b;
+}
+
+/// Compare 2 timespecs. Return 1 if `x` is greater, -1 if `y` is greater, 0 if
+/// they are equal.
+static inline int timespec_cmp(struct timespec x, struct timespec y) {
+	return long_cmp(x.tv_sec, y.tv_sec) ?: long_cmp(x.tv_nsec, y.tv_nsec);
+}
 
 // vim: set noet sw=8 ts=8 :

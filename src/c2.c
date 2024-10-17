@@ -54,7 +54,7 @@ typedef struct {
 		struct c2_condition_node_branch *b;
 		struct c2_condition_node_leaf *l;
 	};
-	bool neg;
+	bool neg : 1;
 } c2_condition_node_ptr;
 
 struct c2_tracked_property_key {
@@ -150,10 +150,10 @@ struct c2_condition_node_leaf {
 		C2_L_MPCRE,
 	} match : 3;
 	bool match_ignorecase : 1;
+	bool target_on_client : 1;
 	char *tgt;
 	unsigned int target_id;
 	xcb_atom_t tgtatom;
-	bool target_on_client;
 	int index;
 	// TODO(yshui) translate some of the pre-defined targets to
 	//             generic window properties. e.g. `name = "xterm"`
@@ -324,8 +324,8 @@ static inline int c2h_b_opcmp(c2_b_op_t op1, c2_b_op_t op2) {
 	return c2h_b_opp(op1) - c2h_b_opp(op2);
 }
 
-static int
-c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, int level);
+static int c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult,
+                          int level, bool *deprecated);
 static int c2_parse_target(const char *pattern, int offset, c2_condition_node_ptr *presult);
 static int c2_parse_op(const char *pattern, int offset, c2_condition_node_ptr *presult);
 static int c2_parse_pattern(const char *pattern, int offset, c2_condition_node_ptr *presult);
@@ -349,7 +349,8 @@ static inline void c2_freep(c2_condition_node_ptr *pp) {
 /**
  * Parse a condition string.
  */
-struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void *data) {
+struct c2_condition *
+c2_parse(struct list_node *list, const char *pattern, void *data, bool *deprecated) {
 	if (!pattern) {
 		return NULL;
 	}
@@ -361,7 +362,7 @@ struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void 
 	if (strlen(pattern) >= 2 && ':' == pattern[1]) {
 		offset = c2_parse_legacy(pattern, 0, &result);
 	} else {
-		offset = c2_parse_group(pattern, 0, &result, 0);
+		offset = c2_parse_group(pattern, 0, &result, 0, deprecated);
 	}
 
 	if (offset < 0) {
@@ -397,13 +398,13 @@ struct c2_condition *c2_parse(struct list_node *list, const char *pattern, void 
 c2_condition *
 c2_parse_with_prefix(struct list_node *list, const char *pattern,
                      void *(*parse_prefix)(const char *input, const char **end, void *),
-                     void (*free_value)(void *), void *user_data) {
+                     void (*free_value)(void *), void *user_data, bool *deprecated) {
 	char *pattern_start = NULL;
 	void *val = parse_prefix(pattern, (const char **)&pattern_start, user_data);
 	if (pattern_start == NULL) {
 		return NULL;
 	}
-	auto ret = c2_parse(list, pattern_start, val);
+	auto ret = c2_parse(list, pattern_start, val, deprecated);
 	if (!ret && free_value) {
 		free_value(val);
 	}
@@ -412,7 +413,8 @@ c2_parse_with_prefix(struct list_node *list, const char *pattern,
 
 TEST_CASE(c2_parse) {
 	char str[1024];
-	struct c2_condition *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
+	bool deprecated = false;
+	struct c2_condition *cond = c2_parse(NULL, "name = \"xterm\"", NULL, &deprecated);
 	struct atom *atoms = init_mock_atoms();
 	struct c2_state *state = c2_state_new(atoms);
 	TEST_NOTEQUAL(cond, NULL);
@@ -439,16 +441,16 @@ TEST_CASE(c2_parse) {
 	destroy_atoms(atoms);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "argb", NULL);
+	cond = c2_parse(NULL, "argb", NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	TEST_NOTEQUAL(cond->root.type, C2_NODE_TYPE_BRANCH);
 	TEST_EQUAL(cond->root.l->ptntype, C2_L_PTINT);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "argb = 'b'", NULL);
+	cond = c2_parse(NULL, "argb = 'b'", NULL, &deprecated);
 	TEST_EQUAL(cond, NULL);
 
-	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
+	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	TEST_NOTEQUAL(cond->root.type, C2_NODE_TYPE_BRANCH);
 	TEST_NOTEQUAL(cond->root.l, NULL);
@@ -474,14 +476,14 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]", len);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(
-	    NULL, "!(name != \"xterm\" && class_g *= \"XTerm\") || !name != \"yterm\"", NULL);
+	cond = c2_parse(NULL, "!(name != \"xterm\" && class_g *= \"XTerm\") || !name != \"yterm\"",
+	                NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	TEST_STREQUAL(c2_condition_to_str(cond), "(!(name != \"xterm\" && class_g *= "
 	                                         "\"XTerm\") || name = \"yterm\")");
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "name = \"xterm\" && class_g *= \"XTerm\"", NULL);
+	cond = c2_parse(NULL, "name = \"xterm\" && class_g *= \"XTerm\"", NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	TEST_EQUAL(cond->root.type, C2_NODE_TYPE_BRANCH);
 	TEST_NOTEQUAL(cond->root.b, NULL);
@@ -511,7 +513,8 @@ TEST_CASE(c2_parse) {
 	c2_state_free(state);
 	destroy_atoms(atoms);
 
-	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
+	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL,
+	                &deprecated);
 	TEST_EQUAL(cond->root.l->index, 1);
 	TEST_STREQUAL(cond->root.l->tgt, "_NET_WM_STATE");
 	TEST_STREQUAL(cond->root.l->ptnstr, "_NET_WM_STATE_HIDDEN");
@@ -520,39 +523,39 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL3(str, "_NET_WM_STATE[1] *= \"_NET_WM_STATE_HIDDEN\"", len);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "_NET_WM_STATE[*]:32a*='_NET_WM_STATE_HIDDEN'", NULL);
+	cond = c2_parse(NULL, "_NET_WM_STATE[*]:32a*='_NET_WM_STATE_HIDDEN'", NULL, &deprecated);
 	TEST_EQUAL(cond->root.l->index, -1);
 
 	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "_NET_WM_STATE[*] *= \"_NET_WM_STATE_HIDDEN\"", len);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "!class_i:0s", NULL);
+	cond = c2_parse(NULL, "!class_i:0s", NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, "!class_i", len);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
+	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	c2_free_condition(cond, NULL);
 
-	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL);
+	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL, &deprecated);
 	TEST_EQUAL(cond, NULL);
 
-	cond = c2_parse(NULL, "N [4444444444444: \n", NULL);
+	cond = c2_parse(NULL, "N [4444444444444: \n", NULL, &deprecated);
 	TEST_EQUAL(cond, NULL);
 
-	cond = c2_parse(NULL, " x:a=\"b\377\\xCCCCC", NULL);
+	cond = c2_parse(NULL, " x:a=\"b\377\\xCCCCC", NULL, &deprecated);
 	TEST_EQUAL(cond, NULL);
 
-	cond = c2_parse(NULL, "!!!!!!!((((((!(((((,", NULL);
+	cond = c2_parse(NULL, "!!!!!!!((((((!(((((,", NULL, &deprecated);
 	TEST_EQUAL(cond, NULL);
 
 	const char *rule = "(((role = \"\\\\tg^\\n\\n[\\t\" && role ~?= \"\") && "
 	                   "role ~?= \"\\n\\n\\n\\b\\n^\\n*0bon\") && role ~?= "
 	                   "\"\\n\\n\\x8a\\b\\n^\\n*0\\n[\\n[\\n\\n\\b\\n\")";
-	cond = c2_parse(NULL, rule, NULL);
+	cond = c2_parse(NULL, rule, NULL, &deprecated);
 	TEST_NOTEQUAL(cond, NULL);
 	len = c2_condition_node_to_str(cond->root, str, sizeof(str));
 	TEST_STREQUAL3(str, rule, len);
@@ -580,8 +583,8 @@ TEST_CASE(c2_parse) {
  *
  * @return offset of next character in string
  */
-static int
-c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, int level) {
+static int c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult,
+                          int level, bool *deprecated) {
 	if (!pattern) {
 		return -1;
 	}
@@ -687,7 +690,8 @@ c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, 
 
 		// It's a subgroup if it starts with '('
 		if ('(' == pattern[offset]) {
-			if ((offset = c2_parse_group(pattern, offset + 1, pele, level + 1)) < 0) {
+			if ((offset = c2_parse_group(pattern, offset + 1, pele, level + 1,
+			                             deprecated)) < 0) {
 				goto fail;
 			}
 		} else {
@@ -716,6 +720,7 @@ c2_parse_group(const char *pattern, int offset, c2_condition_node_ptr *presult, 
 					         "always fail. Offending pattern is "
 					         "\"%s\"",
 					         pele->l->tgt, pattern);
+					*deprecated = true;
 				}
 				if (pele->l->op == C2_L_OEXISTS) {
 					pele->l->ptntype = predef_type;

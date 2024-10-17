@@ -477,14 +477,6 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
-	if (!win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) ||
-	    win_check_flags_all(w, WIN_FLAGS_PIXMAP_ERROR) ||
-	    // We don't need to do anything here for legacy backends
-	    ps->backend_data == NULL) {
-		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
-		return;
-	}
-
 	// Image needs to be updated, update it.
 	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 
@@ -1550,16 +1542,6 @@ void win_destroy_finish(session_t *ps, struct win *w) {
 	win_release_mask(ps->backend_data, w);
 
 	free_win_res(ps, w);
-
-	// Drop w from all prev_trans to avoid accessing freed memory in
-	// repair_win()
-	// TODO(yshui) there can only be one prev_trans pointing to w
-	wm_stack_foreach(ps->wm, cursor) {
-		auto w2 = wm_ref_deref(cursor);
-		if (w2 != NULL && w == w2->prev_trans) {
-			w2->prev_trans = NULL;
-		}
-	}
 
 	wm_reap_zombie(w->tree_ref);
 	free(w);

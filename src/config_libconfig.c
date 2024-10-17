@@ -124,7 +124,8 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 /**
  * Parse a condition list in configuration file.
  */
-bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg, const char *name) {
+bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg,
+                                const char *name, bool *deprecated) {
 	config_setting_t *setting = config_lookup(pcfg, name);
 	if (setting == NULL) {
 		return true;
@@ -133,14 +134,15 @@ bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg, co
 	if (config_setting_is_array(setting)) {
 		int i = config_setting_length(setting);
 		while (i--) {
-			if (!c2_parse(list, config_setting_get_string_elem(setting, i), NULL)) {
+			if (!c2_parse(list, config_setting_get_string_elem(setting, i),
+			              NULL, deprecated)) {
 				return false;
 			}
 		}
 	}
 	// Treat it as a single pattern if it's a string
 	else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-		if (!c2_parse(list, config_setting_get_string(setting), NULL)) {
+		if (!c2_parse(list, config_setting_get_string(setting), NULL, deprecated)) {
 			return false;
 		}
 	}
@@ -153,7 +155,7 @@ bool must_use parse_cfg_condlst(struct list_node *list, const config_t *pcfg, co
 static inline bool
 parse_cfg_condlst_with_prefix(struct list_node *list, const config_t *pcfg, const char *name,
                               void *(*parse_prefix)(const char *, const char **, void *),
-                              void (*free_value)(void *), void *user_data) {
+                              void (*free_value)(void *), void *user_data, bool *deprecated) {
 	config_setting_t *setting = config_lookup(pcfg, name);
 	if (setting == NULL) {
 		return true;
@@ -164,7 +166,7 @@ parse_cfg_condlst_with_prefix(struct list_node *list, const config_t *pcfg, cons
 		while (i--) {
 			if (!c2_parse_with_prefix(
 			        list, config_setting_get_string_elem(setting, i),
-			        parse_prefix, free_value, user_data)) {
+			        parse_prefix, free_value, user_data, deprecated)) {
 				return false;
 			}
 		}
@@ -172,7 +174,7 @@ parse_cfg_condlst_with_prefix(struct list_node *list, const config_t *pcfg, cons
 	// Treat it as a single pattern if it's a string
 	else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
 		if (!c2_parse_with_prefix(list, config_setting_get_string(setting),
-		                          parse_prefix, free_value, user_data)) {
+		                          parse_prefix, free_value, user_data, deprecated)) {
 			return false;
 		}
 	}
@@ -575,8 +577,8 @@ static const struct {
     {"transparent-clipping", offsetof(struct window_maybe_options, transparent_clipping)},
 };
 
-static c2_condition *
-parse_rule(struct list_node *rules, config_setting_t *setting, struct script ***out_scripts) {
+static c2_condition *parse_rule(struct list_node *rules, config_setting_t *setting,
+                                struct script ***out_scripts, bool *deprecated) {
 	if (!config_setting_is_group(setting)) {
 		log_error("Invalid rule at line %d. It must be a group.",
 		          config_setting_source_line(setting));
@@ -587,7 +589,7 @@ parse_rule(struct list_node *rules, config_setting_t *setting, struct script ***
 	const char *sval;
 	c2_condition *rule = NULL;
 	if (config_setting_lookup_string(setting, "match", &sval)) {
-		rule = c2_parse(rules, sval, NULL);
+		rule = c2_parse(rules, sval, NULL, deprecated);
 		if (!rule) {
 			log_error("Failed to parse rule at line %d.",
 			          config_setting_source_line(setting));
@@ -633,7 +635,7 @@ parse_rule(struct list_node *rules, config_setting_t *setting, struct script ***
 }
 
 static void parse_rules(struct list_node *rules, config_setting_t *setting,
-                        struct script ***out_scripts) {
+                        struct script ***out_scripts, bool *deprecated) {
 	if (!config_setting_is_list(setting)) {
 		log_error("Invalid value for \"rules\" at line %d. It must be a list.",
 		          config_setting_source_line(setting));
@@ -642,7 +644,7 @@ static void parse_rules(struct list_node *rules, config_setting_t *setting,
 	const auto length = (unsigned int)config_setting_length(setting);
 	for (unsigned int i = 0; i < length; i++) {
 		auto sub = config_setting_get_elem(setting, i);
-		parse_rule(rules, sub, out_scripts);
+		parse_rule(rules, sub, out_scripts, deprecated);
 	}
 }
 
@@ -667,10 +669,6 @@ resolve_include(config_t *cfg, const char *include_dir, const char *path, const 
 }
 
 bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(readability-function-cognitive-complexity)*/
-	const char *deprecation_message =
-	    "option has been deprecated. Please remove it from your configuration file. "
-	    "If you encounter any problems without this feature, please feel free to "
-	    "open a bug report";
 	char *path = NULL;
 	FILE *f;
 	config_t cfg;
@@ -728,6 +726,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 		opt->log_level = string_to_log_level(sval);
 		if (opt->log_level == LOG_LEVEL_INVALID) {
 			log_warn("Invalid log level, defaults to WARN");
+			record_problematic_option(opt, "log-level");
 		} else {
 			log_set_level_tls(opt->log_level);
 		}
@@ -769,7 +768,11 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
-		parse_rules(&opt->rules, rules, &opt->all_scripts);
+		bool deprecated = false;
+		parse_rules(&opt->rules, rules, &opt->all_scripts, &deprecated);
+		if (deprecated) {
+			report_deprecated_option(opt, "rules", false);
+		}
 		c2_condition_list_foreach(&opt->rules, i) {
 			auto data = (struct window_maybe_options *)c2_condition_get_data(i);
 			if (data->shader == NULL) {
@@ -807,16 +810,14 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	if (config_lookup_float(&cfg, "inactive-opacity", &dval)) {
 		opt->inactive_opacity = normalize_d(dval);
 		if (!list_is_empty(&opt->rules)) {
-			log_warn_both_style_of_rules("inactive-opacity");
-			opt->has_both_style_of_rules = true;
+			log_warn_both_style_of_rules(opt, "inactive-opacity");
 		}
 	}
 	// --active_opacity
 	if (config_lookup_float(&cfg, "active-opacity", &dval)) {
 		opt->active_opacity = normalize_d(dval);
 		if (!list_is_empty(&opt->rules)) {
-			log_warn_both_style_of_rules("active-opacity");
-			opt->has_both_style_of_rules = true;
+			log_warn_both_style_of_rules(opt, "active-opacity");
 		}
 	}
 	// --corner-radius
@@ -861,32 +862,27 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	// --inactive-opacity-override
 	if (lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override) &&
 	    !list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules("inactive-opacity-override");
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, "inactive-opacity-override");
 	}
 	// --inactive-dim
 	if (config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim) &&
 	    !list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules("inactive-dim");
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, "inactive-dim");
 	}
 	// --mark-wmwin-focused
 	if (lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused) &&
 	    !list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules("mark-wmwin-focused");
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, "mark-wmwin-focused");
 	}
 	// --mark-ovredir-focused
 	if (lcfg_lookup_bool(&cfg, "mark-ovredir-focused", &opt->mark_ovredir_focused) &&
 	    !list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules("mark-ovredir-focused");
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, "mark-ovredir-focused");
 	}
 	// --shadow-ignore-shaped
 	if (lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped) &&
 	    !list_is_empty(&opt->rules)) {
-		log_warn_both_style_of_rules("shadow-ignore-shaped");
-		opt->has_both_style_of_rules = true;
+		log_warn_both_style_of_rules(opt, "shadow-ignore-shaped");
 	}
 	// --detect-rounded-corners
 	lcfg_lookup_bool(&cfg, "detect-rounded-corners", &opt->detect_rounded_corners);
@@ -894,13 +890,14 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	if (lcfg_lookup_bool(&cfg, "xinerama-shadow-crop", &opt->crop_shadow_to_monitor)) {
 		log_warn("xinerama-shadow-crop is deprecated. Use crop-shadow-to-monitor "
 		         "instead.");
+		record_problematic_option(opt, "xinerama-shadow-crop");
 	}
 	lcfg_lookup_bool(&cfg, "crop-shadow-to-monitor", &opt->crop_shadow_to_monitor);
 	// --detect-client-opacity
 	lcfg_lookup_bool(&cfg, "detect-client-opacity", &opt->detect_client_opacity);
 	// --refresh-rate
 	if (config_lookup_int(&cfg, "refresh-rate", &ival)) {
-		log_warn("The refresh-rate %s", deprecation_message);
+		report_deprecated_option(opt, "refresh-rate", false);
 	}
 	// --vsync
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
@@ -924,6 +921,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 		if (*sval != '/') {
 			log_warn("The log-file in your configuration file is not an "
 			         "absolute path");
+			record_problematic_option(opt, "log-file");
 		}
 		opt->logpath = strdup(sval);
 	}
@@ -935,6 +933,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival)) {
 		if (ival < 0) {
 			log_warn("Invalid unredir-if-possible-delay %d", ival);
+			record_problematic_option(opt, "unredir-if-possible-delay");
 		} else {
 			opt->unredir_if_possible_delay = ival;
 		}
@@ -951,52 +950,60 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	lcfg_lookup_bool(&cfg, "transparent-clipping", &opt->transparent_clipping);
 	// --dithered_present
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
+	const struct {
+		const char *name;
+		ptrdiff_t offset;
+		void *(*parse_prefix)(const char *, const char **, void *);
+		void (*free_value)(void *);
+		void *user_data;
+	} rule_list[] = {
+	    {"transparent-clipping-exclude",
+	     offsetof(struct options, transparent_clipping_blacklist)},
+	    {"shadow-exclude", offsetof(struct options, shadow_blacklist)},
+	    {"clip-shadow-above", offsetof(struct options, shadow_clip_list)},
+	    {"fade-exclude", offsetof(struct options, fade_blacklist)},
+	    {"focus-exclude", offsetof(struct options, focus_blacklist)},
+	    {"invert-color-include", offsetof(struct options, invert_color_list)},
+	    {"blur-background-exclude", offsetof(struct options, blur_background_blacklist)},
+	    {"unredir-if-possible-exclude",
+	     offsetof(struct options, unredir_if_possible_blacklist)},
+	    {"rounded-corners-exclude", offsetof(struct options, rounded_corners_blacklist)},
+	    {"corner-radius-rules", offsetof(struct options, corner_radius_rules),
+	     parse_numeric_prefix, NULL, (int[]){0, INT_MAX}},
+	    {"opacity-rule", offsetof(struct options, opacity_rules),
+	     parse_numeric_prefix, NULL, (int[]){0, 100}},
+	    {"window-shader-fg-rule", offsetof(struct options, window_shader_fg_rules),
+	     parse_window_shader_prefix, free, (void *)config_get_include_dir(&cfg)},
+	};
 
 	if (!list_is_empty(&opt->rules)) {
-		static const char *rule_list[] = {
-		    "transparent-clipping-exclude",
-		    "shadow-exclude",
-		    "clip-shadow-above",
-		    "fade-exclude",
-		    "focus-exclude",
-		    "invert-color-include",
-		    "blur-background-exclude",
-		    "unredir-if-possible-exclude",
-		    "rounded-corners-exclude",
-		    "corner-radius-rules",
-		    "opacity-rule",
-		    "window-shader-fg-rule",
-		    "wintypes",
-		};
-		for (size_t i = 0; i < sizeof(rule_list) / sizeof(rule_list[0]); i++) {
-			if (config_lookup(&cfg, rule_list[i])) {
-				log_warn_both_style_of_rules(rule_list[i]);
-				opt->has_both_style_of_rules = true;
+		for (size_t i = 0; i < ARR_SIZE(rule_list); i++) {
+			if (config_lookup(&cfg, rule_list[i].name)) {
+				log_warn_both_style_of_rules(opt, rule_list[i].name);
 			}
 		}
-	} else if (!parse_cfg_condlst(&opt->transparent_clipping_blacklist, &cfg,
-	                              "transparent-clipping-exclude") ||
-	           !parse_cfg_condlst(&opt->shadow_blacklist, &cfg, "shadow-exclude") ||
-	           !parse_cfg_condlst(&opt->shadow_clip_list, &cfg, "clip-shadow-above") ||
-	           !parse_cfg_condlst(&opt->fade_blacklist, &cfg, "fade-exclude") ||
-	           !parse_cfg_condlst(&opt->focus_blacklist, &cfg, "focus-exclude") ||
-	           !parse_cfg_condlst(&opt->invert_color_list, &cfg, "invert-color-include") ||
-	           !parse_cfg_condlst(&opt->blur_background_blacklist, &cfg,
-	                              "blur-background-exclude") ||
-	           !parse_cfg_condlst(&opt->unredir_if_possible_blacklist, &cfg,
-	                              "unredir-if-possible-exclude") ||
-	           !parse_cfg_condlst(&opt->rounded_corners_blacklist, &cfg,
-	                              "rounded-corners-exclude") ||
-	           !parse_cfg_condlst_with_prefix(
-	               &opt->corner_radius_rules, &cfg, "corner-radius-rules",
-	               parse_numeric_prefix, NULL, (int[]){0, INT_MAX}) ||
-	           !parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
-	                                          parse_numeric_prefix, NULL, (int[]){0, 100}) ||
-	           !parse_cfg_condlst_with_prefix(&opt->window_shader_fg_rules, &cfg,
-	                                          "window-shader-fg-rule",
-	                                          parse_window_shader_prefix, free,
-	                                          (void *)config_get_include_dir(&cfg))) {
-		goto out;
+		if (config_lookup(&cfg, "wintypes")) {
+			log_warn_both_style_of_rules(opt, "wintypes");
+		}
+	} else {
+		for (size_t i = 0; i < ARR_SIZE(rule_list); i++) {
+			bool deprecated = false;
+			void *dst = (char *)opt + rule_list[i].offset;
+			if ((rule_list[i].parse_prefix != NULL &&
+			     !parse_cfg_condlst_with_prefix(
+			         dst, &cfg, rule_list[i].name, rule_list[i].parse_prefix,
+			         rule_list[i].free_value, rule_list[i].user_data, &deprecated)) ||
+			    (rule_list[i].parse_prefix == NULL &&
+			     !parse_cfg_condlst(dst, &cfg, rule_list[i].name, &deprecated))) {
+				goto out;
+			}
+			if (deprecated) {
+				log_warn("Rule option \"%s\" contains deprecated syntax "
+				         "(see above).",
+				         rule_list[i].name);
+				record_problematic_option(opt, rule_list[i].name);
+			}
+		}
 	}
 
 	// --blur-method
@@ -1034,16 +1041,15 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	}
 	// --resize-damage
 	if (config_lookup_int(&cfg, "resize-damage", &opt->resize_damage)) {
-		log_warn("resize-damage is deprecated. Please remove it from your "
-		         "configuration file.");
+		report_deprecated_option(opt, "resize-damage", false);
 	}
 	// --glx-no-stencil
 	if (lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil)) {
-		log_warn("glx-no-stencil %s", deprecation_message);
+		report_deprecated_option(opt, "glx-no-stencil", false);
 	}
 	// --glx-no-rebind-pixmap
 	if (lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap)) {
-		log_warn("glx-no-rebind-pixmap %s", deprecation_message);
+		report_deprecated_option(opt, "glx-no-rebind-pixmap", false);
 	}
 	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
 	// --use-damage
@@ -1054,6 +1060,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	    opt->use_damage && opt->max_brightness < 1) {
 		log_warn("max-brightness requires use-damage = false. Falling back to "
 		         "1.0");
+		record_problematic_option(opt, "max-brightness");
 		opt->max_brightness = 1.0;
 	}
 
@@ -1072,6 +1079,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 			int method = parse_blur_method(sval);
 			if (method >= BLUR_METHOD_INVALID) {
 				log_warn("Invalid blur method %s, ignoring.", sval);
+				record_problematic_option(opt, "blur method");
 			} else {
 				opt->blur_method = (enum blur_method)method;
 			}
@@ -1083,6 +1091,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 			opt->blur_kerns = parse_blur_kern_lst(sval, &opt->blur_kernel_count);
 			if (!opt->blur_kerns) {
 				log_warn("Failed to parse blur kernel: %s", sval);
+				record_problematic_option(opt, "blur kernel");
 			}
 		}
 
@@ -1095,6 +1104,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 		if (*sval != '/') {
 			log_warn("The write-pid-path in your configuration file is not"
 			         " an absolute path");
+			record_problematic_option(opt, "write-pid-path");
 		}
 		opt->write_pid_path = strdup(sval);
 	}
