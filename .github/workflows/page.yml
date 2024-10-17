@@ -32,6 +32,8 @@ jobs:
           asciidoctor -a doctype=article -a stylesheet=../assets/next.css -b html man/picom-trans.1.adoc -D _site
           cp -r assets _site/
           cp _site/picom.1.html _site/index.html
+      - name: Copy .well-known
+        run: cp -r .well-known _site
 
       - name: Upload
         uses: actions/upload-pages-artifact@v3
