@@ -1,5 +1,9 @@
 # 12.x (unreleased)
 
+## Improvements
+
+* Better workaround for a NVIDIA qurik, fix high CPU usage when screen is off (#1265)
+
 ## Build fixes
 
 * Fix build on arm32 (#1355)
