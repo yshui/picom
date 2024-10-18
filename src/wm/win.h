@@ -353,10 +353,19 @@ win_options(const struct win *w) {
 	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);
 }
 
-/// Check if win_geometry `a` and `b` have the same sizes and positions. Border width is
+/// Check if the window has changed in size. Border width is
 /// not considered.
-static inline bool win_geometry_eq(struct win_geometry a, struct win_geometry b) {
-	return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+static inline bool win_geometry_changed(struct win_geometry a, struct win_geometry b) {
+	return a.width != b.width || a.height != b.height;
+}
+
+/// Check if the window position has changed.
+static inline bool win_position_changed(struct win_geometry a, struct win_geometry b) {
+	if (win_geometry_changed(a, b)) {
+		return false;
+	}
+
+	return a.x != b.x || a.y != b.y;
 }
 
 /// Process pending updates/images flags on a window. Has to be called in X critical

@@ -75,6 +75,8 @@ enum animation_trigger {
 	ANIMATION_TRIGGER_CLOSE,
 	/// When a window's geometry changes
 	ANIMATION_TRIGGER_GEOMETRY,
+	/// When a window's position changes
+	ANIMATION_TRIGGER_POSITION,
 
 	ANIMATION_TRIGGER_INVALID,
 	ANIMATION_TRIGGER_COUNT = ANIMATION_TRIGGER_INVALID,
@@ -88,6 +90,7 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_OPEN] = "open",
     [ANIMATION_TRIGGER_CLOSE] = "close",
     [ANIMATION_TRIGGER_GEOMETRY] = "geometry",
+    [ANIMATION_TRIGGER_POSITION] = "position",
 };
 
 struct script;
