@@ -239,6 +239,13 @@ static inline void attr_unused free_x_connection(struct x_connection *c) {
 	XSetErrorHandler(c->previous_xerror_handler);
 }
 
+/// Initialize the used X extensions and populate the x_extensions structure in an
+/// x_connection structure with the information about them.
+///
+/// Returns false if the X server doesn't have or support the required version of at least
+/// one required X extension, true otherwise.
+bool x_extensions_init(struct x_connection *c);
+
 /// Initialize x_connection struct from an Xlib Display.
 ///
 /// Note this function doesn't take ownership of the Display, the caller is still

@@ -221,6 +221,144 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	return 0;
 }
 
+/// Initialize the used X extensions and populate the x_extensions structure in an
+/// x_connection structure with the information about them.
+///
+/// Returns false if the X server doesn't have or support the required version of at least
+/// one required X extension, true otherwise.
+bool x_extensions_init(struct x_connection *c) {
+	xcb_prefetch_extension_data(c->c, &xcb_composite_id);
+	xcb_prefetch_extension_data(c->c, &xcb_damage_id);
+	xcb_prefetch_extension_data(c->c, &xcb_xfixes_id);
+	xcb_prefetch_extension_data(c->c, &xcb_glx_id);
+	xcb_prefetch_extension_data(c->c, &xcb_present_id);
+	xcb_prefetch_extension_data(c->c, &xcb_randr_id);
+	xcb_prefetch_extension_data(c->c, &xcb_render_id);
+	xcb_prefetch_extension_data(c->c, &xcb_shape_id);
+	xcb_prefetch_extension_data(c->c, &xcb_sync_id);
+
+	// Initialize the X Composite extension.
+	auto extension = xcb_get_extension_data(c->c, &xcb_composite_id);
+	if (!extension || !extension->present) {
+		log_fatal("The X server doesn't have the X Composite extension.");
+
+		return false;
+	}
+
+	// The NameWindowPixmap request was introduced in the X Composite extension v0.2.
+	auto composite = xcb_composite_query_version_reply(
+	    c->c,
+	    xcb_composite_query_version(c->c, XCB_COMPOSITE_MAJOR_VERSION,
+	                                XCB_COMPOSITE_MINOR_VERSION),
+	    NULL);
+	if (!composite || (composite->major_version == 0 && composite->minor_version < 2)) {
+		log_fatal("The X server doesn't support the X Composite extension v0.2.");
+
+		if (composite) {
+			free(composite);
+		}
+
+		return false;
+	}
+
+	free(composite);
+
+	// Initialize the X Damage extension.
+	extension = xcb_get_extension_data(c->c, &xcb_damage_id);
+	if (!extension || !extension->present) {
+		log_fatal("The X server doesn't have the X Damage extension.");
+
+		return false;
+	}
+
+	c->e.damage_event = extension->first_event;
+	c->e.damage_error = extension->first_error;
+
+	// According to the X Damage extension's specification:
+	// "The client must negotiate the version of the extension before executing
+	// extension requests. Otherwise, the server will return BadRequest for any
+	// operations other than QueryVersion."
+	xcb_discard_reply(c->c, xcb_damage_query_version(c->c, XCB_DAMAGE_MAJOR_VERSION,
+	                                                 XCB_DAMAGE_MINOR_VERSION)
+	                            .sequence);
+
+	// Initialize the X Fixes extension.
+	extension = xcb_get_extension_data(c->c, &xcb_xfixes_id);
+	if (!extension || !extension->present) {
+		log_fatal("The X server doesn't have the X Fixes extension.");
+
+		return false;
+	}
+
+	c->e.fixes_error = extension->first_error;
+
+	// According to the X Fixes extension's specification:
+	// "The client must negotiate the version of the extension before executing
+	// extension requests. Behavior of the server is undefined otherwise."
+	xcb_discard_reply(c->c, xcb_xfixes_query_version(c->c, XCB_XFIXES_MAJOR_VERSION,
+	                                                 XCB_XFIXES_MINOR_VERSION)
+	                            .sequence);
+
+	// Initialize the X GLX extension.
+	extension = xcb_get_extension_data(c->c, &xcb_glx_id);
+	if (extension && extension->present) {
+		c->e.has_glx = true;
+		c->e.glx_error = extension->first_error;
+	}
+
+	// Initialize the X Present extension.
+	extension = xcb_get_extension_data(c->c, &xcb_present_id);
+	if (extension && extension->present) {
+		c->e.has_present = true;
+	}
+
+	// Initialize the X RandR extension.
+	extension = xcb_get_extension_data(c->c, &xcb_randr_id);
+	if (extension && extension->present) {
+		c->e.has_randr = true;
+		c->e.randr_event = extension->first_event;
+	}
+
+	// Initialize the X Render extension.
+	extension = xcb_get_extension_data(c->c, &xcb_render_id);
+	if (!extension || !extension->present) {
+		log_fatal("The X server doesn't have the X Render extension.");
+
+		return false;
+	}
+
+	c->e.render_error = extension->first_error;
+
+	// Initialize the X Shape extension.
+	extension = xcb_get_extension_data(c->c, &xcb_shape_id);
+	if (extension && extension->present) {
+		c->e.has_shape = true;
+		c->e.shape_event = extension->first_event;
+	}
+
+	// Initialize the X Sync extension.
+	extension = xcb_get_extension_data(c->c, &xcb_sync_id);
+	if (extension && extension->present) {
+		// Fences were introduced in the X Sync extension v3.1.
+		auto sync = xcb_sync_initialize_reply(
+		    c->c,
+		    xcb_sync_initialize(c->c, XCB_SYNC_MAJOR_VERSION, XCB_SYNC_MINOR_VERSION),
+		    NULL);
+		if (sync && (sync->major_version > 3 ||
+		             (sync->major_version == 3 && sync->minor_version >= 1))) {
+			c->e.has_sync = true;
+			c->e.sync_event = extension->first_event;
+			c->e.sync_error = extension->first_error;
+		}
+
+		if (sync) {
+			free(sync);
+		}
+	}
+
+	return true;
+}
+
 static void x_connection_init_inner(struct x_connection *c) {
 	list_init_head(&c->pending_x_requests);
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
