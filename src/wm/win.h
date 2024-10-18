@@ -511,7 +511,7 @@ int win_update_role(struct x_connection *c, struct atom *atoms, struct win *w);
 int win_update_name(struct x_connection *c, struct atom *atoms, struct win *w);
 void win_on_win_size_change(struct win *w, int shadow_offset_x, int shadow_offset_y,
                             int shadow_radius);
-void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape_exists,
+void win_update_bounding_shape(struct x_connection *c, struct win *w,
                                bool detect_rounded_corners);
 bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
                                 struct win *w);

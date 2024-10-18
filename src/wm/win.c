@@ -387,8 +387,7 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
-			win_update_bounding_shape(&ps->c, w, ps->c.e.has_shape,
-			                          ps->o.detect_rounded_corners);
+			win_update_bounding_shape(&ps->c, w, ps->o.detect_rounded_corners);
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
 
 			// Window shape/size changed, invalidate the images we built
@@ -1440,7 +1439,7 @@ gen_by_val(win_extents);
  *
  * Mark the window shape as updated
  */
-void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape_exists,
+void win_update_bounding_shape(struct x_connection *c, struct win *w,
                                bool detect_rounded_corners) {
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
@@ -1450,7 +1449,7 @@ void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape
 	// Start with the window rectangular region
 	win_get_region_local(w, &w->bounding_shape);
 
-	if (shape_exists) {
+	if (c->e.has_shape) {
 		w->bounding_shaped = win_bounding_shaped(c, win_id(w));
 	}
 
