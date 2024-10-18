@@ -28,8 +28,7 @@ struct dual_kawase_params {
 xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opacity,
                          int width, int height);
 bool build_shadow(struct x_connection *, double opacity, int width, int height,
-                  const conv *kernel, xcb_render_picture_t shadow_pixel,
-                  xcb_pixmap_t *pixmap, xcb_render_picture_t *pict);
+                  const conv *kernel, xcb_render_picture_t shadow_pixel, xcb_pixmap_t *pixmap);
 
 xcb_render_picture_t
 solid_picture(struct x_connection *, bool argb, double a, double r, double g, double b);

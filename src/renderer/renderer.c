@@ -351,10 +351,8 @@ static bool
 renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct win *w) {
 	if (backend->ops.quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
 		xcb_pixmap_t shadow = XCB_NONE;
-		xcb_render_picture_t pict = XCB_NONE;
-
 		if (!build_shadow(backend->c, r->shadow_color.alpha, w->widthb, w->heightb,
-		                  (void *)r->shadow_kernel, r->shadow_pixel, &shadow, &pict)) {
+		                  (void *)r->shadow_kernel, r->shadow_pixel, &shadow)) {
 			return false;
 		}
 

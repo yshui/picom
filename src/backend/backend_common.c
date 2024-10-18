@@ -197,7 +197,7 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
  */
 bool build_shadow(struct x_connection *c, double opacity, const int width,
                   const int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
-                  xcb_pixmap_t *pixmap, xcb_render_picture_t *pict) {
+                  xcb_pixmap_t *pixmap) {
 	xcb_image_t *shadow_image = NULL;
 	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
@@ -262,12 +262,12 @@ bool build_shadow(struct x_connection *c, double opacity, const int width,
 	                     shadow_image->height);
 
 	*pixmap = shadow_pixmap_argb;
-	*pict = shadow_picture_argb;
 
 	xcb_free_gc(c->c, gc);
 	xcb_image_destroy(shadow_image);
 	xcb_free_pixmap(c->c, shadow_pixmap);
 	x_free_picture(c, shadow_picture);
+	x_free_picture(c, shadow_picture_argb);
 
 	return true;
 
