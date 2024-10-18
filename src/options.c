@@ -987,7 +987,6 @@ void options_destroy(struct options *options) {
 	struct option_name *bad_opt, *next_bad_opt;
 	HASH_ITER(hh, options->problematic_options, bad_opt, next_bad_opt) {
 		HASH_DEL(options->problematic_options, bad_opt);
-		free((void *)bad_opt->name);
 		free(bad_opt);
 	}
 }
