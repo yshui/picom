@@ -51,8 +51,30 @@ int spawn_picomling(struct x_connection *c) {
 	setsid();
 
 	x_connection_init_xcb(c, new_c, screen);
-	xcb_prefetch_extension_data(c->c, &xcb_render_id);
+
 	xcb_prefetch_extension_data(c->c, &xcb_randr_id);
+	xcb_prefetch_extension_data(c->c, &xcb_render_id);
+
+	// Initialize the X RandR extension.
+	auto extension = xcb_get_extension_data(c->c, &xcb_randr_id);
+	if (!extension || !extension->present) {
+		log_error("The X server doesn't have the X RandR extension.");
+
+		return -1;
+	}
+
+	c->e.has_randr = true;
+	c->e.randr_event = extension->first_event;
+
+	// Initialize the X Render extension.
+	extension = xcb_get_extension_data(c->c, &xcb_render_id);
+	if (!extension || !extension->present) {
+		log_error("The X server doesn't have the X Render extension.");
+
+		return -1;
+	}
+
+	c->e.render_error = extension->first_error;
 
 	return 0;
 }
