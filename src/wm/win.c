@@ -478,8 +478,10 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 		return;
 	}
 
-	if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_ERROR)) {
-		// We have previously failed to bind the pixmap, don't try again.
+	if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_ERROR) || !ps->redirected) {
+		// 1. We have previously failed to bind the pixmap, don't try again.
+		// 2. If we aren't redirected, window images will be refreshed upon
+		//    redirection anyway.
 		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 		return;
 	}
