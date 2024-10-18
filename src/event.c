@@ -101,11 +101,11 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	case XCB_PROPERTY_NOTIFY: return ((xcb_property_notify_event_t *)ev)->window;
 	case XCB_CLIENT_MESSAGE: return ((xcb_client_message_event_t *)ev)->window;
 	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			return ((xcb_damage_notify_event_t *)ev)->drawable;
 		}
 
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 			return ((xcb_shape_notify_event_t *)ev)->affected_window;
 		}
 
@@ -133,16 +133,16 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(CLIENT_MESSAGE);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+	if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 		return "DAMAGE_NOTIFY";
 	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event) {
+	if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 		return "SHAPE_NOTIFY";
 	}
 
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
+	if (ps->c.e.has_sync) {
+		int o = ev->response_type - ps->c.e.sync_event;
 		switch (o) {
 			CASESTRRET(SYNC_COUNTER_NOTIFY);
 			CASESTRRET(SYNC_ALARM_NOTIFY);
@@ -717,7 +717,7 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	xcb_window_t wid = ev_window(ps, ev);
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
+	if (ev->response_type != ps->c.e.damage_event + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
 		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	} else {
@@ -786,16 +786,17 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
 	default:
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
-		if (ps->randr_exists &&
-		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
+		if (ps->c.e.has_randr &&
+		    ev->response_type ==
+		        (ps->c.e.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			x_update_monitors_async(&ps->c, &ps->monitors);
 			break;
 		}
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			ev_damage_notify(ps, (xcb_damage_notify_event_t *)ev);
 			break;
 		}

@@ -892,7 +892,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 
 	xd->vsync = ps->o.vsync;
-	if (ps->present_exists) {
+	if (ps->c.e.has_present) {
 		auto eid = x_new_id(&ps->c);
 		auto e =
 		    xcb_request_check(ps->c.c, xcb_present_select_input_checked(

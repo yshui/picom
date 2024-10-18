@@ -387,7 +387,7 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
-			win_update_bounding_shape(&ps->c, w, ps->shape_exists,
+			win_update_bounding_shape(&ps->c, w, ps->c.e.has_shape,
 			                          ps->o.detect_rounded_corners);
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
 
@@ -1304,7 +1304,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	                                         (const uint32_t[]){frame_event_mask}));
 
 	// Get notification when the shape of a window changes
-	if (ps->shape_exists) {
+	if (ps->c.e.has_shape) {
 		x_set_error_action_ignore(&ps->c, xcb_shape_select_input(ps->c.c, wid, 1));
 	}
 

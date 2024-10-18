@@ -64,14 +64,13 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 #define CASESTRRET2(s)                                                                   \
 	case XCB_##s: name = #s; break
 
-	// TODO(yshui) separate error code out from session_t
-	o = error_code - ps->xfixes_error;
+	o = error_code - ps->c.e.fixes_error;
 	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
-	o = error_code - ps->damage_error;
+	o = error_code - ps->c.e.damage_error;
 	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
 
-	o = error_code - ps->render_error;
+	o = error_code - ps->c.e.render_error;
 	switch (o) {
 		CASESTRRET2(RENDER_PICT_FORMAT);
 		CASESTRRET2(RENDER_PICTURE);
@@ -80,8 +79,8 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 		CASESTRRET2(RENDER_GLYPH);
 	}
 
-	if (ps->glx_exists) {
-		o = error_code - ps->glx_error;
+	if (ps->c.e.has_glx) {
+		o = error_code - ps->c.e.glx_error;
 		switch (o) {
 			CASESTRRET2(GLX_BAD_CONTEXT);
 			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
@@ -100,8 +99,8 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 		}
 	}
 
-	if (ps->xsync_exists) {
-		o = error_code - ps->xsync_error;
+	if (ps->c.e.has_sync) {
+		o = error_code - ps->c.e.sync_error;
 		switch (o) {
 			CASESTRRET(XSyncBadCounter);
 			CASESTRRET(XSyncBadAlarm);

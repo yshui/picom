@@ -207,36 +207,8 @@ typedef struct session {
 	long paint_tm_offset;
 
 	// === X extension related ===
-	/// Error base number for X Fixes extension.
-	int xfixes_error;
-	/// Event base number for X Damage extension.
-	int damage_event;
-	/// Error base number for X Damage extension.
-	int damage_error;
-	/// Error base number for X Render extension.
-	int render_error;
-	/// Whether X Shape extension exists.
-	bool shape_exists;
-	/// Event base number for X Shape extension.
-	int shape_event;
-	/// Whether X RandR extension exists.
-	bool randr_exists;
-	/// Event base number for X RandR extension.
-	int randr_event;
-	/// Whether X Present extension exists.
-	bool present_exists;
-	/// Whether X GLX extension exists.
-	bool glx_exists;
-	/// Error base number for X GLX extension.
-	int glx_error;
 	/// Information about monitors.
 	struct x_monitors monitors;
-	/// Whether X Sync extension exists.
-	bool xsync_exists;
-	/// Event base number for X Sync extension.
-	int xsync_event;
-	/// Error base number for X Sync extension.
-	int xsync_error;
 
 	// === Atoms ===
 	struct atom *atoms;
