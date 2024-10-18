@@ -28,15 +28,6 @@
 
 typedef struct session session_t;
 
-/// @brief Possible backends
-enum backend {
-	BKEND_XRENDER,
-	BKEND_GLX,
-	BKEND_DUMMY,
-	BKEND_EGL,
-	NUM_BKEND,
-};
-
 typedef struct win_option_mask {
 	bool shadow : 1;
 	bool fade : 1;
@@ -435,8 +426,6 @@ typedef struct options {
 	bool has_both_style_of_rules;
 } options_t;
 
-extern const char *const BACKEND_STRS[NUM_BKEND + 1];
-
 bool load_plugin(const char *name, const char *include_dir);
 static inline void record_problematic_option(struct options *opt, const char *name) {
 	struct option_name *record = calloc(1, sizeof(*record));
@@ -487,18 +476,6 @@ bool parse_config_libconfig(options_t *, const char *config_file);
 /// Outputs and returns:
 ///   same as parse_config_libconfig
 bool parse_config(options_t *, const char *config_file);
-
-/**
- * Parse a backend option argument.
- */
-static inline attr_pure int parse_backend(const char *str) {
-	for (int i = 0; BACKEND_STRS[i]; ++i) {
-		if (strcasecmp(str, BACKEND_STRS[i]) == 0) {
-			return i;
-		}
-	}
-	return NUM_BKEND;
-}
 
 /**
  * Parse a VSync option argument.

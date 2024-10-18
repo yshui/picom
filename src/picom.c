@@ -104,15 +104,6 @@ const struct wintype_info WINTYPES[] = {
 #undef X
 };
 
-// clang-format off
-/// Names of backends.
-const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
-                                    [BKEND_GLX] = "glx",
-                                    [BKEND_DUMMY] = "dummy",
-                                    [BKEND_EGL] = "egl",
-                                    NULL};
-// clang-format on
-
 // === Global variables ===
 
 /// Pointer to current session, as a global variable. Only used by
@@ -1203,8 +1194,8 @@ static bool redirect_start(session_t *ps) {
 
 	ps->frame_pacing = ps->o.frame_pacing && ps->o.vsync;
 	if ((ps->o.benchmark || !ps->backend_data->ops.last_render_time) && ps->frame_pacing) {
-		// Disable frame pacing if we are using a legacy backend or if we are in
-		// benchmark mode, or if the backend doesn't report render time
+		// Disable frame pacing if we are in benchmark mode or if the backend
+		// doesn't report render time.
 		log_info("Disabling frame pacing.");
 		ps->frame_pacing = false;
 	}
