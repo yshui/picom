@@ -151,14 +151,14 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 
 	ivec2 size = ivec2_add(
 	    content->size, (ivec2){(int)content->margin * 2, (int)content->margin * 2});
-	size.width *= (int)content->scale;
-	size.height *= (int)content->scale;
+	size.width = (int)(size.width * content->scale);
+	size.height = (int)(size.height * content->scale);
 
 	xcb_window_t win = x_new_id(c);
 	uint16_t width = to_u16_saturated(size.width),
 	         height = to_u16_saturated(size.height),
-	         inner_width = to_u16_saturated(content->size.width * (int)content->scale),
-	         inner_height = to_u16_saturated(content->size.height * (int)content->scale);
+	         inner_width = to_u16_saturated(content->size.width * content->scale),
+	         inner_height = to_u16_saturated(content->size.height * content->scale);
 	int16_t margin = to_i16_checked(content->margin * content->scale);
 
 	uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
