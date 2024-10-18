@@ -15,10 +15,12 @@
 void print_diagnostics(session_t *ps, const char *config_file, bool compositor_running) {
 	printf("**Version:** " PICOM_FULL_VERSION "\n");
 	// printf("**CFLAGS:** %s\n", "??");
-	printf("\n### Extensions:\n\n");
-	printf("* Shape: %s\n", ps->c.e.has_shape ? "Yes" : "No");
-	printf("* RandR: %s\n", ps->c.e.has_randr ? "Yes" : "No");
-	printf("* Present: %s\n", ps->c.e.has_present ? "Present" : "Not Present");
+	printf("\n### X extensions:\n\n");
+	printf("* GLX: %s\n", ps->c.e.has_glx ? "present" : "absent");
+	printf("* Present: %s\n", ps->c.e.has_present ? "present" : "absent");
+	printf("* RandR: %s\n", ps->c.e.has_randr ? "present" : "absent");
+	printf("* Shape: %s\n", ps->c.e.has_shape ? "present" : "absent");
+	printf("* Sync: %s\n", ps->c.e.has_sync ? "present" : "absent");
 	printf("\n### Misc:\n\n");
 	printf("* Use Overlay: %s\n", ps->overlay != XCB_NONE ? "Yes" : "No");
 	if (ps->overlay == XCB_NONE) {
