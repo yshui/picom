@@ -23,7 +23,7 @@ ui_message_box_draw_text(struct ui *ui, struct x_connection *c, xcb_window_t win
 	    content->size.width > UINT16_MAX ? UINT16_MAX : (uint16_t)content->size.width;
 	uint16_t height =
 	    content->size.height > UINT16_MAX ? UINT16_MAX : (uint16_t)content->size.height;
-	if (!XCB_AWAIT_VOID(xcb_create_pixmap, c->c, c->screen_info->root_depth, pixmap,
+	if (!XCB_AWAIT_VOID(xcb_create_pixmap, c, c->screen_info->root_depth, pixmap,
 	                    window, width, height)) {
 		return XCB_NONE;
 	}
@@ -34,7 +34,7 @@ ui_message_box_draw_text(struct ui *ui, struct x_connection *c, xcb_window_t win
 		uint32_t value_list[3] = {c->screen_info->black_pixel,
 		                          c->screen_info->black_pixel};
 
-		if (!XCB_AWAIT_VOID(xcb_create_gc, c->c, gc, pixmap, mask, value_list)) {
+		if (!XCB_AWAIT_VOID(xcb_create_gc, c, gc, pixmap, mask, value_list)) {
 			return XCB_NONE;
 		}
 	}
@@ -45,14 +45,14 @@ ui_message_box_draw_text(struct ui *ui, struct x_connection *c, xcb_window_t win
 
 	const char yellow_name[] = "yellow";
 	const char red_name[] = "red";
-	auto r = XCB_AWAIT(xcb_alloc_named_color, c->c, c->screen_info->default_colormap,
+	auto r = XCB_AWAIT(xcb_alloc_named_color, c, c->screen_info->default_colormap,
 	                   ARR_SIZE(yellow_name) - 1, yellow_name);
 	if (r == NULL) {
 		return XCB_NONE;
 	}
 	auto yellow_pixel = r->pixel;
 	free(r);
-	r = XCB_AWAIT(xcb_alloc_named_color, c->c, c->screen_info->default_colormap,
+	r = XCB_AWAIT(xcb_alloc_named_color, c, c->screen_info->default_colormap,
 	              ARR_SIZE(red_name) - 1, red_name);
 	if (r == NULL) {
 		return XCB_NONE;
@@ -85,12 +85,11 @@ ui_message_box_draw_text(struct ui *ui, struct x_connection *c, xcb_window_t win
 
 void ui_message_box_place(struct x_connection *c, struct ui_message_box_content *content,
                           int16_t *x, int16_t *y) {
-	auto r =
-	    XCB_AWAIT(xcb_randr_get_screen_resources_current, c->c, c->screen_info->root);
+	auto r = XCB_AWAIT(xcb_randr_get_screen_resources_current, c, c->screen_info->root);
 	if (r == NULL) {
 		return;
 	}
-	auto pointer = XCB_AWAIT(xcb_query_pointer, c->c, c->screen_info->root);
+	auto pointer = XCB_AWAIT(xcb_query_pointer, c, c->screen_info->root);
 	if (pointer == NULL) {
 		free(r);
 		return;
@@ -100,7 +99,7 @@ void ui_message_box_place(struct x_connection *c, struct ui_message_box_content 
 	auto crtcs = xcb_randr_get_screen_resources_current_crtcs(r);
 	for (int i = 0; i < num_crtc; i++) {
 		auto crtc_info_ptr =
-		    XCB_AWAIT(xcb_randr_get_crtc_info, c->c, crtcs[i], r->config_timestamp);
+		    XCB_AWAIT(xcb_randr_get_crtc_info, c, crtcs[i], r->config_timestamp);
 		if (crtc_info_ptr == NULL ||
 		    crtc_info_ptr->status != XCB_RANDR_SET_CONFIG_SUCCESS) {
 			free(crtc_info_ptr);
@@ -166,7 +165,7 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 	                      XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_BUTTON_PRESS |
 	                          XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_POINTER_MOTION |
 	                          XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW};
-	bool success = XCB_AWAIT_VOID(xcb_create_window, c->c, c->screen_info->root_depth,
+	bool success = XCB_AWAIT_VOID(xcb_create_window, c, c->screen_info->root_depth,
 	                              win, c->screen_info->root, x, y, width, height,
 	                              /*border_width=*/0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
 	                              c->screen_info->root_visual, mask, values);
@@ -187,17 +186,17 @@ bool ui_message_box_show(struct ui *ui, struct x_connection *c,
 	    .matrix22 = DOUBLE_TO_XFIXED(1.0F / content->scale),
 	    .matrix33 = DOUBLE_TO_XFIXED(1.0),
 	};
-	if (!XCB_AWAIT_VOID(xcb_render_set_picture_transform, c->c, content_picture, transform)) {
+	if (!XCB_AWAIT_VOID(xcb_render_set_picture_transform, c, content_picture, transform)) {
 		return false;
 	}
 
 	const char filter_name[] = "nearest";
-	if (!XCB_AWAIT_VOID(xcb_render_set_picture_filter, c->c, content_picture,
+	if (!XCB_AWAIT_VOID(xcb_render_set_picture_filter, c, content_picture,
 	                    ARR_SIZE(filter_name) - 1, filter_name, 0, NULL)) {
 		return false;
 	}
 
-	if (!XCB_AWAIT_VOID(xcb_map_window, c->c, win)) {
+	if (!XCB_AWAIT_VOID(xcb_map_window, c, win)) {
 		xcb_destroy_window(c->c, win);
 		return false;
 	}
@@ -304,7 +303,7 @@ static bool ui_message_box_line_extent(struct ui *ui, struct x_connection *c,
 		text16[i].byte1 = 0;
 		text16[i].byte2 = (uint8_t)line->text[i];
 	}
-	auto r = XCB_AWAIT(xcb_query_text_extents, c->c, font, len, text16);
+	auto r = XCB_AWAIT(xcb_query_text_extents, c, font, len, text16);
 	free(text16);
 
 	if (!r) {
@@ -367,15 +366,16 @@ struct ui *ui_new(struct x_connection *c) {
 
 	xcb_generic_error_t *e = xcb_request_check(c->c, cookie1);
 	if (e != NULL) {
-		log_error_x_error(e, "Cannot open the fixed font");
+		log_error_x_error(c, e, "Cannot open the fixed font");
 		free(e);
 		return NULL;
 	}
 	e = xcb_request_check(c->c, cookie2);
 	if (e != NULL) {
 		ui->bold_font = ui->normal_font;
-		log_error_x_error(e, "Cannot open the bold font, falling back to normal "
-		                     "font");
+		log_error_x_error(c, e,
+		                  "Cannot open the bold font, falling back to normal "
+		                  "font");
 		free(e);
 	}
 	return ui;

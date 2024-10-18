@@ -101,11 +101,11 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	case XCB_PROPERTY_NOTIFY: return ((xcb_property_notify_event_t *)ev)->window;
 	case XCB_CLIENT_MESSAGE: return ((xcb_client_message_event_t *)ev)->window;
 	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			return ((xcb_damage_notify_event_t *)ev)->drawable;
 		}
 
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 			return ((xcb_shape_notify_event_t *)ev)->affected_window;
 		}
 
@@ -133,16 +133,16 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(CLIENT_MESSAGE);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+	if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 		return "DAMAGE_NOTIFY";
 	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event) {
+	if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 		return "SHAPE_NOTIFY";
 	}
 
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
+	if (ps->c.e.has_sync) {
+		int o = ev->response_type - ps->c.e.sync_event;
 		switch (o) {
 			CASESTRRET(SYNC_COUNTER_NOTIFY);
 			CASESTRRET(SYNC_ALARM_NOTIFY);
@@ -199,7 +199,7 @@ struct ev_ewmh_active_win_request {
 /// Does not change anything if we fail to get the attribute or the window
 /// returned could not be found.
 static void
-update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base *req_base,
+update_ewmh_active_win(struct x_connection *c, struct x_async_request_base *req_base,
                        const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
@@ -213,7 +213,7 @@ update_ewmh_active_win(struct x_connection * /*c*/, struct x_async_request_base 
 
 	if (reply_or_error->response_type == 0) {
 		log_error("Failed to get _NET_ACTIVE_WINDOW: %s",
-		          x_strerror(((xcb_generic_error_t *)reply_or_error)));
+		          x_strerror(c, (xcb_generic_error_t *)reply_or_error));
 		return;
 	}
 
@@ -246,7 +246,7 @@ struct ev_recheck_focus_request {
  * @param ps current session
  * @return struct _win of currently focused window, NULL if not found
  */
-static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_base *req_base,
+static void recheck_focus(struct x_connection *c, struct x_async_request_base *req_base,
                           const xcb_raw_generic_event_t *reply_or_error) {
 	auto ps = ((struct ev_ewmh_active_win_request *)req_base)->ps;
 	free(req_base);
@@ -263,7 +263,7 @@ static void recheck_focus(struct x_connection * /*c*/, struct x_async_request_ba
 	if (reply_or_error->response_type == 0) {
 		// Not able to get input focus means very not good things...
 		auto e = (xcb_generic_error_t *)reply_or_error;
-		log_error_x_error(e, "Failed to get focused window.");
+		log_error_x_error(c, e, "Failed to get focused window.");
 		return;
 	}
 
@@ -419,7 +419,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 		if (!ps->redirected) {
 			log_debug("Overlay is mapped while we are not redirected");
 			auto succeeded =
-			    XCB_AWAIT_VOID(xcb_unmap_window, ps->c.c, ps->overlay);
+			    XCB_AWAIT_VOID(xcb_unmap_window, &ps->c, ps->overlay);
 			if (!succeeded) {
 				log_error("Failed to unmap the overlay window");
 			}
@@ -641,8 +641,8 @@ static inline void repair_win(session_t *ps, struct win *w) {
 		    xcb_damage_subtract_checked(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
 		if (e) {
 			if (ps->o.show_all_xerrors) {
-				x_print_error(e->sequence, e->major_code, e->minor_code,
-				              e->error_code);
+				x_print_error(&ps->c, e->sequence, e->major_code,
+				              e->minor_code, e->error_code);
 			}
 			free(e);
 		}
@@ -717,7 +717,7 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	xcb_window_t wid = ev_window(ps, ev);
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
+	if (ev->response_type != ps->c.e.damage_event + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
 		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	} else {
@@ -786,16 +786,17 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
 	default:
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->c.e.has_shape && ev->response_type == ps->c.e.shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
-		if (ps->randr_exists &&
-		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
+		if (ps->c.e.has_randr &&
+		    ev->response_type ==
+		        (ps->c.e.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			x_update_monitors_async(&ps->c, &ps->monitors);
 			break;
 		}
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 			ev_damage_notify(ps, (xcb_damage_notify_event_t *)ev);
 			break;
 		}
