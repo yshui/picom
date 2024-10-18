@@ -1981,23 +1981,15 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	    .last_msc = 0,
 
-	    .xfixes_event = 0,
 	    .xfixes_error = 0,
 	    .damage_event = 0,
 	    .damage_error = 0,
-	    .render_event = 0,
 	    .render_error = 0,
-	    .composite_event = 0,
-	    .composite_error = 0,
-	    .composite_opcode = 0,
 	    .shape_exists = false,
 	    .shape_event = 0,
-	    .shape_error = 0,
 	    .randr_exists = 0,
 	    .randr_event = 0,
-	    .randr_error = 0,
 	    .glx_exists = false,
-	    .glx_event = 0,
 	    .glx_error = 0,
 
 #ifdef CONFIG_DBUS
@@ -2044,7 +2036,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_fatal("No render extension");
 		exit(1);
 	}
-	ps->render_event = ext_info->first_event;
 	ps->render_error = ext_info->first_error;
 
 	ext_info = xcb_get_extension_data(ps->c.c, &xcb_composite_id);
@@ -2052,9 +2043,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_fatal("No composite extension");
 		exit(1);
 	}
-	ps->composite_opcode = ext_info->major_opcode;
-	ps->composite_event = ext_info->first_event;
-	ps->composite_error = ext_info->first_error;
 
 	{
 		xcb_composite_query_version_reply_t *reply = xcb_composite_query_version_reply(
@@ -2087,7 +2075,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_fatal("No XFixes extension");
 		exit(1);
 	}
-	ps->xfixes_event = ext_info->first_event;
 	ps->xfixes_error = ext_info->first_error;
 	xcb_discard_reply(ps->c.c, xcb_xfixes_query_version(ps->c.c, XCB_XFIXES_MAJOR_VERSION,
 	                                                    XCB_XFIXES_MINOR_VERSION)
@@ -2103,7 +2090,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ext_info && ext_info->present) {
 		ps->glx_exists = true;
 		ps->glx_error = ext_info->first_error;
-		ps->glx_event = ext_info->first_event;
 	}
 
 	// Parse configuration file
@@ -2196,7 +2182,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ext_info = xcb_get_extension_data(ps->c.c, &xcb_shape_id);
 	if (ext_info && ext_info->present) {
 		ps->shape_event = ext_info->first_event;
-		ps->shape_error = ext_info->first_error;
 		ps->shape_exists = true;
 	}
 
@@ -2204,7 +2189,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ext_info && ext_info->present) {
 		ps->randr_exists = true;
 		ps->randr_event = ext_info->first_event;
-		ps->randr_error = ext_info->first_error;
 	}
 
 	ext_info = xcb_get_extension_data(ps->c.c, &xcb_present_id);
