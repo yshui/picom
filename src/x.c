@@ -51,10 +51,8 @@ enum {
 ///
 /// @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
 ///         for multiple calls to this function,
-static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
-                                          uint16_t minor, uint8_t error_code) {
-	session_t *const ps = ps_g;
-
+static const char *x_error_code_to_string(struct x_connection *c, unsigned long serial,
+                                          uint8_t major, uint16_t minor, uint8_t error_code) {
 	int o = 0;
 	const char *name = "Unknown";
 
@@ -64,13 +62,13 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 #define CASESTRRET2(s)                                                                   \
 	case XCB_##s: name = #s; break
 
-	o = error_code - ps->c.e.fixes_error;
+	o = error_code - c->e.fixes_error;
 	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
-	o = error_code - ps->c.e.damage_error;
+	o = error_code - c->e.damage_error;
 	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
 
-	o = error_code - ps->c.e.render_error;
+	o = error_code - c->e.render_error;
 	switch (o) {
 		CASESTRRET2(RENDER_PICT_FORMAT);
 		CASESTRRET2(RENDER_PICTURE);
@@ -79,8 +77,8 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 		CASESTRRET2(RENDER_GLYPH);
 	}
 
-	if (ps->c.e.has_glx) {
-		o = error_code - ps->c.e.glx_error;
+	if (c->e.has_glx) {
+		o = error_code - c->e.glx_error;
 		switch (o) {
 			CASESTRRET2(GLX_BAD_CONTEXT);
 			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
@@ -99,8 +97,8 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 		}
 	}
 
-	if (ps->c.e.has_sync) {
-		o = error_code - ps->c.e.sync_error;
+	if (c->e.has_sync) {
+		o = error_code - c->e.sync_error;
 		switch (o) {
 			CASESTRRET(XSyncBadCounter);
 			CASESTRRET(XSyncBadAlarm);
@@ -137,11 +135,11 @@ static const char *x_error_code_to_string(unsigned long serial, uint8_t major,
 	return buffer;
 }
 
-void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
-                        uint8_t error_code, const char *func) {
+void x_print_error_impl(struct x_connection *c, unsigned long serial, uint8_t major,
+                        uint16_t minor, uint8_t error_code, const char *func) {
 	if (unlikely(LOG_LEVEL_DEBUG >= log_get_level_tls())) {
 		log_printf(tls_logger, LOG_LEVEL_DEBUG, func, "%s",
-		           x_error_code_to_string(serial, major, minor, error_code));
+		           x_error_code_to_string(c, serial, major, minor, error_code));
 	}
 }
 
@@ -153,9 +151,9 @@ struct x_generic_async_request {
 	int line;
 };
 
-static void x_generic_async_callback(struct x_connection * /*c*/,
-                                     struct x_async_request_base *req_base,
-                                     const xcb_raw_generic_event_t *reply_or_error) {
+static void
+x_generic_async_callback(struct x_connection *c, struct x_async_request_base *req_base,
+                         const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct x_generic_async_request *)req_base;
 	auto error_action = req->error_action;
 	auto func = req->func == NULL ? "(unknown)" : req->func;
@@ -170,11 +168,11 @@ static void x_generic_async_callback(struct x_connection * /*c*/,
 	auto error = (xcb_generic_error_t *)reply_or_error;
 	if (error_action != PENDING_REPLY_ACTION_IGNORE) {
 		log_error("X error for request in %s at %s:%d: %s", func, file, line,
-		          x_error_code_to_string(error->full_sequence, error->major_code,
+		          x_error_code_to_string(c, error->full_sequence, error->major_code,
 		                                 error->minor_code, error->error_code));
 	} else {
 		log_debug("Expected X error for request in %s at %s:%d: %s", func, file, line,
-		          x_error_code_to_string(error->full_sequence, error->major_code,
+		          x_error_code_to_string(c, error->full_sequence, error->major_code,
 		                                 error->minor_code, error->error_code));
 	}
 	switch (error_action) {
@@ -428,12 +426,12 @@ winprop_t x_get_prop_with_offset(const struct x_connection *c, xcb_window_t w, x
 }
 
 /// Get the type, format and size in bytes of a window's specific attribute.
-winprop_info_t x_get_prop_info(const struct x_connection *c, xcb_window_t w, xcb_atom_t atom) {
+winprop_info_t x_get_prop_info(struct x_connection *c, xcb_window_t w, xcb_atom_t atom) {
 	xcb_generic_error_t *e = NULL;
 	auto r = xcb_get_property_reply(
 	    c->c, xcb_get_property(c->c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
 	if (!r) {
-		log_debug_x_error(e, "Failed to get property info for window %#010x", w);
+		log_debug_x_error(c, e, "Failed to get property info for window %#010x", w);
 		free(e);
 		return (winprop_info_t){
 		    .type = XCB_GET_PROPERTY_TYPE_ANY, .format = 0, .length = 0};
@@ -479,7 +477,7 @@ bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t 
 	auto r = xcb_get_property_reply(
 	    c->c, xcb_get_property(c->c, 0, wid, prop, XCB_ATOM_ANY, 0, UINT_MAX), &e);
 	if (!r) {
-		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
+		log_debug_x_error(c, e, "Failed to get window property for %#010x", wid);
 		free(e);
 		return false;
 	}
@@ -664,7 +662,7 @@ x_create_picture_with_pictfmt_and_pixmap(struct x_connection *c, xcb_render_pict
 	                                c->c, tmp_picture, pixmap, pictfmt, valuemask, buf));
 	free(buf);
 	if (e) {
-		log_error_x_error(e, "failed to create picture");
+		log_error_x_error(c, e, "failed to create picture");
 		free(e);
 		abort();
 		return XCB_NONE;
@@ -738,7 +736,7 @@ bool x_fetch_region(struct x_connection *c, xcb_xfixes_region_t r, pixman_region
 	xcb_xfixes_fetch_region_reply_t *xr =
 	    xcb_xfixes_fetch_region_reply(c->c, xcb_xfixes_fetch_region(c->c, r), &e);
 	if (!xr) {
-		log_error_x_error(e, "Failed to fetch rectangles");
+		log_error_x_error(c, e, "Failed to fetch rectangles");
 		return false;
 	}
 
@@ -778,7 +776,7 @@ bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_
 	}
 
 	bool success =
-	    XCB_AWAIT_VOID(xcb_xfixes_set_region, c->c, dst, to_u32_checked(nrects), xrects);
+	    XCB_AWAIT_VOID(xcb_xfixes_set_region, c, dst, to_u32_checked(nrects), xrects);
 
 	free(xrects);
 
@@ -805,8 +803,8 @@ uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 	}
 
 	xcb_xfixes_region_t ret = x_new_id(c);
-	bool success = XCB_AWAIT_VOID(xcb_xfixes_create_region, c->c, ret,
-	                              to_u32_checked(nrects), xrects);
+	bool success =
+	    XCB_AWAIT_VOID(xcb_xfixes_create_region, c, ret, to_u32_checked(nrects), xrects);
 	free(xrects);
 	if (!success) {
 		return XCB_NONE;
@@ -862,7 +860,7 @@ void x_set_picture_clip_region(struct x_connection *c, xcb_render_picture_t pict
 	                                c->c, pict, clip_x_origin, clip_y_origin,
 	                                to_u32_checked(nrects), xrects));
 	if (e) {
-		log_error_x_error(e, "Failed to set clip region");
+		log_error_x_error(c, e, "Failed to set clip region");
 		free(e);
 	}
 	free(xrects);
@@ -874,7 +872,7 @@ void x_clear_picture_clip_region(struct x_connection *c, xcb_render_picture_t pi
 	xcb_generic_error_t *e = xcb_request_check(
 	    c->c, xcb_render_change_picture_checked(c->c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
 	if (e) {
-		log_error_x_error(e, "failed to clear clip region");
+		log_error_x_error(c, e, "failed to clear clip region");
 		free(e);
 	}
 }
@@ -896,11 +894,11 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
  * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
  *         for multiple calls to this function,
  */
-const char *x_strerror(const xcb_generic_error_t *e) {
+const char *x_strerror(struct x_connection *c, const xcb_generic_error_t *e) {
 	if (!e) {
 		return "No error";
 	}
-	return x_error_code_to_string(e->full_sequence, e->major_code, e->minor_code,
+	return x_error_code_to_string(c, e->full_sequence, e->major_code, e->minor_code,
 	                              e->error_code);
 }
 
@@ -921,7 +919,7 @@ xcb_pixmap_t x_create_pixmap(struct x_connection *c, uint8_t depth, int width, i
 		return pix;
 	}
 
-	log_error_x_error(err, "Failed to create pixmap");
+	log_error_x_error(c, err, "Failed to create pixmap");
 	free(err);
 	return XCB_NONE;
 }
@@ -973,19 +971,19 @@ bool x_fence_sync(struct x_connection *c, xcb_sync_fence_t f) {
 
 	auto e = xcb_request_check(c->c, xcb_sync_trigger_fence_checked(c->c, f));
 	if (e) {
-		log_error_x_error(e, "Failed to trigger the fence");
+		log_error_x_error(c, e, "Failed to trigger the fence");
 		goto err;
 	}
 
 	e = xcb_request_check(c->c, xcb_sync_await_fence_checked(c->c, 1, &f));
 	if (e) {
-		log_error_x_error(e, "Failed to await on a fence");
+		log_error_x_error(c, e, "Failed to await on a fence");
 		goto err;
 	}
 
 	e = xcb_request_check(c->c, xcb_sync_reset_fence_checked(c->c, f));
 	if (e) {
-		log_error_x_error(e, "Failed to reset the fence");
+		log_error_x_error(c, e, "Failed to reset the fence");
 		goto err;
 	}
 	return true;
@@ -1090,7 +1088,7 @@ struct x_update_monitors_request {
 	struct x_monitors *monitors;
 };
 
-static void x_handle_update_monitors_reply(struct x_connection * /*c*/,
+static void x_handle_update_monitors_reply(struct x_connection *c,
                                            struct x_async_request_base *req_base,
                                            const xcb_raw_generic_event_t *reply_or_error) {
 	auto m = ((struct x_update_monitors_request *)req_base)->monitors;
@@ -1103,7 +1101,7 @@ static void x_handle_update_monitors_reply(struct x_connection * /*c*/,
 
 	if (reply_or_error->response_type == 0) {
 		log_warn("Failed to get monitor information using RandR: %s",
-		         x_strerror((xcb_generic_error_t *)reply_or_error));
+		         x_strerror(c, (xcb_generic_error_t *)reply_or_error));
 		return;
 	}
 
@@ -1207,7 +1205,7 @@ static xcb_generic_event_t *x_feed_event(struct x_connection *c, xcb_generic_eve
 		head->callback(c, head, (xcb_raw_generic_event_t *)e);
 	} else {
 		log_warn("Stray X error: %s",
-		         x_error_code_to_string(error->full_sequence, error->major_code,
+		         x_error_code_to_string(c, error->full_sequence, error->major_code,
 		                                error->minor_code, error->error_code));
 	}
 	free(e);

@@ -497,7 +497,7 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 	if (e != NULL) {
 		log_debug("Failed to get named pixmap for window %#010x(%s): %s. "
 		          "Retaining its current window image",
-		          win_id(w), w->name, x_strerror(e));
+		          win_id(w), w->name, x_strerror(&ps->c, e));
 		free(e);
 		return;
 	}
@@ -1176,7 +1176,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	// Update everything related to conditions
 	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 
-	auto r = XCB_AWAIT(xcb_get_window_attributes, ps->c.c, client_win_id);
+	auto r = XCB_AWAIT(xcb_get_window_attributes, &ps->c, client_win_id);
 	if (!r) {
 		return;
 	}
@@ -1264,7 +1264,8 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	xcb_generic_error_t *e;
 	auto g = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, wid), &e);
 	if (!g) {
-		log_debug("Failed to get geometry of window %#010x: %s", wid, x_strerror(e));
+		log_debug("Failed to get geometry of window %#010x: %s", wid,
+		          x_strerror(&ps->c, e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1285,7 +1286,8 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	    ps->c.c, xcb_damage_create_checked(ps->c.c, new->damage, wid,
 	                                       XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
 	if (e) {
-		log_debug("Failed to create damage for window %#010x: %s", wid, x_strerror(e));
+		log_debug("Failed to create damage for window %#010x: %s", wid,
+		          x_strerror(&ps->c, e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1979,7 +1981,7 @@ struct win_get_geometry_request {
 	xcb_window_t wid;
 };
 
-static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
+static void win_handle_get_geometry_reply(struct x_connection *c,
                                           struct x_async_request_base *req_base,
                                           const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct win_get_geometry_request *)req_base;
@@ -1994,7 +1996,7 @@ static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
 
 	if (reply_or_error->response_type == 0) {
 		log_debug("Failed to get geometry of window %#010x: %s", wid,
-		          x_strerror((xcb_generic_error_t *)reply_or_error));
+		          x_strerror(c, (xcb_generic_error_t *)reply_or_error));
 		return;
 	}
 

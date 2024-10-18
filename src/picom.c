@@ -601,7 +601,7 @@ err:
 void configure_root(session_t *ps) {
 	// TODO(yshui) re-initializing backend should be done outside of the
 	// critical section. Probably set a flag and do it in draw_callback_impl.
-	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
+	auto r = XCB_AWAIT(xcb_get_geometry, &ps->c, ps->c.screen_info->root);
 	if (!r) {
 		log_fatal("Failed to fetch root geometry");
 		abort();
@@ -949,7 +949,7 @@ static int register_cm(session_t *ps) {
 		                 prop_is_utf8[i] ? ps->atoms->aUTF8_STRING : XCB_ATOM_STRING,
 		                 8, strlen("picom"), "picom"));
 		if (e) {
-			log_error_x_error(e, "Failed to set window property %d",
+			log_error_x_error(&ps->c, e, "Failed to set window property %d",
 			                  prop_atoms[i]);
 			free(e);
 		}
@@ -961,7 +961,7 @@ static int register_cm(session_t *ps) {
 	                                         ps->atoms->aWM_CLASS, XCB_ATOM_STRING, 8,
 	                                         ARR_SIZE(picom_class), picom_class));
 	if (e) {
-		log_error_x_error(e, "Failed to set the WM_CLASS property");
+		log_error_x_error(&ps->c, e, "Failed to set the WM_CLASS property");
 		free(e);
 	}
 
@@ -978,8 +978,9 @@ static int register_cm(session_t *ps) {
 			                 ps->atoms->aWM_CLIENT_MACHINE, XCB_ATOM_STRING,
 			                 8, (uint32_t)strlen(hostname), hostname));
 			if (e) {
-				log_error_x_error(e, "Failed to set the WM_CLIENT_MACHINE"
-				                     " property");
+				log_error_x_error(&ps->c, e,
+				                  "Failed to set the WM_CLIENT_MACHINE"
+				                  " property");
 				free(e);
 			}
 		} else {
@@ -1002,7 +1003,7 @@ static int register_cm(session_t *ps) {
 	                                   ps->atoms->aCOMPTON_VERSION, XCB_ATOM_STRING, 8,
 	                                   (uint32_t)strlen(PICOM_VERSION), PICOM_VERSION));
 	if (e) {
-		log_error_x_error(e, "Failed to set COMPTON_VERSION.");
+		log_error_x_error(&ps->c, e, "Failed to set COMPTON_VERSION.");
 		free(e);
 	}
 
@@ -1066,13 +1067,13 @@ static bool init_overlay(session_t *ps) {
 	if (ps->overlay != XCB_NONE) {
 		// Set window region of the overlay window, code stolen from
 		// compiz-0.8.8
-		if (!XCB_AWAIT_VOID(xcb_shape_mask, ps->c.c, XCB_SHAPE_SO_SET,
+		if (!XCB_AWAIT_VOID(xcb_shape_mask, &ps->c, XCB_SHAPE_SO_SET,
 		                    XCB_SHAPE_SK_BOUNDING, ps->overlay, 0, 0, 0)) {
 			log_fatal("Failed to set the bounding shape of overlay, giving "
 			          "up.");
 			return false;
 		}
-		if (!XCB_AWAIT_VOID(xcb_shape_rectangles, ps->c.c, XCB_SHAPE_SO_SET,
+		if (!XCB_AWAIT_VOID(xcb_shape_rectangles, &ps->c, XCB_SHAPE_SO_SET,
 		                    XCB_SHAPE_SK_INPUT, XCB_CLIP_ORDERING_UNSORTED,
 		                    ps->overlay, 0, 0, 0, NULL)) {
 			log_fatal("Failed to set the input shape of overlay, giving up.");
@@ -1088,7 +1089,7 @@ static bool init_overlay(session_t *ps) {
 		// root_damage = XDamageCreate(ps->dpy, root, XDamageReportNonEmpty);
 
 		// Unmap the overlay, we will map it when needed in redirect_start
-		XCB_AWAIT_VOID(xcb_unmap_window, ps->c.c, ps->overlay);
+		XCB_AWAIT_VOID(xcb_unmap_window, &ps->c, ps->overlay);
 	} else {
 		log_error("Cannot get X Composite overlay window. Falling "
 		          "back to painting on root window.");
@@ -1174,7 +1175,7 @@ static bool redirect_start(session_t *ps) {
 		xcb_map_window(ps->c.c, ps->overlay);
 	}
 
-	bool success = XCB_AWAIT_VOID(xcb_composite_redirect_subwindows, ps->c.c,
+	bool success = XCB_AWAIT_VOID(xcb_composite_redirect_subwindows, &ps->c,
 	                              ps->c.screen_info->root, session_redirection_mode(ps));
 	if (!success) {
 		log_fatal("Another composite manager is already running "
@@ -2012,7 +2013,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->x_region = x_new_id(&ps->c);
-	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c.c, ps->x_region, 0, NULL)) {
+	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, &ps->c, ps->x_region, 0, NULL)) {
 		log_fatal("Failed to create a XFixes region");
 		goto err;
 	}
@@ -2111,9 +2112,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		                 ps->c.c, ps->c.screen_info->root, ps->sync_fence, 0));
 		if (e) {
 			if (ps->o.xrender_sync_fence) {
-				log_error_x_error(e, "Failed to create a XSync fence. "
-				                     "xrender-sync-fence will be "
-				                     "disabled");
+				log_error_x_error(&ps->c, e,
+				                  "Failed to create a XSync fence. "
+				                  "xrender-sync-fence will be "
+				                  "disabled");
 				ps->o.xrender_sync_fence = false;
 			}
 			ps->sync_fence = XCB_NONE;
@@ -2238,14 +2240,14 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                    XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
 	                                    XCB_EVENT_MASK_PROPERTY_CHANGE}));
 	if (e) {
-		log_error_x_error(e, "Failed to setup root window event mask");
+		log_error_x_error(&ps->c, e, "Failed to setup root window event mask");
 		free(e);
 		goto err;
 	}
 
 	// Query the size of the root window. We need the size information before any
 	// window can be managed.
-	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
+	auto r = XCB_AWAIT(xcb_get_geometry, &ps->c, ps->c.screen_info->root);
 	if (!r) {
 		log_fatal("Failed to get geometry of the root window");
 		goto err;
@@ -2279,7 +2281,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		// release it.
 		auto get_overlay =
 		    xcb_composite_get_overlay_window(ps->c.c, ps->c.screen_info->root);
-		XCB_AWAIT_VOID(xcb_composite_release_overlay_window, ps->c.c,
+		XCB_AWAIT_VOID(xcb_composite_release_overlay_window, &ps->c,
 		               ps->c.screen_info->root);
 		auto overlay_reply =
 		    xcb_composite_get_overlay_window_reply(ps->c.c, get_overlay, NULL);

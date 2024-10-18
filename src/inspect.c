@@ -27,11 +27,11 @@ xcb_window_t inspect_select_window(struct x_connection *c) {
 	xcb_cursor_t cursor = x_new_id(c);
 	const char font_name[] = "cursor";
 	static const uint16_t CROSSHAIR_CHAR = 34;
-	XCB_AWAIT_VOID(xcb_open_font, c->c, font, sizeof(font_name) - 1, font_name);
-	XCB_AWAIT_VOID(xcb_create_glyph_cursor, c->c, cursor, font, font, CROSSHAIR_CHAR,
+	XCB_AWAIT_VOID(xcb_open_font, c, font, sizeof(font_name) - 1, font_name);
+	XCB_AWAIT_VOID(xcb_create_glyph_cursor, c, cursor, font, font, CROSSHAIR_CHAR,
 	               CROSSHAIR_CHAR + 1, 0, 0, 0, 0xffff, 0xffff, 0xffff);
 	auto grab_reply = XCB_AWAIT(
-	    xcb_grab_pointer, c->c, false, c->screen_info->root,
+	    xcb_grab_pointer, c, false, c->screen_info->root,
 	    XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE, XCB_GRAB_MODE_SYNC,
 	    XCB_GRAB_MODE_ASYNC, c->screen_info->root, cursor, XCB_CURRENT_TIME);
 	if (grab_reply->status != XCB_GRAB_STATUS_SUCCESS) {
@@ -45,8 +45,7 @@ xcb_window_t inspect_select_window(struct x_connection *c) {
 	xcb_window_t target = XCB_NONE;
 	int buttons_pressed = 0;
 	while ((target == XCB_NONE) || (buttons_pressed > 0)) {
-		XCB_AWAIT_VOID(xcb_allow_events, c->c, XCB_ALLOW_ASYNC_POINTER,
-		               XCB_CURRENT_TIME);
+		XCB_AWAIT_VOID(xcb_allow_events, c, XCB_ALLOW_ASYNC_POINTER, XCB_CURRENT_TIME);
 		xcb_generic_event_t *ev = xcb_wait_for_event(c->c);
 		if (!ev) {
 			log_fatal("Connection to X server lost");
@@ -74,7 +73,7 @@ xcb_window_t inspect_select_window(struct x_connection *c) {
 		}
 		free(ev);
 	}
-	XCB_AWAIT_VOID(xcb_ungrab_pointer, c->c, XCB_CURRENT_TIME);
+	XCB_AWAIT_VOID(xcb_ungrab_pointer, c, XCB_CURRENT_TIME);
 	return target;
 }
 
