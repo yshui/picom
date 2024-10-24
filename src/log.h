@@ -33,12 +33,13 @@ enum log_level {
 		}                                                                              \
 	} while (0)
 
-#define LOG(level, x, ...)                                                                     \
-	do {                                                                                   \
-		if (LOG_LEVEL_##level >= log_get_level_tls()) {                                \
-			log_printf(tls_logger, LOG_LEVEL_##level, __func__, x, ##__VA_ARGS__); \
-		}                                                                              \
+#define LOG_(level, x, ...)                                                              \
+	do {                                                                             \
+		if (level >= log_get_level_tls()) {                                      \
+			log_printf(tls_logger, level, __func__, x, ##__VA_ARGS__);       \
+		}                                                                        \
 	} while (0)
+#define LOG(level, x, ...) LOG_(LOG_LEVEL_##level, x, ##__VA_ARGS__)
 #define log_trace(x, ...) LOG_UNLIKELY(TRACE, x, ##__VA_ARGS__)
 #define log_verbose(x, ...) LOG_UNLIKELY(VERBOSE, x, ##__VA_ARGS__)
 #define log_debug(x, ...) LOG_UNLIKELY(DEBUG, x, ##__VA_ARGS__)
