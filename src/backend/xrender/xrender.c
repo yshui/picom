@@ -956,12 +956,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	xd->curr_back = 0;
 	xd->back_image.pict = xd->vsync ? xd->back[xd->curr_back] : xd->target;
 
-	auto drivers = detect_driver(xd->base.c->c, &xd->base, xd->target_win);
-	if (drivers & (DRIVER_MODESETTING | DRIVER_NVIDIA | DRIVER_NOUVEAU |
-	               DRIVER_AMDGPU | DRIVER_RADEON | DRIVER_FGLRX)) {
-		// I believe xf86-video-intel have accelerated convolution?
-		xd->quirks |= BACKEND_QUIRK_SLOW_BLUR;
-	}
+	xd->quirks |= BACKEND_QUIRK_SLOW_BLUR;
 
 	return &xd->base;
 err:
