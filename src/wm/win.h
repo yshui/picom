@@ -419,6 +419,7 @@ void unmap_win_finish(session_t *ps, struct win *w);
 /// because of fading and such.
 void win_destroy_start(session_t *ps, struct win *w);
 void win_map_start(struct session *ps, struct win *w);
+void win_release_saved_win_image(backend_t *base, struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
 void win_release_images(struct backend_base *backend, struct win *w);

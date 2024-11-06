@@ -1686,9 +1686,7 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 			w->running_animation_instance = NULL;
 			w->in_openclose = false;
 			if (w->saved_win_image != NULL) {
-				ps->backend_data->ops.release_image(ps->backend_data,
-				                                    w->saved_win_image);
-				w->saved_win_image = NULL;
+				win_release_saved_win_image(ps->backend_data, w);
 			}
 			if (w->state == WSTATE_UNMAPPED) {
 				unmap_win_finish(ps, w);
