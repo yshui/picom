@@ -1,3 +1,9 @@
+# 12.x (unreleased)
+
+## Bug fixes
+
+* Fix assertion failure when running with some window managers (e.g. qtile) and no window is focused (#1384)
+
 # 12.4 (2024-Nov-09)
 
 ## Improvements

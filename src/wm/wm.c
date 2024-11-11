@@ -187,7 +187,9 @@ struct wm_ref *wm_find(const struct wm *wm, xcb_window_t id) {
 
 struct wm_ref *wm_find_by_client(const struct wm *wm, xcb_window_t client) {
 	auto node = wm_tree_find(&wm->tree, client);
-	if (node == NULL) {
+	if (node == NULL || node->parent == NULL) {
+		// If `client` is the root window, we return NULL too, technically
+		// the root window doesn't have a client window.
 		return NULL;
 	}
 	auto toplevel = wm_tree_find_toplevel_for(&wm->tree, node);
