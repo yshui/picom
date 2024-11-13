@@ -1,4 +1,4 @@
-# 12.x (unreleased)
+# 12.5 (2024-Nov-13)
 
 ## Bug fixes
 
