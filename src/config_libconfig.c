@@ -1138,9 +1138,6 @@ bool parse_config_libconfig(options_t *opt, const char *config_file,
 				log_warn_both_style_of_rules(opt, rule_list[i].name);
 			}
 		}
-		if (config_lookup(&cfg, "wintypes")) {
-			log_warn_both_style_of_rules(opt, "wintypes");
-		}
 	} else {
 		for (size_t i = 0; i < ARR_SIZE(rule_list); i++) {
 			bool deprecated = false;
