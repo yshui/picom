@@ -353,10 +353,19 @@ win_options(const struct win *w) {
 	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);
 }
 
-/// Check if win_geometry `a` and `b` have the same sizes and positions. Border width is
+/// Check if the window has changed in size. Border width is
 /// not considered.
-static inline bool win_geometry_eq(struct win_geometry a, struct win_geometry b) {
-	return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+static inline bool win_size_changed(struct win_geometry a, struct win_geometry b) {
+	return a.width != b.width || a.height != b.height;
+}
+
+/// Check if the window position has changed.
+static inline bool win_position_changed(struct win_geometry a, struct win_geometry b) {
+	if (win_size_changed(a, b)) {
+		return false;
+	}
+
+	return a.x != b.x || a.y != b.y;
 }
 
 /// Process pending updates/images flags on a window. Has to be called in X critical
@@ -377,6 +386,7 @@ void unmap_win_finish(session_t *ps, struct win *w);
 /// because of fading and such.
 void win_destroy_start(struct win *w);
 void win_map_start(struct session *ps, struct win *w);
+void win_release_saved_win_image(backend_t *base, struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
 void win_release_images(struct backend_base *backend, struct win *w);
@@ -511,7 +521,7 @@ int win_update_role(struct x_connection *c, struct atom *atoms, struct win *w);
 int win_update_name(struct x_connection *c, struct atom *atoms, struct win *w);
 void win_on_win_size_change(struct win *w, int shadow_offset_x, int shadow_offset_y,
                             int shadow_radius);
-void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape_exists,
+void win_update_bounding_shape(struct x_connection *c, struct win *w,
                                bool detect_rounded_corners);
 bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
                                 struct win *w);

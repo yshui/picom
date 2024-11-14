@@ -14,7 +14,20 @@
   - `sw-opti`
   - `clear-shadow`
 
-# 12.x (unreleased)
+## Bug fixes
+
+* Fix assertion failure when running with some window managers (e.g. qtile) and no window is focused (#1384)
+
+# 12.4 (2024-Nov-09)
+
+## Improvements
+
+* Better workaround for a NVIDIA qurik, fix high CPU usage when screen is off (#1265)
+* Avoid using xrender convolution in all cases, should improve shadow performance for most users. (#1349)
+
+# Bug fixes
+
+* Fix leak of saved window images.
 
 ## Build fixes
 

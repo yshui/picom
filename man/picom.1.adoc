@@ -509,9 +509,11 @@ animations = ({
 
 	  _decrease-opacity_:: When the opacity of a window is decreased.
 
-	  [[trigger-geometry]]_geometry_:: When the geometry of a window is changed. (EXPERIMENTAL)
+	  _size_, _position_:: When the size or position of a window is changed. If both changed, the position trigger has priority. (EXPERIMENTAL)
+
+	  [[trigger-geometry]]_geometry_:: Alias of size + position.
 +
-WARNING: The _geometry_ trigger is experimental. Using this means you accept the caveat that geometry animations will also trigger when you manually resize or move a window, like when you drag the window around with your mouse.
+WARNING: The _size_ and _position_ triggers are experimental. Using this means you accept the caveat that these animations will also trigger when you manually resize or move a window, like when you drag the window around with your mouse.
 
   _suppressions_:::
 	Which other animations should be suppressed when this animation is running. Normally, if another trigger is activated while an animation is already running, the animation in progress will be interrupted and the new animation will start. If you want to prevent this, you can set the `suppressions` option to a list of triggers that should be suppressed. This is optional, the default value for this is an empty list.

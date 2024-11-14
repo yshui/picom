@@ -187,7 +187,9 @@ struct wm_ref *wm_find(const struct wm *wm, xcb_window_t id) {
 
 struct wm_ref *wm_find_by_client(const struct wm *wm, xcb_window_t client) {
 	auto node = wm_tree_find(&wm->tree, client);
-	if (node == NULL) {
+	if (node == NULL || node->parent == NULL) {
+		// If `client` is the root window, we return NULL too, technically
+		// the root window doesn't have a client window.
 		return NULL;
 	}
 	auto toplevel = wm_tree_find_toplevel_for(&wm->tree, node);
@@ -560,7 +562,7 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 		// be impossible.
 		xcb_generic_error_t *err = (xcb_generic_error_t *)reply_or_error;
 		log_error("Query tree request for window %#010x failed with error %s.",
-		          node == NULL ? 0 : node->id.x, x_strerror(err));
+		          node == NULL ? 0 : node->id.x, x_strerror(c, err));
 		BUG_ON(false);
 	}
 
@@ -585,9 +587,9 @@ wm_handle_query_tree_reply(struct x_connection *c, struct x_async_request_base *
 	}
 }
 
-static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
-                                         struct x_async_request_base *base,
-                                         const xcb_raw_generic_event_t *reply_or_error) {
+static void
+wm_handle_get_wm_state_reply(struct x_connection *c, struct x_async_request_base *base,
+                             const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct wm_get_property_request *)base;
 	if (reply_or_error == NULL) {
 		free(req);
@@ -605,7 +607,7 @@ static void wm_handle_get_wm_state_reply(struct x_connection * /*c*/,
 		xcb_generic_error_t *err = (xcb_generic_error_t *)reply_or_error;
 		log_debug("Get WM_STATE request for window %#010x failed with "
 		          "error %s",
-		          req->wid, x_strerror(err));
+		          req->wid, x_strerror(c, err));
 		free(req);
 		return;
 	}
@@ -646,7 +648,7 @@ wm_handle_set_event_mask_reply(struct x_connection *c, struct x_async_request_ba
 	if (reply_or_error->response_type == 0) {
 		log_debug("Failed to set event mask for window %#010x: %s, ignoring this "
 		          "window.",
-		          wid, x_strerror((const xcb_generic_error_t *)reply_or_error));
+		          wid, x_strerror(c, (const xcb_generic_error_t *)reply_or_error));
 		goto end_import;
 	}
 

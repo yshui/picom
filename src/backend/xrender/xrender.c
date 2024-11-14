@@ -172,7 +172,7 @@ xrender_make_rounded_corner_cache(struct x_connection *c, xcb_render_picture_t s
 	}
 #undef ADD_POINT
 
-	XCB_AWAIT_VOID(xcb_render_tri_strip, c->c, XCB_RENDER_PICT_OP_SRC, src, picture,
+	XCB_AWAIT_VOID(xcb_render_tri_strip, c, XCB_RENDER_PICT_OP_SRC, src, picture,
 	               x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8), 0, 0,
 	               (uint32_t)point_count, points);
 	free(points);
@@ -641,7 +641,8 @@ xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fm
 	auto r = xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), &e);
 	if (!r) {
 		log_error("Invalid pixmap: %#010x", pixmap);
-		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+		x_print_error(base->c, e->full_sequence, e->major_code, e->minor_code,
+		              e->error_code);
 		free(e);
 		return NULL;
 	}
@@ -892,7 +893,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 
 	xd->vsync = ps->o.vsync;
-	if (ps->present_exists) {
+	if (ps->c.e.has_present) {
 		auto eid = x_new_id(&ps->c);
 		auto e =
 		    xcb_request_check(ps->c.c, xcb_present_select_input_checked(
@@ -941,12 +942,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	xd->curr_back = 0;
 	xd->back_image.pict = xd->vsync ? xd->back[xd->curr_back] : xd->target;
 
-	auto drivers = detect_driver(xd->base.c->c, &xd->base, xd->target_win);
-	if (drivers & (DRIVER_MODESETTING | DRIVER_NVIDIA | DRIVER_NOUVEAU |
-	               DRIVER_AMDGPU | DRIVER_RADEON | DRIVER_FGLRX)) {
-		// I believe xf86-video-intel have accelerated convolution?
-		xd->quirks |= BACKEND_QUIRK_SLOW_BLUR;
-	}
+	xd->quirks |= BACKEND_QUIRK_SLOW_BLUR;
 
 	return &xd->base;
 err:

@@ -324,8 +324,9 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 }
 
 enum animation_trigger parse_animation_trigger(const char *trigger) {
-	for (unsigned i = 0; i < ANIMATION_TRIGGER_COUNT; i++) {
-		if (strcasecmp(trigger, animation_trigger_names[i]) == 0) {
+	for (unsigned i = 0; i < ARR_SIZE(animation_trigger_names); i++) {
+		if (animation_trigger_names[i] != NULL &&
+		    strcasecmp(trigger, animation_trigger_names[i]) == 0) {
 			return i;
 		}
 	}
@@ -357,22 +358,54 @@ compile_win_script(struct win_script *result, config_setting_t *setting, char **
 	return true;
 }
 
-static bool
-set_animation(struct win_script *animations, const enum animation_trigger *triggers,
-              int number_of_triggers, struct win_script animation, unsigned line) {
+/// Return the index of the lowest bit set in `bitflags`, and clear that bit.
+static int next_bit(uint64_t *bitflags) {
+	if (!*bitflags) {
+		return -1;
+	}
+	auto lowbit = *bitflags & (~*bitflags + 1);
+#if defined(__has_builtin) && __has_builtin(__builtin_ctzll)
+	int ret = __builtin_ctzll(lowbit);
+#else
+	int ret = 63;
+	if (lowbit & 0x00000000FFFFFFFF) {
+		ret -= 32;
+	}
+	if (lowbit & 0x0000FFFF0000FFFF) {
+		ret -= 16;
+	}
+	if (lowbit & 0x00FF00FF00FF00FF) {
+		ret -= 8;
+	}
+	if (lowbit & 0x0F0F0F0F0F0F0F0F) {
+		ret -= 4;
+	}
+	if (lowbit & 0x3333333333333333) {
+		ret -= 2;
+	}
+	if (lowbit & 0x5555555555555555) {
+		ret -= 1;
+	}
+#endif
+	*bitflags -= lowbit;
+	return ret;
+}
+
+static bool set_animation(struct win_script *animations, uint64_t triggers,
+                          struct win_script animation, unsigned line) {
 	bool needed = false;
-	for (int i = 0; i < number_of_triggers; i++) {
-		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
-			log_error("Invalid trigger defined at line %d", line);
-			continue;
+	while (triggers != 0) {
+		int trigger = next_bit(&triggers);
+		if (trigger >= ANIMATION_TRIGGER_INVALID) {
+			break;
 		}
-		if (animations[triggers[i]].script != NULL) {
+		if (animations[trigger].script != NULL) {
 			log_error("Duplicate animation defined for trigger %s at line "
 			          "%d, it will be ignored.",
-			          animation_trigger_names[triggers[i]], line);
+			          animation_trigger_names[trigger], line);
 			continue;
 		}
-		animations[triggers[i]] = animation;
+		animations[trigger] = animation;
 		needed = true;
 	}
 	return needed;
@@ -406,18 +439,37 @@ static bool parse_animation_one(struct win_script *animations,
 		          config_setting_source_line(triggers));
 		return false;
 	}
-	enum animation_trigger *trigger_types =
-	    alloca(sizeof(enum animation_trigger[number_of_triggers]));
+	uint64_t trigger_types = 0;
 	const char *trigger0 = config_setting_get_string(triggers);
 	if (trigger0 == NULL) {
 		for (int i = 0; i < number_of_triggers; i++) {
-			auto trigger_i = config_setting_get_string_elem(triggers, i);
-			trigger_types[i] = trigger_i == NULL
-			                       ? ANIMATION_TRIGGER_INVALID
-			                       : parse_animation_trigger(trigger_i);
+			auto trigger_i_str = config_setting_get_string_elem(triggers, i);
+			auto trigger_i = trigger_i_str == NULL
+			                     ? ANIMATION_TRIGGER_INVALID
+			                     : parse_animation_trigger(trigger_i_str);
+			if (trigger_types & (1 << trigger_i)) {
+				log_warn("Duplicate trigger \"%s\" set at line %d",
+				         trigger_i_str, config_setting_source_line(triggers));
+			}
+			trigger_types |= 1 << trigger_i;
 		}
 	} else {
-		trigger_types[0] = parse_animation_trigger(trigger0);
+		trigger_types = 1 << parse_animation_trigger(trigger0);
+	}
+	if ((trigger_types & (1 << ANIMATION_TRIGGER_INVALID)) != 0) {
+		log_error("Invalid trigger defined at line %d",
+		          config_setting_source_line(triggers));
+	}
+	if ((trigger_types & (1 << ANIMATION_TRIGGER_ALIAS_GEOMETRY)) != 0) {
+		const uint64_t to_set =
+		    (1 << ANIMATION_TRIGGER_SIZE) | (1 << ANIMATION_TRIGGER_POSITION);
+		if ((trigger_types & to_set) != 0) {
+			log_warn("Trigger \"geometry\" is an alias of \"size\" and "
+			         "\"position\", but one or both of them are also set at "
+			         "line %d",
+			         config_setting_source_line(triggers));
+		}
+		trigger_types |= to_set;
 	}
 
 	// script parser shouldn't see this.
@@ -476,7 +528,7 @@ static bool parse_animation_one(struct win_script *animations,
 		return false;
 	}
 
-	bool needed = set_animation(animations, trigger_types, number_of_triggers, result,
+	bool needed = set_animation(animations, trigger_types, result,
 	                            config_setting_source_line(setting));
 	if (!needed) {
 		script_free(result.script);
@@ -531,14 +583,13 @@ void generate_fading_config(struct options *opt) {
 	// overwritten
 	scoped_charp str = NULL;
 	size_t len = 0;
-	enum animation_trigger trigger[2];
 	struct script *scripts[4];
 	unsigned number_of_scripts = 0;
-	int number_of_triggers = 0;
 
 	double duration = 1.0 / opt->fade_in_step * opt->fade_delta / 1000.0;
 	if (!safe_isinf(duration) && !safe_isnan(duration) && duration > 0) {
 		scoped_charp duration_str = NULL;
+		uint64_t triggers = 0;
 		dtostr(duration, &duration_str);
 
 		// Fading in from nothing, i.e. `open` and `show`
@@ -549,12 +600,12 @@ void generate_fading_config(struct options *opt) {
 		BUG_ON(!compile_win_script_from_string(&fade_in1, str));
 		if (opt->animations[ANIMATION_TRIGGER_OPEN].script == NULL &&
 		    !opt->no_fading_openclose) {
-			trigger[number_of_triggers++] = ANIMATION_TRIGGER_OPEN;
+			triggers |= 1 << ANIMATION_TRIGGER_OPEN;
 		}
 		if (opt->animations[ANIMATION_TRIGGER_SHOW].script == NULL) {
-			trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
+			triggers |= 1 << ANIMATION_TRIGGER_SHOW;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1, 0)) {
+		if (set_animation(opt->animations, triggers, fade_in1, 0)) {
 			scripts[number_of_scripts++] = fade_in1.script;
 		} else {
 			script_free(fade_in1.script);
@@ -564,11 +615,11 @@ void generate_fading_config(struct options *opt) {
 		asnprintf(&str, &len, FADING_TEMPLATE_1, duration_str);
 		struct win_script fade_in2 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_in2, str));
-		number_of_triggers = 0;
+		triggers = 0;
 		if (opt->animations[ANIMATION_TRIGGER_INCREASE_OPACITY].script == NULL) {
-			trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
+			triggers |= 1 << ANIMATION_TRIGGER_INCREASE_OPACITY;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2, 0)) {
+		if (set_animation(opt->animations, triggers, fade_in2, 0)) {
 			scripts[number_of_scripts++] = fade_in2.script;
 		} else {
 			script_free(fade_in2.script);
@@ -581,6 +632,7 @@ void generate_fading_config(struct options *opt) {
 	duration = 1.0 / opt->fade_out_step * opt->fade_delta / 1000.0;
 	if (!safe_isinf(duration) && !safe_isnan(duration) && duration > 0) {
 		scoped_charp duration_str = NULL;
+		uint64_t triggers = 0;
 		dtostr(duration, &duration_str);
 
 		// Fading out to nothing, i.e. `hide` and `close`
@@ -588,15 +640,14 @@ void generate_fading_config(struct options *opt) {
 		          duration_str, 1, 0);
 		struct win_script fade_out1 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_out1, str));
-		number_of_triggers = 0;
 		if (opt->animations[ANIMATION_TRIGGER_CLOSE].script == NULL &&
 		    !opt->no_fading_openclose) {
-			trigger[number_of_triggers++] = ANIMATION_TRIGGER_CLOSE;
+			triggers |= 1 << ANIMATION_TRIGGER_CLOSE;
 		}
 		if (opt->animations[ANIMATION_TRIGGER_HIDE].script == NULL) {
-			trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
+			triggers |= 1 << ANIMATION_TRIGGER_HIDE;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1, 0)) {
+		if (set_animation(opt->animations, triggers, fade_out1, 0)) {
 			scripts[number_of_scripts++] = fade_out1.script;
 		} else {
 			script_free(fade_out1.script);
@@ -606,11 +657,11 @@ void generate_fading_config(struct options *opt) {
 		asnprintf(&str, &len, FADING_TEMPLATE_1, duration_str);
 		struct win_script fade_out2 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_out2, str));
-		number_of_triggers = 0;
+		triggers = 0;
 		if (opt->animations[ANIMATION_TRIGGER_DECREASE_OPACITY].script == NULL) {
-			trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
+			triggers = 1 << ANIMATION_TRIGGER_DECREASE_OPACITY;
 		}
-		if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2, 0)) {
+		if (set_animation(opt->animations, triggers, fade_out2, 0)) {
 			scripts[number_of_scripts++] = fade_out2.script;
 		} else {
 			script_free(fade_out2.script);

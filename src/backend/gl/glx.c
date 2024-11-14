@@ -233,7 +233,7 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!ps->c.e.has_glx) {
 		log_error("No GLX extension.");
 		goto end;
 	}

@@ -39,16 +39,41 @@ typedef struct winprop {
 	xcb_get_property_reply_t *r;
 } winprop_t;
 
-typedef struct winprop_info {
-	xcb_atom_t type;
-	uint8_t format;
-	uint32_t length;
-} winprop_info_t;
-
 enum x_error_action {
 	PENDING_REPLY_ACTION_IGNORE,
 	PENDING_REPLY_ACTION_ABORT,
 	PENDING_REPLY_ACTION_DEBUG_ABORT,
+};
+
+struct x_extensions {
+	/// The X Damage extension's base event number.
+	int damage_event;
+	/// The X Damage extension's base error number.
+	int damage_error;
+	/// The X Fixes extension's base error number.
+	int fixes_error;
+	/// The X GLX extension's presence.
+	bool has_glx;
+	/// The X GLX extension's base error number.
+	int glx_error;
+	/// The X Present extension's presence.
+	bool has_present;
+	/// The X RandR extension's presence.
+	bool has_randr;
+	/// The X RandR extension's base event number.
+	int randr_event;
+	/// The X Render extension's base error number.
+	int render_error;
+	/// The X Shape extension's presence.
+	bool has_shape;
+	/// The X Shape extension's base event number.
+	int shape_event;
+	/// The X Sync extension's presence.
+	bool has_sync;
+	/// The X Sync extension's base event number.
+	int sync_event;
+	/// The X Sync extension's base error number.
+	int sync_error;
 };
 
 struct x_connection {
@@ -61,6 +86,8 @@ struct x_connection {
 	Display *dpy;
 	/// Default screen
 	int screen;
+	/// Information about the X extensions.
+	struct x_extensions e;
 
 	// Private fields
 	/// The list of pending async requests that we have
@@ -105,38 +132,40 @@ struct x_monitors {
 	region_t *regions;
 };
 
-#define XCB_AWAIT_VOID(func, c, ...)                                                     \
-	/* NOLINTBEGIN(bugprone-assignment-in-if-condition) */                           \
-	({                                                                               \
-		bool __success = true;                                                   \
-		__auto_type __e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));  \
-		if (__e) {                                                               \
-			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
-			              __e->error_code);                                  \
-			free(__e);                                                       \
-			__success = false;                                               \
-		}                                                                        \
-		__success;                                                               \
+#define XCB_AWAIT_VOID(func, conn, ...)                                                   \
+	/* NOLINTBEGIN(bugprone-assignment-in-if-condition) */                            \
+	({                                                                                \
+		bool __success = true;                                                    \
+		__auto_type __e =                                                         \
+		    xcb_request_check((conn)->c, func##_checked((conn)->c, __VA_ARGS__)); \
+		if (__e) {                                                                \
+			x_print_error(conn, __e->sequence, __e->major_code,               \
+			              __e->minor_code, __e->error_code);                  \
+			free(__e);                                                        \
+			__success = false;                                                \
+		}                                                                         \
+		__success;                                                                \
 	}) /* NOLINTEND(bugprone-assignment-in-if-condition) */
 
-#define XCB_AWAIT(func, c, ...)                                                          \
+#define XCB_AWAIT(func, conn, ...)                                                       \
 	({                                                                               \
 		xcb_generic_error_t *__e = NULL;                                         \
-		__auto_type __r = func##_reply(c, func(c, __VA_ARGS__), &__e);           \
+		__auto_type __r =                                                        \
+		    func##_reply((conn)->c, func((conn)->c, __VA_ARGS__), &__e);         \
 		if (__e) {                                                               \
-			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
-			              __e->error_code);                                  \
+			x_print_error(conn, __e->sequence, __e->major_code,              \
+			              __e->minor_code, __e->error_code);                 \
 			free(__e);                                                       \
 		}                                                                        \
 		__r;                                                                     \
 	})
 
-#define log_debug_x_error(e, fmt, ...)                                                   \
-	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
-#define log_error_x_error(e, fmt, ...)                                                   \
-	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
-#define log_fatal_x_error(e, fmt, ...)                                                   \
-	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
+#define log_debug_x_error(c, e, fmt, ...)                                                \
+	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(c, e))
+#define log_error_x_error(c, e, fmt, ...)                                                \
+	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(c, e))
+#define log_fatal_x_error(c, e, fmt, ...)                                                \
+	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(c, e))
 
 // xcb-render specific macros
 #define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
@@ -206,6 +235,13 @@ static inline void attr_unused free_x_connection(struct x_connection *c) {
 	XSetErrorHandler(c->previous_xerror_handler);
 }
 
+/// Initialize the used X extensions and populate the x_extensions structure in an
+/// x_connection structure with the information about them.
+///
+/// Returns false if the X server doesn't have or support the required version of at least
+/// one required X extension, true otherwise.
+bool x_extensions_init(struct x_connection *c);
+
 /// Initialize x_connection struct from an Xlib Display.
 ///
 /// Note this function doesn't take ownership of the Display, the caller is still
@@ -239,9 +275,6 @@ x_get_prop(const struct x_connection *c, xcb_window_t wid, xcb_atom_t atom, int 
            xcb_atom_t rtype, int rformat) {
 	return x_get_prop_with_offset(c, wid, atom, 0L, length, rtype, rformat);
 }
-
-/// Get the type, format and size in bytes of a window's specific attribute.
-winprop_info_t x_get_prop_info(const struct x_connection *c, xcb_window_t w, xcb_atom_t atom);
 
 /**
  * Get the value of a type-<code>xcb_window_t</code> property of a window.
@@ -346,10 +379,10 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p);
 /**
  * Log a X11 error
  */
-void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
-                        uint8_t error_code, const char *func);
-#define x_print_error(serial, major, minor, error_code)                                  \
-	x_print_error_impl(serial, major, minor, error_code, __func__)
+void x_print_error_impl(struct x_connection *c, unsigned long serial, uint8_t major,
+                        uint16_t minor, uint8_t error_code, const char *func);
+#define x_print_error(c, serial, major, minor, error_code)                               \
+	x_print_error_impl(c, serial, major, minor, error_code, __func__)
 
 /*
  * Convert a xcb_generic_error_t to a string that describes the error
@@ -357,7 +390,7 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
  * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
  *         for multiple calls to this function,
  */
-const char *x_strerror(const xcb_generic_error_t *e);
+const char *x_strerror(struct x_connection *c, const xcb_generic_error_t *e);
 
 void x_flush(struct x_connection *c);
 

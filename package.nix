@@ -61,7 +61,7 @@ stdenv.mkDerivation (finalAttrs: {
     llvmPackages_18.clang-unwrapped.python
     llvmPackages_18.libllvm
     (python3.withPackages (ps: with ps; [
-      xcffib pip dbus-next
+      xcffib pip dbus-next pygit2
     ]))
   ]);
 

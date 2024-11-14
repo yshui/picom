@@ -48,6 +48,7 @@ target
 # Python
 *.pyc
 *.py
+!/tools/*.py
 !/tests/testcases/*.py
 
 # Misc files

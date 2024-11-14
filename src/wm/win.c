@@ -215,10 +215,14 @@ static inline void win_release_mask(backend_t *base, struct win *w) {
 	}
 }
 
-static inline void win_release_saved_win_image(backend_t *base, struct win *w) {
+void win_release_saved_win_image(backend_t *base, struct win *w) {
 	if (w->saved_win_image) {
-		base->ops.release_image(base, w->saved_win_image);
+		xcb_pixmap_t pixmap = XCB_NONE;
+		pixmap = base->ops.release_image(base, w->saved_win_image);
 		w->saved_win_image = NULL;
+		if (pixmap != XCB_NONE) {
+			xcb_free_pixmap(base->c->c, pixmap);
+		}
 	}
 }
 
@@ -387,8 +391,7 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
-			win_update_bounding_shape(&ps->c, w, ps->shape_exists,
-			                          ps->o.detect_rounded_corners);
+			win_update_bounding_shape(&ps->c, w, ps->o.detect_rounded_corners);
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
 
 			// Window shape/size changed, invalidate the images we built
@@ -498,7 +501,7 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 	if (e != NULL) {
 		log_debug("Failed to get named pixmap for window %#010x(%s): %s. "
 		          "Retaining its current window image",
-		          win_id(w), w->name, x_strerror(e));
+		          win_id(w), w->name, x_strerror(&ps->c, e));
 		free(e);
 		return;
 	}
@@ -1177,7 +1180,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	// Update everything related to conditions
 	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 
-	auto r = XCB_AWAIT(xcb_get_window_attributes, ps->c.c, client_win_id);
+	auto r = XCB_AWAIT(xcb_get_window_attributes, &ps->c, client_win_id);
 	if (!r) {
 		return;
 	}
@@ -1265,7 +1268,8 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	xcb_generic_error_t *e;
 	auto g = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, wid), &e);
 	if (!g) {
-		log_debug("Failed to get geometry of window %#010x: %s", wid, x_strerror(e));
+		log_debug("Failed to get geometry of window %#010x: %s", wid,
+		          x_strerror(&ps->c, e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1286,7 +1290,8 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	    ps->c.c, xcb_damage_create_checked(ps->c.c, new->damage, wid,
 	                                       XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
 	if (e) {
-		log_debug("Failed to create damage for window %#010x: %s", wid, x_strerror(e));
+		log_debug("Failed to create damage for window %#010x: %s", wid,
+		          x_strerror(&ps->c, e));
 		free(e);
 		free(new);
 		return NULL;
@@ -1304,7 +1309,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	                                         (const uint32_t[]){frame_event_mask}));
 
 	// Get notification when the shape of a window changes
-	if (ps->shape_exists) {
+	if (ps->c.e.has_shape) {
 		x_set_error_action_ignore(&ps->c, xcb_shape_select_input(ps->c.c, wid, 1));
 	}
 
@@ -1440,7 +1445,7 @@ gen_by_val(win_extents);
  *
  * Mark the window shape as updated
  */
-void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape_exists,
+void win_update_bounding_shape(struct x_connection *c, struct win *w,
                                bool detect_rounded_corners) {
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
@@ -1450,7 +1455,7 @@ void win_update_bounding_shape(struct x_connection *c, struct win *w, bool shape
 	// Start with the window rectangular region
 	win_get_region_local(w, &w->bounding_shape);
 
-	if (shape_exists) {
+	if (c->e.has_shape) {
 		w->bounding_shaped = win_bounding_shaped(c, win_id(w));
 	}
 
@@ -1710,7 +1715,10 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	bool will_never_render =
 	    (!w->ever_damaged || w->win_image == NULL) && w->state != WSTATE_MAPPED;
 	auto win_ctx = win_script_context_prepare(ps, w);
-	bool geometry_changed = !win_geometry_eq(w->previous.g, w->g);
+
+	bool size_changed = win_size_changed(w->previous.g, w->g);
+	bool position_changed = win_position_changed(w->previous.g, w->g);
+
 	auto old_state = w->previous.state;
 
 	w->previous.state = w->state;
@@ -1721,7 +1729,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		// This window won't be rendered, so we don't need to run the animations.
 		bool state_changed = old_state != w->state ||
 		                     win_ctx.opacity_before != win_ctx.opacity ||
-		                     geometry_changed;
+		                     size_changed || position_changed;
 		return state_changed || (w->running_animation_instance != NULL);
 	}
 
@@ -1736,7 +1744,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	enum animation_trigger trigger = ANIMATION_TRIGGER_INVALID;
 
 	// Animation trigger priority:
-	//   state > geometry > opacity
+	//   state > position > size > opacity
 	if (old_state != w->state) {
 		// Send D-Bus signal
 		if (ps->o.dbus) {
@@ -1781,9 +1789,12 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			assert(false);
 			return true;
 		}
-	} else if (geometry_changed) {
+	} else if (position_changed) {
 		assert(w->state == WSTATE_MAPPED);
-		trigger = ANIMATION_TRIGGER_GEOMETRY;
+		trigger = ANIMATION_TRIGGER_POSITION;
+	} else if (size_changed) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = ANIMATION_TRIGGER_SIZE;
 	} else if (win_ctx.opacity_before != win_ctx.opacity) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = win_ctx.opacity > win_ctx.opacity_before
@@ -1828,9 +1839,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE)) {
 		// Grab the old pixmap, animations might need it
 		if (w->saved_win_image) {
-			ps->backend_data->ops.release_image(ps->backend_data,
-			                                    w->saved_win_image);
-			w->saved_win_image = NULL;
+			win_release_saved_win_image(ps->backend_data, w);
 		}
 		if (ps->drivers & DRIVER_NVIDIA) {
 			// NVIDIA doesn't like us grabbing the new pixmap before releasing
@@ -1874,7 +1883,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]] =
 			    1 - memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]];
 		}
-		if (geometry_changed) {
+		if (size_changed || position_changed) {
 			// If the window has moved, we need to adjust scripts
 			// outputs so that the window will stay in the same position and
 			// size after applying the animation. This way the window's size
@@ -1980,7 +1989,7 @@ struct win_get_geometry_request {
 	xcb_window_t wid;
 };
 
-static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
+static void win_handle_get_geometry_reply(struct x_connection *c,
                                           struct x_async_request_base *req_base,
                                           const xcb_raw_generic_event_t *reply_or_error) {
 	auto req = (struct win_get_geometry_request *)req_base;
@@ -1995,7 +2004,7 @@ static void win_handle_get_geometry_reply(struct x_connection * /*c*/,
 
 	if (reply_or_error->response_type == 0) {
 		log_debug("Failed to get geometry of window %#010x: %s", wid,
-		          x_strerror((xcb_generic_error_t *)reply_or_error));
+		          x_strerror(c, (xcb_generic_error_t *)reply_or_error));
 		return;
 	}
 
