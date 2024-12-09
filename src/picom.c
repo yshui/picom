@@ -2078,7 +2078,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Load shader source file specified in the shader rules
 	c2_condition_list_foreach(&ps->o.window_shader_fg_rules, i) {
-		if (!load_shader_source(ps, c2_condition_get_data(i))) {
+		if (load_shader_source(ps, c2_condition_get_data(i))) {
 			log_error("Failed to load shader source file for some of the "
 			          "window shader rules");
 		}
