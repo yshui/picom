@@ -1851,6 +1851,7 @@ static bool load_shader_source(session_t *ps, const char *path) {
 		          path, read_bytes, num_bytes);
 		goto err;
 	}
+	fclose(f);
 	return false;
 err:
 	HASH_DEL(ps->shaders, shader);
