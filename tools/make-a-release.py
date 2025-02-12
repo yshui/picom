@@ -99,13 +99,13 @@ for commit in our_commits:
 		elif line.startswith('Merge pull request #'):
 			related_issues.append(int(line.split()[3][1:]))
 
-	changelog = [i for i, line in enumerate(lines) if line.startswith('ChangeLog:')]
+	changelog = [i for i, line in enumerate(lines) if line.startswith('Changelog:')]
 	if len(changelog) > 1:
 		print('WARN: Multiple Changelog lines')
 	if not changelog:
 		continue
 	line = changelog[0] + 1
-	changelog = lines[changelog[0]].removeprefix('ChangeLog:')
+	changelog = lines[changelog[0]].removeprefix('Changelog:')
 	while line < len(lines) and lines[line].strip() != '':
 		changelog += ' ' + lines[line]
 		line += 1
