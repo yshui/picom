@@ -280,9 +280,6 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	gl_check_err();
 	return (image_handle)inner;
 err:
-	if (eglpixmap && *eglpixmap) {
-		eglDestroyImage(gd->display, *eglpixmap);
-	}
 	free(eglpixmap);
 	return NULL;
 }
