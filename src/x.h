@@ -392,8 +392,6 @@ void x_print_error_impl(struct x_connection *c, unsigned long serial, uint8_t ma
  */
 const char *x_strerror(struct x_connection *c, const xcb_generic_error_t *e);
 
-void x_flush(struct x_connection *c);
-
 xcb_pixmap_t x_create_pixmap(struct x_connection *, uint8_t depth, int width, int height);
 
 /**

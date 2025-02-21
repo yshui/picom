@@ -883,10 +883,6 @@ const char *x_strerror(struct x_connection *c, const xcb_generic_error_t *e) {
 	                              e->error_code);
 }
 
-void x_flush(struct x_connection *c) {
-	xcb_flush(c->c);
-}
-
 /**
  * Create a pixmap and check that creation succeeded.
  */
