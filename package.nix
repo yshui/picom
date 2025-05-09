@@ -3,8 +3,7 @@
 , docbook_xml_dtd_45
 , docbook_xsl
 , fetchFromGitHub
-, clang-tools_18
-, llvmPackages_18
+, llvmPackages
 , lib
 , libconfig
 , libdrm
@@ -57,9 +56,9 @@ stdenv.mkDerivation (finalAttrs: {
     ninja
     pkg-config
   ] ++ (lib.optional devShell [
-    clang-tools_18
-    llvmPackages_18.clang-unwrapped.python
-    llvmPackages_18.libllvm
+    llvmPackages.clang-tools
+    llvmPackages.clang-unwrapped.python
+    llvmPackages.libllvm
     (python3.withPackages (ps: with ps; [
       xcffib pip dbus-next pygit2
     ]))

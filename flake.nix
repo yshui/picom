@@ -17,8 +17,14 @@
     flake-utils.lib.eachDefaultSystem (system:
     let
       # like lib.lists.remove, but takes a list of elements to remove
+      llvmVersion = "20";
       removeFromList = toRemove: list: pkgs.lib.foldl (l: e: pkgs.lib.remove e l) list toRemove;
-      picomOverlay = final: prev: { picom = prev.callPackage ./package.nix { inherit git-ignore-nix; }; };
+      picomOverlay = final: prev: {
+        picom = prev.callPackage ./package.nix {
+          inherit git-ignore-nix;
+          llvmPackages = prev."llvmPackages_${llvmVersion}";
+        };
+      };
       overlays = [
         picomOverlay
       ];
@@ -33,8 +39,8 @@
             stdenv = prev.withCFlags "-fno-omit-frame-pointer" prev.stdenv;
           })
           (final: prev: {
-            llvmPackages_18 = prev.llvmPackages_18 // {
-              stdenv = final.withCFlags "-fno-omit-frame-pointer" prev.llvmPackages_18.stdenv;
+            "llvmPackages_${llvmVersion}" = prev."llvmPackages_${llvmVersion}" // {
+              stdenv = final.withCFlags "-fno-omit-frame-pointer" prev."llvmPackages_${llvmVersion}".stdenv;
             };
           })
         ];
@@ -71,12 +77,12 @@
       });
       devShells.default = mkDevShell (packages.default.override { devShell = true; });
       devShells.useClang = devShells.default.override {
-        inherit (pkgs.llvmPackages_18) stdenv;
+        inherit (pkgs."llvmPackages_${llvmVersion}") stdenv;
       };
       # build picom and all dependencies with frame pointer, making profiling/debugging easier.
       # WARNING! many many rebuilds
       devShells.useClangProfile = (mkDevShell (profilePkgs.picom.override { devShell = true; })).override {
-        stdenv = profilePkgs.withCFlags "-fno-omit-frame-pointer" profilePkgs.llvmPackages_18.stdenv;
+        stdenv = profilePkgs.withCFlags "-fno-omit-frame-pointer" profilePkgs."llvmPackages_${llvmVersion}".stdenv;
       };
     });
 }
