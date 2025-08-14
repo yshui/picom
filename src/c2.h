@@ -50,6 +50,10 @@ void c2_window_state_destroy(const struct c2_state *state, struct c2_window_stat
 void c2_window_state_mark_dirty(const struct c2_state *state,
                                 struct c2_window_state *window_state, xcb_atom_t property,
                                 bool is_on_client);
+/// If a client window of a frame window changed, we need to refresh all the on-client
+/// properties.
+void c2_window_state_mark_dirty_for_client_change(const struct c2_state *state,
+                                                  struct c2_window_state *window_state);
 void c2_window_state_update(struct c2_state *state, struct c2_window_state *window_state,
                             xcb_connection_t *c, xcb_window_t client_win,
                             xcb_window_t frame_win);

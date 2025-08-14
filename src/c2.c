@@ -1532,7 +1532,11 @@ const char *c2_condition_to_str(const c2_condition *ptr) {
 	return c2_condition_node_to_str2(ptr->root);
 }
 
-/// Get the list of target number values from a struct c2_property_value
+/// Get the list of target number values from a struct c2_property_value.
+///
+/// - `index`: if >= 0, get the value at the specified index, otherwise return all values.
+/// - `n`: return the number of values. if `index` >= 0 (and is a valid index), this will
+///   always be 1.
 static inline const int64_t *
 c2_values_get_number_targets(const struct c2_property_value *values, int index, size_t *n) {
 	auto storage = values->numbers;
@@ -2009,6 +2013,17 @@ void c2_window_state_mark_dirty(const struct c2_state *state,
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	if (p) {
 		window_state->values[p->id].needs_update = true;
+	}
+}
+
+void c2_window_state_mark_dirty_for_client_change(const struct c2_state *state,
+                                                  struct c2_window_state *window_state) {
+	struct c2_tracked_property *i, *next;
+	HASH_ITER(hh, state->tracked_properties, i, next) {
+		if (!i->key.is_on_client) {
+			continue;
+		}
+		window_state->values[i->id].needs_update = true;
 	}
 }
 

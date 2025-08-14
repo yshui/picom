@@ -1176,6 +1176,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	win_update_name(&ps->c, ps->atoms, w);
 	win_update_class(&ps->c, ps->atoms, w);
 	win_update_role(&ps->c, ps->atoms, w);
+	c2_window_state_mark_dirty_for_client_change(ps->c2_state, &w->c2_state);
 
 	// Update everything related to conditions
 	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
