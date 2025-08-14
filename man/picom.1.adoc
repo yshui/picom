@@ -422,6 +422,9 @@ Supported predefined targets are: :::
   `role`::::
 	Window role. This is the value of _pass:[_]WM_WINDOW_ROLE_.
 
+  `urgent`::::
+	Whether the window is expecting immediate user action, as defined by the ICCCM. This only checks if the urgency bit is set in _WM_HINTS_. Interpretation of this bit varies among applications and window managers. Some of them also sets _pass:[_]NET_WM_STATE_DEMANDS_ATTENTION_ in _pass:[_]NET_WM_STATE_ to indicate urgency, so you might want to also check that (e.g. `_NET_WM_STATE@[*] = '_NET_WM_STATE_DEMANDS_ATTENTION'`).
+
 +
 _Target_ can be followed by an optional `@` if the window attribute should be be looked up on client window. Otherwise the frame window will be used.
 

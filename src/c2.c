@@ -186,6 +186,7 @@ struct c2_condition_node_leaf {
 		C2_L_PCLASSG,
 		C2_L_PCLASSI,
 		C2_L_PROLE,
+		C2_L_PURGENT,
 	} predef;
 	enum {
 		C2_L_PTUNDEFINED,
@@ -256,6 +257,7 @@ static const struct {
     [C2_L_PCLASSG]       = { "class_g", true, },
     [C2_L_PCLASSI]       = { "class_i", true, },
     [C2_L_PROLE]         = { "role", true, },
+    [C2_L_PURGENT]       = { "urgent", false },
 };
 // clang-format on
 
@@ -1209,6 +1211,10 @@ c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_condition_node_
 			log_error("Failed to get atom for target \"%s\".", pleaf->tgt);
 			return false;
 		}
+	} else if (pleaf->predef == C2_L_PURGENT) {
+		pleaf->tgtatom = state->atoms->aWM_HINTS;
+		pleaf->target_on_client = true;
+		pleaf->index = 0;
 	}
 
 	// Insert target atom into tracked property name list
@@ -1567,7 +1573,49 @@ static inline bool c2_int_op(const c2_condition_node_leaf *leaf, int64_t target)
 	unreachable();
 }
 
+// Copied from libxcb-wm
+typedef enum {
+	/*
+	        XCB_ICCCM_WM_HINT_INPUT = (1L << 0),
+	        XCB_ICCCM_WM_HINT_STATE = (1L << 1),
+	        XCB_ICCCM_WM_HINT_ICON_PIXMAP = (1L << 2),
+	        XCB_ICCCM_WM_HINT_ICON_WINDOW = (1L << 3),
+	        XCB_ICCCM_WM_HINT_ICON_POSITION = (1L << 4),
+	        XCB_ICCCM_WM_HINT_ICON_MASK = (1L << 5),
+	        XCB_ICCCM_WM_HINT_WINDOW_GROUP = (1L << 6),
+	*/
+	XCB_ICCCM_WM_HINT_X_URGENCY = (1L << 8)
+} xcb_icccm_wm_t;
+
+static const int64_t *
+c2_window_state_get_number_for_leaf(const struct win *w,
+                                    const c2_condition_node_leaf *leaf, size_t *ntargets) {
+	*ntargets = 0;
+	if (leaf->target_id == C2_L_INVALID_TARGET_ID) {
+		log_debug("Leaf target ID is invalid, skipping. Most likely a list "
+		          "postprocessing failure.");
+		return NULL;
+	}
+	auto values = &w->c2_state.values[leaf->target_id];
+	assert(!values->needs_update);
+	if (!values->valid) {
+		log_verbose("Property %s not found on %s window %#010x (%s)", leaf->tgt,
+		            leaf->target_on_client ? "the client window of" : "",
+		            wm_ref_win_id(w->tree_ref), w->name);
+		return NULL;
+	}
+
+	if (values->type == C2_PROPERTY_TYPE_STRING) {
+		log_error("Property %s is not an integer", leaf->tgt);
+		return NULL;
+	}
+
+	return c2_values_get_number_targets(values, leaf->index, ntargets);
+}
+
 static bool c2_match_once_leaf_int(const struct win *w, const c2_condition_node_leaf *leaf) {
+	size_t ntargets;
+	const int64_t *targets;
 	// Get the value
 	if (leaf->predef != C2_L_PUNDEFINED) {
 		// A predefined target
@@ -1587,6 +1635,14 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_condition_node_
 		case C2_L_PHEIGHTB: predef_target = w->heightb; break;
 		case C2_L_PBDW: predef_target = w->g.border_width; break;
 		case C2_L_PFULLSCREEN: predef_target = w->is_fullscreen; break;
+		case C2_L_PURGENT:
+			targets = c2_window_state_get_number_for_leaf(w, leaf, &ntargets);
+			if (!targets) {
+				return false;
+			}
+			assert(ntargets == 1);
+			predef_target = (*targets & XCB_ICCCM_WM_HINT_X_URGENCY) != 0;
+			break;
 		case C2_L_PARGB: predef_target = win_has_alpha(w); break;
 		case C2_L_PFOCUSED:
 			predef_target =
@@ -1614,26 +1670,7 @@ static bool c2_match_once_leaf_int(const struct win *w, const c2_condition_node_
 	}
 
 	// A raw window property
-	if (leaf->target_id == C2_L_INVALID_TARGET_ID) {
-		log_debug("Leaf target ID is invalid, skipping. Most likely a list "
-		          "postprocessing failure.");
-		return false;
-	}
-	auto values = &w->c2_state.values[leaf->target_id];
-	assert(!values->needs_update);
-	if (!values->valid) {
-		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
-		            wm_ref_win_id(w->tree_ref), w->name);
-		return false;
-	}
-
-	if (values->type == C2_PROPERTY_TYPE_STRING) {
-		log_error("Property %s is not an integer", leaf->tgt);
-		return false;
-	}
-
-	size_t ntargets = 0;
-	auto targets = c2_values_get_number_targets(values, leaf->index, &ntargets);
+	targets = c2_window_state_get_number_for_leaf(w, leaf, &ntargets);
 	for (size_t i = 0; i < ntargets; i++) {
 		if (c2_int_op(leaf, targets[i])) {
 			return true;
