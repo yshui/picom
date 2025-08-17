@@ -23,6 +23,7 @@
 #include <xcb/xcb_util.h>
 #include <xcb/xcbext.h>
 #include <xcb/xfixes.h>
+#include <xcb/xproto.h>
 
 #include "atom.h"
 #include "common.h"
@@ -309,19 +310,19 @@ bool x_extensions_init(struct x_connection *c) {
 	c->e.shm_event = extension->first_event;
 	c->e.shm_error = extension->first_error;
 
-	auto shm_version = XCB_AWAIT(xcb_shm_query_version, c);
-	if (!shm_version) {
+	auto shm_info = XCB_AWAIT(xcb_shm_query_version, c);
+	if (!shm_info) {
 		log_fatal("Failed to query version of the MIT-SHM.");
 		return false;
 	}
-	if (shm_version->major_version < 1 ||
-	    (shm_version->major_version == 1 && shm_version->minor_version < 2)) {
+	if (shm_info->major_version < 1 ||
+	    (shm_info->major_version == 1 && shm_info->minor_version < 2)) {
 		log_fatal("This X server's MIT-SHM extension is too old (expected at "
 		          "least 1.2, got %d.%d).",
-		          shm_version->major_version, shm_version->minor_version);
+		          shm_info->major_version, shm_info->minor_version);
 		return false;
 	}
-	free(shm_version);
+	free(shm_info);
 
 	// Initialize the X GLX extension.
 	extension = xcb_get_extension_data(c->c, &xcb_glx_id);

@@ -5,13 +5,17 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #include <xcb/composite.h>
 #include <xcb/present.h>
 #include <xcb/render.h>
+#include <xcb/shm.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
+#include <xcb/xproto.h>
 
+#include <picom/backend.h>
 #include <picom/types.h>
 
 #include "backend/backend.h"
@@ -46,6 +50,14 @@ struct xrender_image_data_inner {
 
 typedef struct xrender_data {
 	struct backend_base base;
+	/// The X ID for the shared memory segment.
+	uint32_t shm_seg_id;
+	/// Shared memory file descriptor allocated by the X server.
+	int shm_fd;
+	/// `shm_fd` mmap'd into memory.
+	void *shm;
+	/// Size of the shared memory segment.
+	uint32_t shm_size;
 	/// Quirks
 	uint32_t quirks;
 	/// Target window
@@ -693,6 +705,15 @@ static xcb_pixmap_t xrender_release_image(backend_t *base, image_handle image) {
 
 static void xrender_deinit(backend_t *backend_data) {
 	auto xd = (struct xrender_data *)backend_data;
+	if (xd->shm_seg_id != 0) {
+		xcb_shm_detach(xd->base.c->c, xd->shm_seg_id);
+	}
+	if (xd->shm != NULL) {
+		munmap(xd->shm, xd->shm_size);
+	}
+	if (xd->shm_fd != -1) {
+		close(xd->shm_fd);
+	}
 	for (int i = 0; i < 256; i++) {
 		x_free_picture(xd->base.c, xd->alpha_pict[i]);
 	}
@@ -851,6 +872,48 @@ static void xrender_get_blur_size(void *blur_context, int *width, int *height) {
 	*width = ctx->resize_width;
 	*height = ctx->resize_height;
 }
+static const uint32_t initial_shm_size = 16 * 1024 * 1024;
+static bool ensure_xshm(struct xrender_data *xd, uint32_t size) {
+	if (size <= xd->shm_size) {
+		return true;
+	}
+
+	if (xd->shm_seg_id == XCB_NONE) {
+		assert(xd->shm_fd == -1);
+		assert(xd->shm == NULL);
+		assert(xd->shm_size == 0);
+	}
+
+	auto shm_seg_id = x_new_id(xd->base.c);
+	auto seg = XCB_AWAIT(xcb_shm_create_segment, xd->base.c, shm_seg_id, size, true);
+	if (!seg) {
+		log_error("Failed to create SHM segment.");
+		return false;
+	}
+	assert(seg->nfd == 1);
+	int shm_fd = *xcb_shm_create_segment_reply_fds(xd->base.c->c, seg);
+	free(seg);
+
+	void *shm = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+	if (shm == MAP_FAILED) {
+		log_error("Failed to map SHM segment.");
+		xcb_shm_detach(xd->base.c->c, shm_seg_id);
+		close(shm_fd);
+		return false;
+	}
+
+	if (xd->shm_seg_id != XCB_NONE) {
+		munmap(xd->shm, xd->shm_size);
+		close(xd->shm_fd);
+		xcb_shm_detach(xd->base.c->c, xd->shm_seg_id);
+	}
+
+	xd->shm_seg_id = shm_seg_id;
+	xd->shm_fd = shm_fd;
+	xd->shm = shm;
+	xd->shm_size = size;
+	return true;
+}
 const struct backend_operations xrender_ops;
 static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	if (ps->o.dithered_present) {
@@ -865,6 +928,12 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	auto xd = ccalloc(1, struct xrender_data);
 	init_backend_base(&xd->base, ps);
 	xd->base.ops = xrender_ops;
+	xd->shm_fd = -1;
+
+	if (!ensure_xshm(xd, initial_shm_size)) {
+		free(xd);
+		return NULL;
+	}
 
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
 		double o = (double)i / (double)MAX_ALPHA;
@@ -982,6 +1051,46 @@ xrender_new_image(struct backend_base *base, enum backend_image_format format, i
 	return (image_handle)img;
 }
 
+static image_handle
+xrender_new_image_from_pixels(struct backend_base *base, enum backend_image_format format,
+                              ivec2 size, int stride, const uint8_t *pixels) {
+	auto xd = (struct xrender_data *)base;
+	assert(format == BACKEND_IMAGE_FORMAT_MASK || format == BACKEND_IMAGE_FORMAT_PIXMAP);
+
+	size_t bpp = format == BACKEND_IMAGE_FORMAT_MASK ? 1 : 4;
+	size_t bytes = (size_t)stride * (size_t)size.height * bpp;
+	if (bytes > UINT32_MAX || size.width > UINT16_MAX || size.height > UINT16_MAX) {
+		log_error("Image is too big");
+		return NULL;
+	}
+	if (!ensure_xshm(xd, (uint32_t)bytes)) {
+		return NULL;
+	}
+
+	image_handle ret = xrender_new_image(base, format, size);
+	if (ret == NULL) {
+		return ret;
+	}
+
+	memcpy(xd->shm, pixels, bytes);
+
+	auto img = (struct xrender_image_data_inner *)ret;
+
+	xcb_gcontext_t gc = x_new_id(base->c);
+	xcb_create_gc(base->c->c, gc, img->pixmap, 0, NULL);
+	bool success = XCB_AWAIT_VOID(
+	    xcb_shm_put_image, base->c, img->pixmap, gc, (uint16_t)size.width,
+	    (uint16_t)size.height, 0, 0, (uint16_t)size.width, (uint16_t)size.height, 0,
+	    0, (uint8_t)bpp * 8, XCB_IMAGE_FORMAT_Z_PIXMAP, 0, xd->shm_seg_id, 0);
+	xcb_free_gc(base->c->c, gc);
+
+	if (!success) {
+		xrender_release_image(base, ret);
+		return NULL;
+	}
+	return ret;
+}
+
 static uint32_t xrender_image_capabilities(struct backend_base *base attr_unused,
                                            image_handle image attr_unused) {
 	// All of xrender's picture can be used as both a source and a destination.
@@ -1026,6 +1135,7 @@ const struct backend_operations xrender_ops = {
     .image_capabilities = xrender_image_capabilities,
     .is_format_supported = xrender_is_format_supported,
     .new_image = xrender_new_image,
+    .new_image_from_pixels = xrender_new_image_from_pixels,
     .present = xrender_present,
     .quirks = xrender_quirks,
     .version = xrender_version,
