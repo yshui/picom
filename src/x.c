@@ -15,6 +15,7 @@
 #include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
+#include <xcb/shm.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
@@ -48,6 +49,7 @@ static inline uint64_t x_widen_sequence(struct x_connection *c, uint32_t sequenc
 ///         for multiple calls to this function,
 static const char *x_error_code_to_string(struct x_connection *c, unsigned long serial,
                                           uint8_t major, uint16_t minor, uint8_t error_code) {
+	// NOLINTBEGIN(bugprone-switch-missing-default-case)
 	int o = 0;
 	const char *name = "Unknown";
 
@@ -62,6 +64,9 @@ static const char *x_error_code_to_string(struct x_connection *c, unsigned long 
 
 	o = error_code - c->e.damage_error;
 	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
+
+	o = error_code - c->e.shm_error;
+	switch (o) { CASESTRRET2(SHM_BAD_SEG); }
 
 	o = error_code - c->e.render_error;
 	switch (o) {
@@ -128,6 +133,7 @@ static const char *x_error_code_to_string(struct x_connection *c, unsigned long 
 	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
 	         error_code, name, major, minor, serial);
 	return buffer;
+	// NOLINTEND(bugprone-switch-missing-default-case)
 }
 
 void x_print_error_impl(struct x_connection *c, unsigned long serial, uint8_t major,
@@ -229,6 +235,7 @@ bool x_extensions_init(struct x_connection *c) {
 	xcb_prefetch_extension_data(c->c, &xcb_render_id);
 	xcb_prefetch_extension_data(c->c, &xcb_shape_id);
 	xcb_prefetch_extension_data(c->c, &xcb_sync_id);
+	xcb_prefetch_extension_data(c->c, &xcb_shm_id);
 
 	// Initialize the X Composite extension.
 	auto extension = xcb_get_extension_data(c->c, &xcb_composite_id);
@@ -291,6 +298,30 @@ bool x_extensions_init(struct x_connection *c) {
 	xcb_discard_reply(c->c, xcb_xfixes_query_version(c->c, XCB_XFIXES_MAJOR_VERSION,
 	                                                 XCB_XFIXES_MINOR_VERSION)
 	                            .sequence);
+
+	// MIT-SHM
+	extension = xcb_get_extension_data(c->c, &xcb_shm_id);
+	if (!extension || !extension->present) {
+		log_fatal("This X server is missing the MIT-SHM extension.");
+		return false;
+	}
+
+	c->e.shm_event = extension->first_event;
+	c->e.shm_error = extension->first_error;
+
+	auto shm_version = XCB_AWAIT(xcb_shm_query_version, c);
+	if (!shm_version) {
+		log_fatal("Failed to query version of the MIT-SHM.");
+		return false;
+	}
+	if (shm_version->major_version < 1 ||
+	    (shm_version->major_version == 1 && shm_version->minor_version < 2)) {
+		log_fatal("This X server's MIT-SHM extension is too old (expected at "
+		          "least 1.2, got %d.%d).",
+		          shm_version->major_version, shm_version->minor_version);
+		return false;
+	}
+	free(shm_version);
 
 	// Initialize the X GLX extension.
 	extension = xcb_get_extension_data(c->c, &xcb_glx_id);

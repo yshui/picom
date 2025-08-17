@@ -52,6 +52,10 @@ struct x_extensions {
 	int damage_error;
 	/// The X Fixes extension's base error number.
 	int fixes_error;
+	/// MIT-SHM's base error number.
+	int shm_error;
+	/// MIT-SHM's base event number.
+	int shm_event;
 	/// The X GLX extension's presence.
 	bool has_glx;
 	/// The X GLX extension's base error number.
@@ -151,7 +155,7 @@ struct x_monitors {
 	({                                                                               \
 		xcb_generic_error_t *__e = NULL;                                         \
 		__auto_type __r =                                                        \
-		    func##_reply((conn)->c, func((conn)->c, __VA_ARGS__), &__e);         \
+		    func##_reply((conn)->c, func((conn)->c, ##__VA_ARGS__), &__e);       \
 		if (__e) {                                                               \
 			x_print_error(conn, __e->sequence, __e->major_code,              \
 			              __e->minor_code, __e->error_code);                 \
