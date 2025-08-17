@@ -80,6 +80,7 @@ changelog_categories = {
 	'BuildChange': 'Build changes',
 	'NewFeature': 'New features',
 	'Deprecation': 'Deprecations',
+	'Internal': 'Internal changes',
 	'Uncategorized': 'Other changes',
 }
 
