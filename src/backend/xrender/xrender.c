@@ -87,6 +87,8 @@ typedef struct xrender_data {
 	xcb_render_picture_t white_pixel;
 	/// 1x1 black picture
 	xcb_render_picture_t black_pixel;
+	/// 1x1 temporary picture for tinting
+	xcb_render_picture_t tint_pixel;
 
 	xcb_special_event_t *present_event;
 
@@ -293,7 +295,11 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	auto inner = (struct xrender_image_data_inner *)args->source_image;
 	auto target = (struct xrender_image_data_inner *)target_handle;
 	bool mask_allocated = false;
-	auto mask_pict = xd->alpha_pict[(int)(args->opacity * MAX_ALPHA)];
+	// TODO(yshui): Unify handling of tint.alpha with other tint channels. It is like
+	// this now because it came from old opacity handling code and I didn't want to
+	// change it too much. This is awkward since alpha is applied in a separate step
+	// from tint, we have to "undo" the pre-mult alpha in tint_color.
+	auto mask_pict = xd->alpha_pict[(int)(args->tint.alpha * MAX_ALPHA)];
 	auto extent = *pixman_region32_extents(args->target_mask);
 	if (!pixman_region32_not_empty(args->target_mask)) {
 		return true;
@@ -304,7 +310,7 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 		auto extent_to_mask =
 		    region_translate_rect(extent, ivec2_neg(ivec2_add(mask_origin, origin)));
 		mask_pict = xrender_process_mask(xd, args->source_mask, extent_to_mask,
-		                                 args->opacity < 1.0 ? mask_pict : XCB_NONE,
+		                                 args->tint.alpha < 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_origin, &mask_allocated);
 		mask_pict_dst_x = to_i16_checked(-mask_origin.x);
 		mask_pict_dst_y = to_i16_checked(-mask_origin.y);
@@ -312,13 +318,20 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 
 	// After this point, mask_pict and mask->region have different origins.
 
-	bool has_alpha = inner->has_alpha || args->opacity != 1;
+	auto tint = color_mult_alpha(args->tint, 1 / args->tint.alpha);
+	bool has_alpha = inner->has_alpha || args->tint.alpha != 1;
+	bool tint_is_one = tint.red == 1 && tint.green == 1 && tint.blue == 1,
+	     tint_is_zero = tint.red == 0 && tint.green == 0 && tint.blue == 0;
 	auto const tmpw = to_u16_checked(inner->size.width);
 	auto const tmph = to_u16_checked(inner->size.height);
 	auto const tmpew = to_u16_saturated(args->effective_size.width * args->scale.x);
 	auto const tmpeh = to_u16_saturated(args->effective_size.height * args->scale.y);
-	const xcb_render_color_t dim_color = {
-	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * args->dim)};
+	const xcb_render_color_t tint_color = {
+	    .red = (uint16_t)(tint.red * 0xffff),
+	    .green = (uint16_t)(tint.green * 0xffff),
+	    .blue = (uint16_t)(tint.blue * 0xffff),
+	    .alpha = (uint16_t)0xffff,
+	};
 
 	// Clip region of rendered_pict might be set during rendering, clear it to
 	// make sure we get everything into the buffer
@@ -342,20 +355,52 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 
 	set_picture_scale(xd->base.c, mask_pict, args->scale);
 
-	if (((args->color_inverted || args->dim != 0) && has_alpha) ||
-	    args->corner_radius != 0) {
+	if ((args->color_inverted && has_alpha) || !tint_is_one || args->corner_radius != 0) {
 		// Apply image properties using a temporary image, because the source
 		// image is transparent or will get transparent corners. Otherwise the
 		// properties can be applied directly on the target image.
-		// Also force a 32-bit ARGB format for transparent corners, otherwise the
-		// corners become black.
-		auto pictfmt = inner->pictfmt;
-		uint8_t depth = inner->depth;
-		if (args->corner_radius != 0 && inner->depth != 32) {
+		// Determine pictfmt for the tempoeray image is complicated, see below.
+		xcb_render_pictformat_t pictfmt;
+		uint8_t depth;
+		bool needs_color =
+		    // first of all, if target format is mask, we can discard color.
+		    target->format != BACKEND_IMAGE_FORMAT_MASK &&
+		    // otherwise, either...
+		    (
+		        // the source image has color...
+		        inner->format != BACKEND_IMAGE_FORMAT_MASK ||
+		        // or the source image doesn't have color, but tint will give it
+		        // color.
+		        !tint_is_zero);
+		bool needs_alpha =
+		    // mask always needs alpha, it's the only thing it has.
+		    target->format == BACKEND_IMAGE_FORMAT_MASK ||
+		    // if source has alpha, we need to keep it.
+		    inner->has_alpha ||
+		    // source doesn't have alpha, but rounding its corner makes the
+		    // corner transparent, so we need to add alpha.
+		    args->corner_radius != 0 ||
+		    // a < 1 alpha tint will also introduce alpha.
+		    args->tint.alpha != 1;
+
+		if (needs_alpha && needs_color) {
 			pictfmt = x_get_pictfmt_for_standard(xd->base.c,
 			                                     XCB_PICT_STANDARD_ARGB_32);
 			depth = 32;
+		} else if (needs_color) {
+			pictfmt =
+			    x_get_pictfmt_for_standard(xd->base.c, XCB_PICT_STANDARD_RGB_24);
+			depth = 24;
+		} else {
+			assert(needs_alpha);
+			pictfmt =
+			    x_get_pictfmt_for_standard(xd->base.c, XCB_PICT_STANDARD_A_8);
+			depth = 8;
 		}
+		xcb_render_fill_rectangles(
+		    xd->base.c->c, XCB_RENDER_PICT_OP_SRC, xd->tint_pixel, tint_color, 1,
+		    (xcb_rectangle_t[]){{.x = 0, .y = 0, .width = 1, .height = 1}});
+
 		auto tmp_pict = x_create_picture_with_pictfmt(
 		    xd->base.c, inner->size.width, inner->size.height, pictfmt, depth, 0, NULL);
 
@@ -378,46 +423,55 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 			    xd->base.c, tmp_pict, to_i16_checked(-origin.x),
 			    to_i16_checked(-origin.y), &source_mask_region);
 		}
-		// Copy source -> tmp
-		xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC, inner->pict,
-		                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 
+		auto tint_source = inner->pict;
 		if (args->color_inverted) {
+			auto tmp_pict2 = x_create_picture_with_pictfmt(
+			    xd->base.c, tmpw, tmph, inner->pictfmt, inner->depth, 0, NULL);
+			xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC,
+			                     inner->pict, XCB_NONE, tmp_pict2, 0, 0, 0, 0,
+			                     0, 0, tmpw, tmph);
+			tint_source = tmp_pict2;
 			if (inner->has_alpha) {
-				auto tmp_pict2 = x_create_picture_with_pictfmt(
+				auto tmp_pict3 = x_create_picture_with_pictfmt(
 				    xd->base.c, tmpw, tmph, inner->pictfmt, inner->depth,
 				    0, NULL);
 				xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC,
-				                     tmp_pict, XCB_NONE, tmp_pict2, 0, 0,
+				                     tmp_pict2, XCB_NONE, tmp_pict3, 0, 0,
 				                     0, 0, 0, 0, tmpw, tmph);
 
 				xcb_render_composite(xd->base.c->c,
 				                     XCB_RENDER_PICT_OP_DIFFERENCE,
-				                     xd->white_pixel, XCB_NONE, tmp_pict,
+				                     xd->white_pixel, XCB_NONE, tmp_pict2,
 				                     0, 0, 0, 0, 0, 0, tmpw, tmph);
 				xcb_render_composite(
-				    xd->base.c->c, XCB_RENDER_PICT_OP_IN_REVERSE, tmp_pict2,
-				    XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
-				x_free_picture(xd->base.c, tmp_pict2);
+				    xd->base.c->c, XCB_RENDER_PICT_OP_IN_REVERSE, tmp_pict3,
+				    XCB_NONE, tmp_pict2, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+				x_free_picture(xd->base.c, tmp_pict3);
 			} else {
 				xcb_render_composite(xd->base.c->c,
 				                     XCB_RENDER_PICT_OP_DIFFERENCE,
-				                     xd->white_pixel, XCB_NONE, tmp_pict,
+				                     xd->white_pixel, XCB_NONE, tmp_pict2,
 				                     0, 0, 0, 0, 0, 0, tmpw, tmph);
 			}
 		}
 
-		if (args->dim != 0) {
-			// Dim the actually content of window
-			xcb_rectangle_t rect = {
-			    .x = 0,
-			    .y = 0,
-			    .width = tmpw,
-			    .height = tmph,
-			};
+		// Copy source -> tmp
+		if (inner->format == BACKEND_IMAGE_FORMAT_MASK) {
+			// Mask only has the alpha channel, when using it as src, all
+			// other color channels will be 0. To tint a mask correctly, we
+			// swap the role of src and mask.
+			xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC,
+			                     xd->tint_pixel, tint_source, tmp_pict, 0, 0,
+			                     0, 0, 0, 0, tmpw, tmph);
+		} else {
+			xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC,
+			                     tint_source, xd->tint_pixel, tmp_pict, 0, 0,
+			                     0, 0, 0, 0, tmpw, tmph);
+		}
 
-			xcb_render_fill_rectangles(xd->base.c->c, XCB_RENDER_PICT_OP_OVER,
-			                           tmp_pict, dim_color, 1, &rect);
+		if (tint_source != inner->pict) {
+			x_free_picture(xd->base.c, tint_source);
 		}
 
 		if (args->corner_radius != 0 && inner->rounded_rectangle != NULL) {
@@ -447,30 +501,13 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 		                     target->pict, 0, 0, mask_pict_dst_x, mask_pict_dst_y,
 		                     to_i16_checked(origin.x), to_i16_checked(origin.y),
 		                     tmpew, tmpeh);
-		if (args->dim != 0 || args->color_inverted) {
+		if (args->color_inverted) {
 			// Apply properties, if we reach here, then has_alpha == false
 			assert(!has_alpha);
-			if (args->color_inverted) {
-				xcb_render_composite(
-				    xd->base.c->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-				    xd->white_pixel, XCB_NONE, target->pict, 0, 0, 0, 0,
-				    to_i16_checked(origin.x), to_i16_checked(origin.y),
-				    tmpew, tmpeh);
-			}
-
-			if (args->dim != 0) {
-				// Dim the actually content of window
-				xcb_rectangle_t rect = {
-				    .x = to_i16_checked(origin.x),
-				    .y = to_i16_checked(origin.y),
-				    .width = tmpew,
-				    .height = tmpeh,
-				};
-
-				xcb_render_fill_rectangles(
-				    xd->base.c->c, XCB_RENDER_PICT_OP_OVER, target->pict,
-				    dim_color, 1, &rect);
-			}
+			xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_DIFFERENCE,
+			                     xd->white_pixel, XCB_NONE, target->pict, 0,
+			                     0, 0, 0, to_i16_checked(origin.x),
+			                     to_i16_checked(origin.y), tmpew, tmpeh);
 		}
 	}
 	if (mask_allocated) {
@@ -732,6 +769,7 @@ static void xrender_deinit(backend_t *backend_data) {
 	}
 	x_free_picture(xd->base.c, xd->white_pixel);
 	x_free_picture(xd->base.c, xd->black_pixel);
+	x_free_picture(xd->base.c, xd->tint_pixel);
 	free(xd);
 }
 
@@ -952,6 +990,14 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	};
 	xd->black_pixel = solid_picture(&ps->c, true, 1, 0, 0, 0);
 	xd->white_pixel = solid_picture(&ps->c, true, 1, 1, 1, 1);
+
+	struct xcb_render_create_picture_value_list_t values = {
+	    .repeat = XCB_RENDER_REPEAT_NORMAL,
+	    .componentalpha = 1,
+	};
+	xd->tint_pixel = x_create_picture_with_pictfmt(
+	    xd->base.c, 1, 1, x_get_pictfmt_for_standard(&ps->c, XCB_PICT_STANDARD_ARGB_32),
+	    32, XCB_RENDER_CP_REPEAT | XCB_RENDER_CP_COMPONENT_ALPHA, &values);
 
 	xd->target_win = target;
 	xcb_render_create_picture_value_list_t pa = {

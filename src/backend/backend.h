@@ -45,8 +45,9 @@ struct backend_command {
 		struct backend_blur_args blur;
 	};
 	/// Source mask for the operation.
-	/// If the `source_mask` of the operation's argument points to this, a mask image
-	/// will be created for the operation for the renderer.
+	/// This may be used for the `source_mask` field of `op` by the command builder.
+	/// `image` of `source_mask` is usually left empty by the command builder, and
+	/// the renderer will fill it in appropriately later.
 	struct backend_mask_image source_mask;
 	/// Target mask for the operation.
 	region_t target_mask;

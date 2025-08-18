@@ -578,12 +578,8 @@ static bool initialize_backend(session_t *ps) {
 			ps->pending_updates = true;
 		}
 	}
-	ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
-	                            (struct color){.alpha = ps->o.shadow_opacity,
-	                                           .red = ps->o.shadow_red,
-	                                           .green = ps->o.shadow_green,
-	                                           .blue = ps->o.shadow_blue},
-	                            ps->o.dithered_present);
+	ps->renderer =
+	    renderer_new(ps->backend_data, ps->o.shadow_radius, ps->o.dithered_present);
 	if (!ps->renderer) {
 		log_fatal("Failed to create renderer, aborting...");
 		goto err;

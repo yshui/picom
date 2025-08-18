@@ -19,8 +19,8 @@ struct win_option;
 typedef struct pixman_region32 region_t;
 
 void renderer_free(struct backend_base *backend, struct renderer *r);
-struct renderer *renderer_new(struct backend_base *backend, double shadow_radius,
-                              struct color shadow_color, bool dithered_present);
+struct renderer *
+renderer_new(struct backend_base *backend, double shadow_radius, bool dithered_present);
 bool renderer_render(struct renderer *r, struct backend_base *backend,
                      image_handle root_image, struct layout_manager *lm,
                      struct command_builder *cb, void *blur_context, uint64_t render_start_us,

@@ -124,10 +124,12 @@ struct backend_blit_args {
 	const region_t *target_mask;
 	/// Custom shader for this blit operation.
 	void *shader;
-	/// Opacity of the source image.
-	double opacity;
-	/// Dim level of the source image.
-	double dim;
+	/// Tint. Multiply each color channel by a specific factor. i.e.
+	/// out.c = in.c * tint.c, where c = r, g, b, or a.
+	///
+	/// Note since the backends operate in pre-mult alpha mode, applying
+	/// a factor to alpha requires applying the same factor to other colors too.
+	struct color tint;
 	/// Brightness limit of the source image. Source image
 	/// will be normalized so that the maximum brightness is
 	/// this value.

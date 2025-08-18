@@ -93,7 +93,7 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 			if (!pixman_region32_not_empty(cmd->blit.target_mask)) {
 				continue;
 			}
-			if (cmd->blit.opacity < 1. / MAX_ALPHA) {
+			if (cmd->blit.tint.alpha < 1. / MAX_ALPHA) {
 				continue;
 			}
 			succeeded =

@@ -95,8 +95,14 @@ struct win {
 	/// How much to scale the saved_win_image, so that it is the same size as the
 	/// current window image.
 	vec2 saved_win_image_scale;
-	image_handle shadow_image;
+	/// A mask image for the shadow. This is usually a blurred `mask_image`, though
+	/// for some backends this can be generated on the CPU.
+	image_handle shadow_mask;
+	/// A mask image for the shape of the window.
 	image_handle mask_image;
+
+	/// Temporary, will be moved into window_options
+	struct color shadow_color;
 
 	// Core members
 	winstate_t state;

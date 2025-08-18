@@ -4,6 +4,7 @@
 #include "renderer.h"
 
 #include <inttypes.h>
+#include <picom/backend.h>
 #include <xcb/xcb_aux.h>
 
 #include "backend/backend.h"
@@ -32,12 +33,9 @@ struct renderer {
 	/// Current frame index in ring buffer
 	int frame_index;
 	int max_buffer_age;
-	/// 1x1 shadow colored xrender picture
-	xcb_render_picture_t shadow_pixel;
 	ivec2 canvas_size;
 	/// Format to use for back_image and intermediate images
 	enum backend_image_format format;
-	struct color shadow_color;
 	int shadow_radius;
 	void *shadow_blur_context;
 	struct conv *shadow_kernel;
@@ -65,9 +63,6 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	if (r->shadow_kernel) {
 		free_conv(r->shadow_kernel);
 	}
-	if (r->shadow_pixel) {
-		x_free_picture(backend->c, r->shadow_pixel);
-	}
 	if (r->monitor_repaint_region) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
 			pixman_region32_fini(&r->monitor_repaint_region[i]);
@@ -84,9 +79,8 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	free(r);
 }
 
-static bool
-renderer_init(struct renderer *renderer, struct backend_base *backend,
-              double shadow_radius, struct color shadow_color, bool dithered_present) {
+static bool renderer_init(struct renderer *renderer, struct backend_base *backend,
+                          double shadow_radius, bool dithered_present) {
 	auto has_high_precision =
 	    backend->ops.is_format_supported(backend, BACKEND_IMAGE_FORMAT_PIXMAP_HIGH);
 	renderer->format = has_high_precision && dithered_present
@@ -118,14 +112,6 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 			return false;
 		}
 		renderer->shadow_radius = (int)shadow_radius;
-		renderer->shadow_color = shadow_color;
-		renderer->shadow_pixel =
-		    solid_picture(backend->c, true, shadow_color.alpha, shadow_color.red,
-		                  shadow_color.green, shadow_color.blue);
-		if (renderer->shadow_pixel == XCB_NONE) {
-			log_error("Failed to create shadow pixel");
-			return false;
-		}
 		renderer->shadow_kernel = gaussian_kernel_autodetect_deviation(shadow_radius);
 		if (!renderer->shadow_kernel) {
 			log_error("Failed to create common shadow context");
@@ -138,10 +124,10 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 	return true;
 }
 
-struct renderer *renderer_new(struct backend_base *backend, double shadow_radius,
-                              struct color shadow_color, bool dithered_present) {
+struct renderer *
+renderer_new(struct backend_base *backend, double shadow_radius, bool dithered_present) {
 	auto renderer = ccalloc(1, struct renderer);
-	if (!renderer_init(renderer, backend, shadow_radius, shadow_color, dithered_present)) {
+	if (!renderer_init(renderer, backend, shadow_radius, dithered_present)) {
 		renderer_free(backend, renderer);
 		return NULL;
 	}
@@ -211,16 +197,14 @@ err:
 }
 
 image_handle
-renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
-                          image_handle mask, unsigned int corner_radius, ivec2 mask_size) {
-	image_handle normalized_mask_image = NULL, shadow_image = NULL,
-	             shadow_color_pixel = NULL;
+renderer_shadow_mask_from_shape_mask(struct renderer *r, struct backend_base *backend,
+                                     image_handle mask, unsigned int corner_radius,
+                                     ivec2 mask_size) {
+	image_handle normalized_mask_image = NULL;
 	bool succeeded = false;
 	int radius = r->shadow_radius;
 
-	log_trace("Generating shadow from mask, mask %p, color (%f, %f, %f, %f)", mask,
-	          r->shadow_color.red, r->shadow_color.green, r->shadow_color.blue,
-	          r->shadow_color.alpha);
+	log_trace("Generating shadow from mask, mask %p", mask);
 
 	// Apply the properties on the mask image and blit the result into a larger
 	// image, each side larger by `2 * radius` so there is space for blurring.
@@ -230,7 +214,7 @@ renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
 	if (!normalized_mask_image || !backend->ops.clear(backend, normalized_mask_image,
 	                                                  (struct color){0, 0, 0, 0})) {
 		log_error("Failed to create mask image");
-		goto out;
+		goto err;
 	}
 	{
 		region_t target_mask;
@@ -242,13 +226,12 @@ renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
 		};
 		struct backend_blit_args args = {
 		    .source_image = r->white_image,
-		    .opacity = 1,
 		    .source_mask = &mask_args,
 		    .target_mask = &target_mask,
 		    .shader = NULL,
 		    .color_inverted = false,
 		    .effective_size = mask_size,
-		    .dim = 0,
+		    .tint = {1, 1, 1, 1},
 		    .scale = SCALE_IDENTITY,
 		    .corner_radius = 0,
 		    .border_width = 0,
@@ -262,7 +245,7 @@ renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
 		pixman_region32_fini(&target_mask);
 		if (!succeeded) {
 			log_error("Failed to blit for shadow generation");
-			goto out;
+			goto err;
 		}
 	}
 	// Then we blur the normalized mask image
@@ -282,96 +265,51 @@ renderer_shadow_from_mask(struct renderer *r, struct backend_base *backend,
 		pixman_region32_fini(&target_mask);
 		if (!succeeded) {
 			log_error("Failed to blur for shadow generation");
-			goto out;
+			goto err;
 		}
 	}
-	// Finally, we blit with this mask to colorize the shadow
-	succeeded = false;
-	shadow_image = backend->ops.new_image(
-	    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
-	    (ivec2){mask_size.width + 2 * radius, mask_size.height + 2 * radius});
-	if (!shadow_image ||
-	    !backend->ops.clear(backend, shadow_image, (struct color){0, 0, 0, 0})) {
-		log_error("Failed to allocate shadow image");
-		goto out;
-	}
 
-	shadow_color_pixel =
-	    backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_PIXMAP, (ivec2){1, 1});
-	if (!shadow_color_pixel ||
-	    !backend->ops.clear(backend, shadow_color_pixel, r->shadow_color)) {
-		log_error("Failed to create shadow color image");
-		goto out;
-	}
+	return normalized_mask_image;
 
-	const ivec2 shadow_size =
-	    ivec2_add(mask_size, (ivec2){.width = 2 * radius, .height = 2 * radius});
-	region_t target_mask;
-	struct backend_mask_image mask_args = {
-	    .image = (image_handle)normalized_mask_image,
-	    .origin = {0, 0},
-	    .corner_radius = 0,
-	    .inverted = false,
-	};
-	struct backend_blit_args args = {
-	    .source_image = shadow_color_pixel,
-	    .opacity = 1,
-	    .source_mask = &mask_args,
-	    .target_mask = &target_mask,
-	    .shader = NULL,
-	    .color_inverted = false,
-	    .effective_size = shadow_size,
-	    .dim = 0,
-	    .corner_radius = 0,
-	    .border_width = 0,
-	    .max_brightness = 1,
-	    .scale = SCALE_IDENTITY,
-	};
-	pixman_region32_init_rect(&target_mask, 0, 0, (unsigned)shadow_size.width,
-	                          (unsigned)shadow_size.height);
-	succeeded = backend->ops.blit(backend, (ivec2){0, 0}, shadow_image, &args);
-	pixman_region32_fini(&target_mask);
-
-out:
+err:
+	log_error("Failed to create shadow mask");
 	if (normalized_mask_image) {
 		backend->ops.release_image(backend, normalized_mask_image);
 	}
-	if (shadow_color_pixel) {
-		backend->ops.release_image(backend, shadow_color_pixel);
-	}
-	if (!succeeded && shadow_image) {
-		log_error("Failed to draw shadow image");
-		backend->ops.release_image(backend, shadow_image);
-		shadow_image = NULL;
-	}
-	return shadow_image;
+	return NULL;
 }
 
 static bool
 renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct win *w) {
 	if (backend->ops.quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
-		xcb_pixmap_t shadow = XCB_NONE;
-		if (!build_shadow(backend->c, r->shadow_color.alpha, w->widthb, w->heightb,
-		                  (void *)r->shadow_kernel, r->shadow_pixel, &shadow)) {
+		ivec2 shadow_size;
+		int shadow_stride;
+		uint8_t *shadow_pixels =
+		    make_shadow(backend->c, r->shadow_kernel,
+		                (ivec2){.width = w->widthb, .height = w->heightb},
+		                &shadow_size, &shadow_stride);
+		if (!shadow_pixels) {
+			log_error("Couldn't generate shadow");
 			return false;
 		}
 
-		auto visual =
-		    x_get_visual_for_standard(backend->c, XCB_PICT_STANDARD_ARGB_32);
-		w->shadow_image = backend->ops.bind_pixmap(
-		    backend, shadow, x_get_visual_info(backend->c, visual));
+		w->shadow_mask = backend->ops.new_image_from_pixels(
+		    backend, BACKEND_IMAGE_FORMAT_MASK, shadow_size, shadow_stride,
+		    shadow_pixels);
+		free(shadow_pixels);
 	} else {
 		if (!w->mask_image && !renderer_bind_mask(r, backend, w)) {
 			return false;
 		}
-		w->shadow_image = renderer_shadow_from_mask(
+		w->shadow_mask = renderer_shadow_mask_from_shape_mask(
 		    r, backend, w->mask_image, win_options(w).corner_radius,
 		    (ivec2){.width = w->widthb, .height = w->heightb});
 	}
-	if (!w->shadow_image) {
+	if (!w->shadow_mask) {
 		log_error("Failed to create shadow");
 		return false;
 	}
+
 	return true;
 }
 
@@ -406,11 +344,13 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 		case BACKEND_COMMAND_BLIT:
 			assert(cmd->source != BACKEND_COMMAND_SOURCE_BACKGROUND);
 			if (cmd->source == BACKEND_COMMAND_SOURCE_SHADOW) {
-				if (w->shadow_image == NULL &&
+				if (w->shadow_mask == NULL &&
 				    !renderer_bind_shadow(r, backend, w)) {
+					log_error("failed to bind shadow for window %s",
+					          w->name);
 					return false;
 				}
-				cmd->blit.source_image = w->shadow_image;
+				cmd->blit.source_image = w->shadow_mask;
 			} else if (cmd->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 				assert(w->win_image);
 				cmd->blit.source_image = w->win_image;
@@ -607,7 +547,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		struct backend_blit_args blit = {
 		    .source_image = r->monitor_repaint_pixel,
 		    .max_brightness = 1,
-		    .opacity = 1,
+		    .tint = {1, 1, 1, 1},
 		    .effective_size = r->canvas_size,
 		    .source_mask = NULL,
 		    .target_mask = &damage_region,

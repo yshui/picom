@@ -198,9 +198,9 @@ static inline void win_release_pixmap(backend_t *base, struct win *w) {
 
 static inline void win_release_shadow(backend_t *base, struct win *w) {
 	log_debug("Releasing shadow of window %#010x (%s)", win_id(w), w->name);
-	if (w->shadow_image) {
-		release_image_and_pixmap(base, w->shadow_image);
-		w->shadow_image = NULL;
+	if (w->shadow_mask) {
+		release_image_and_pixmap(base, w->shadow_mask);
+		w->shadow_mask = NULL;
 	}
 }
 
@@ -742,7 +742,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 		win_release_pixmap(ps->backend_data, w);
 	} else {
 		assert(!w->win_image);
-		assert(!w->shadow_image);
+		assert(!w->shadow_mask);
 	}
 
 	// Try again at binding images when the window is mapped next time
@@ -1256,6 +1256,12 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	*new = win_def;
 	new->a = *attrs;
 	new->shadow_opacity = ps->o.shadow_opacity;
+	new->shadow_color = (struct color){
+	    .red = ps->o.shadow_red,
+	    .green = ps->o.shadow_green,
+	    .blue = ps->o.shadow_blue,
+	    .alpha = 1,
+	};
 	pixman_region32_init(&new->bounding_shape);
 
 	xcb_generic_error_t *e;

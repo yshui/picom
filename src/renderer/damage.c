@@ -70,9 +70,8 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
                     unsigned layer_index, unsigned buffer_age) {
 	// clang-format off
 	// First part, if any blit argument that would affect the whole image changed
-	if (cmd1->blit.dim     != cmd2->blit.dim                   ||
+	if (!color_eq(cmd1->blit.tint, cmd2->blit.tint)            ||
 	    cmd1->blit.shader  != cmd2->blit.shader                ||
-	    cmd1->blit.opacity != cmd2->blit.opacity               ||
 	    cmd1->blit.corner_radius  != cmd2->blit.corner_radius  ||
 	    cmd1->blit.max_brightness != cmd2->blit.max_brightness ||
 	    cmd1->blit.color_inverted != cmd2->blit.color_inverted ||
@@ -90,7 +89,8 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	}
 	// clang-format on
 
-	if (cmd1->blit.opacity == 0) {
+	if (cmd1->blit.tint.alpha == 0) {
+		// invisible
 		return;
 	}
 

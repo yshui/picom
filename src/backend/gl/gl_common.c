@@ -560,18 +560,22 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 	if (border_width > args->corner_radius) {
 		border_width = 0;
 	}
+	double dim_compat = 1.0 - (args->tint.red + args->tint.green + args->tint.blue) / 3.0;
 	// clang-format off
 	auto tex_sampler = vec2_eq(args->scale, SCALE_IDENTITY) ?
 	    gd->samplers[GL_SAMPLER_REPEAT] : gd->samplers[GL_SAMPLER_REPEAT_SCALE];
 	struct gl_uniform_value from_uniforms[] = {
-	    [UNIFORM_OPACITY_LOC]        = {.type = GL_FLOAT, .f = (float)args->opacity},
+	    [UNIFORM_OPACITY_LOC]        = {.type = GL_FLOAT, .f = (float)args->tint.alpha},
 	    [UNIFORM_INVERT_COLOR_LOC]   = {.type = GL_INT, .i = args->color_inverted},
 	    [UNIFORM_TEX_LOC]            = {.type = GL_TEXTURE_2D,
 	                                    .tu = {img->texture, tex_sampler}},
 	    [UNIFORM_EFFECTIVE_SIZE_LOC] = {.type = GL_FLOAT_VEC2,
 	                                    .f2 = {(float)args->effective_size.width,
-					           (float)args->effective_size.height}},
-	    [UNIFORM_DIM_LOC]            = {.type = GL_FLOAT, .f = (float)args->dim},
+	                                           (float)args->effective_size.height}},
+	    [UNIFORM_DIM_LOC]            = {.type = GL_FLOAT, .f = (float)dim_compat},
+	    [UNIFORM_TINT_LOC]           = {.type = GL_FLOAT_VEC4,
+	                                    .f4 = {(float)args->tint.red, (float)args->tint.green,
+	                                           (float)args->tint.blue, (float)args->tint.alpha}},
 	    [UNIFORM_BRIGHTNESS_LOC]     = {.type = GL_TEXTURE_2D,
 	                                    .tu = {brightness, gd->samplers[GL_SAMPLER_EDGE]}},
 	    [UNIFORM_MAX_BRIGHTNESS_LOC] = {.type = GL_FLOAT, .f = (float)args->max_brightness},
@@ -809,7 +813,7 @@ static inline void gl_init_uniform_bitmask(struct gl_shader *shader) {
 		char name[32];
 		glGetActiveUniformName(shader->prog, (GLuint)i, sizeof(name), NULL, name);
 		GLint loc = glGetUniformLocation(shader->prog, name);
-		assert(loc >= 0 && loc <= UNIFORM_TEXSIZE_LOC);
+		assert(loc >= 0 && loc < NUMBER_OF_UNIFORMS);
 		shader->uniform_bitmask |= 1U << loc;
 	}
 }
@@ -1110,6 +1114,10 @@ image_handle gl_new_image(backend_t *backend_data attr_unused,
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR,
 		                 (GLfloat[]){0, 0, 0, 0});
+		// Use the red channel for all color channels, so the mask can kind of be
+		// used as a pixmap image.
+		glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA,
+		                 (GLint[]){GL_RED, GL_RED, GL_RED, GL_RED});
 	}
 	glBindTexture(GL_TEXTURE_2D, 0);
 	return (image_handle)tex;

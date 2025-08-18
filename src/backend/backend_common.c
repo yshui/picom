@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <xcb/render.h>
 #include <xcb/xcb_image.h>
@@ -32,7 +34,7 @@ solid_picture(struct x_connection *c, bool argb, double a, double r, double g, d
 		return XCB_NONE;
 	}
 
-	pa.repeat = 1;
+	pa.repeat = XCB_RENDER_REPEAT_NORMAL;
 	picture = x_create_picture_with_standard_and_pixmap(
 	    c, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
 	    XCB_RENDER_CP_REPEAT, &pa);
@@ -58,8 +60,8 @@ solid_picture(struct x_connection *c, bool argb, double a, double r, double g, d
 	return picture;
 }
 
-xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opacity,
-                         int width, int height) {
+uint8_t *make_shadow(struct x_connection *c, const conv *kernel, ivec2 window_size,
+                     ivec2 *out_shadow_size, int *out_shadow_stride) {
 	/*
 	 * We classify shadows into 4 kinds of regions
 	 *    r = shadow radius
@@ -73,11 +75,11 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 	 *          |  1  |    2    |  1  |
 	 * height+r +-----+---------+-----+
 	 */
-	xcb_image_t *ximage;
 	const double *shadow_sum = kernel->rsum;
 	assert(shadow_sum);
 	// We only support square kernels for shadow
 	assert(kernel->w == kernel->h);
+	int width = window_size.width, height = window_size.height;
 	int d = kernel->w;
 	int r = d / 2;
 	int swidth = width + r * 2, sheight = height + r * 2;
@@ -85,16 +87,32 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 	assert(d % 2 == 1);
 	assert(d > 0);
 
-	ximage =
-	    xcb_image_create_native(c->c, to_u16_checked(swidth), to_u16_checked(sheight),
-	                            XCB_IMAGE_FORMAT_Z_PIXMAP, 8, 0, 0, NULL);
-	if (!ximage) {
-		log_error("failed to create an X image");
-		return 0;
+	int scanline_pad = 0;
+	auto setup = xcb_get_setup(c->c);
+	xcb_format_t *fmt = xcb_setup_pixmap_formats(setup);
+	xcb_format_t *fmtend = fmt + xcb_setup_pixmap_formats_length(setup);
+	for (; fmt != fmtend; ++fmt) {
+		if (fmt->depth == 8) {
+			scanline_pad = fmt->scanline_pad;
+			break;
+		}
+	}
+	if (scanline_pad == 0) {
+		log_error("Couldn't find valid pixmap format with depth 8.");
+		return NULL;
+	}
+	scanline_pad = scanline_pad / 8 - 1;
+	int sstride = (swidth + scanline_pad) & (~scanline_pad);
+
+	uint8_t *data = calloc((size_t)sheight, (size_t)sstride);
+	if (!data) {
+		log_error("failed to allocate memory for shadow mask");
+		return NULL;
 	}
 
-	unsigned char *data = ximage->data;
-	long long sstride = ximage->stride;
+	out_shadow_size->width = swidth;
+	out_shadow_size->height = sheight;
+	*out_shadow_stride = sstride;
 
 	// If the window body is smaller than the kernel, we do convolution directly
 	if (width < r * 2 && height < r * 2) {
@@ -102,10 +120,10 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(
 				    kernel, d - x - 1, d - y - 1, width, height);
-				data[y * sstride + x] = (uint8_t)(sum * 255.0 * opacity);
+				data[y * sstride + x] = (uint8_t)(sum * 255.0);
 			}
 		}
-		return ximage;
+		return data;
 	}
 
 	if (height < r * 2) {
@@ -120,18 +138,18 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 			for (int x = 0; x < r * 2; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, d, height) *
-				             255.0 * opacity;
+				             255.0;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[y * sstride + swidth - x - 1] = (uint8_t)sum;
 			}
 		}
 		for (int y = 0; y < sheight; y++) {
-			double sum = sum_kernel_normalized(kernel, 0, d - y - 1, d, height) *
-			             255.0 * opacity;
+			double sum =
+			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
 			memset(&data[y * sstride + r * 2], (uint8_t)sum,
 			       (size_t)(width - 2 * r));
 		}
-		return ximage;
+		return data;
 	}
 	if (width < r * 2) {
 		// Similarly, for width smaller than kernel
@@ -139,32 +157,32 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, width, d) *
-				             255.0 * opacity;
+				             255.0;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[(sheight - y - 1) * sstride + x] = (uint8_t)sum;
 			}
 		}
 		for (int x = 0; x < swidth; x++) {
-			double sum = sum_kernel_normalized(kernel, d - x - 1, 0, width, d) *
-			             255.0 * opacity;
+			double sum =
+			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
 			for (int y = r * 2; y < height; y++) {
 				data[y * sstride + x] = (uint8_t)sum;
 			}
 		}
-		return ximage;
+		return data;
 	}
 
 	// Implies: width >= r * 2 && height >= r * 2
 
 	// Fill part 3
 	for (int y = r; y < height + r; y++) {
-		memset(data + sstride * y + r, (uint8_t)(255 * opacity), (size_t)width);
+		memset(data + (ptrdiff_t)sstride * y + r, 0xff, (size_t)width);
 	}
 
 	// Part 1
 	for (int y = 0; y < r * 2; y++) {
 		for (int x = 0; x < r * 2; x++) {
-			double tmpsum = shadow_sum[y * d + x] * opacity * 255.0;
+			double tmpsum = shadow_sum[y * d + x] * 255.0;
 			data[y * sstride + x] = (uint8_t)tmpsum;
 			data[(sheight - y - 1) * sstride + x] = (uint8_t)tmpsum;
 			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = (uint8_t)tmpsum;
@@ -174,7 +192,7 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 
 	// Part 2, top/bottom
 	for (int y = 0; y < r * 2; y++) {
-		double tmpsum = shadow_sum[d * y + d - 1] * opacity * 255.0;
+		double tmpsum = shadow_sum[d * y + d - 1] * 255.0;
 		memset(&data[y * sstride + r * 2], (uint8_t)tmpsum, (size_t)(width - r * 2));
 		memset(&data[(sheight - y - 1) * sstride + r * 2], (uint8_t)tmpsum,
 		       (size_t)(width - r * 2));
@@ -182,116 +200,14 @@ xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opac
 
 	// Part 2, left/right
 	for (int x = 0; x < r * 2; x++) {
-		double tmpsum = shadow_sum[d * (d - 1) + x] * opacity * 255.0;
+		double tmpsum = shadow_sum[d * (d - 1) + x] * 255.0;
 		for (int y = r * 2; y < height; y++) {
 			data[y * sstride + x] = (uint8_t)tmpsum;
 			data[y * sstride + (swidth - x - 1)] = (uint8_t)tmpsum;
 		}
 	}
 
-	return ximage;
-}
-
-/**
- * Generate shadow <code>Picture</code> for a window.
- */
-bool build_shadow(struct x_connection *c, double opacity, const int width,
-                  const int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
-                  xcb_pixmap_t *pixmap) {
-	xcb_image_t *shadow_image = NULL;
-	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
-	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
-	xcb_gcontext_t gc = XCB_NONE;
-
-	shadow_image = make_shadow(c, kernel, opacity, width, height);
-	if (!shadow_image) {
-		log_error("Failed to make shadow");
-		return false;
-	}
-
-	shadow_pixmap = x_create_pixmap(c, 8, shadow_image->width, shadow_image->height);
-	shadow_pixmap_argb =
-	    x_create_pixmap(c, 32, shadow_image->width, shadow_image->height);
-
-	if (!shadow_pixmap || !shadow_pixmap_argb) {
-		log_error("Failed to create shadow pixmaps");
-		goto shadow_picture_err;
-	}
-
-	shadow_picture = x_create_picture_with_standard_and_pixmap(
-	    c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
-	shadow_picture_argb = x_create_picture_with_standard_and_pixmap(
-	    c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
-	if (!shadow_picture || !shadow_picture_argb) {
-		goto shadow_picture_err;
-	}
-
-	gc = x_new_id(c);
-	xcb_create_gc(c->c, gc, shadow_pixmap, 0, NULL);
-
-	// We need to make room for protocol metadata in the request. The metadata should
-	// be 24 bytes plus padding, let's be generous and give it 1kb
-	auto maximum_image_size = xcb_get_maximum_request_length(c->c) * 4 - 1024;
-	auto maximum_row =
-	    to_u16_checked(clamp(maximum_image_size / shadow_image->stride, 0, UINT16_MAX));
-	if (maximum_row <= 0) {
-		// TODO(yshui) Upload image with XShm
-		log_error("X server request size limit is too restrictive, or the shadow "
-		          "image is too wide for us to send a single row of the shadow "
-		          "image. Shadow size: %dx%d",
-		          width, height);
-		goto shadow_picture_err;
-	}
-
-	for (uint32_t row = 0; row < shadow_image->height; row += maximum_row) {
-		auto batch_height = maximum_row;
-		if (batch_height > shadow_image->height - row) {
-			batch_height = to_u16_checked(shadow_image->height - row);
-		}
-
-		auto offset =
-		    (size_t)row * shadow_image->stride / sizeof(*shadow_image->data);
-		xcb_put_image(c->c, (uint8_t)shadow_image->format, shadow_pixmap, gc,
-		              shadow_image->width, batch_height, 0, to_i16_checked(row),
-		              0, shadow_image->depth, shadow_image->stride * batch_height,
-		              shadow_image->data + offset);
-	}
-
-	xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC, shadow_pixel, shadow_picture,
-	                     shadow_picture_argb, 0, 0, 0, 0, 0, 0, shadow_image->width,
-	                     shadow_image->height);
-
-	*pixmap = shadow_pixmap_argb;
-
-	xcb_free_gc(c->c, gc);
-	xcb_image_destroy(shadow_image);
-	xcb_free_pixmap(c->c, shadow_pixmap);
-	x_free_picture(c, shadow_picture);
-	x_free_picture(c, shadow_picture_argb);
-
-	return true;
-
-shadow_picture_err:
-	if (shadow_image) {
-		xcb_image_destroy(shadow_image);
-	}
-	if (shadow_pixmap) {
-		xcb_free_pixmap(c->c, shadow_pixmap);
-	}
-	if (shadow_pixmap_argb) {
-		xcb_free_pixmap(c->c, shadow_pixmap_argb);
-	}
-	if (shadow_picture) {
-		x_free_picture(c, shadow_picture);
-	}
-	if (shadow_picture_argb) {
-		x_free_picture(c, shadow_picture_argb);
-	}
-	if (gc) {
-		xcb_free_gc(c->c, gc);
-	}
-
-	return false;
+	return data;
 }
 
 static struct conv **generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {

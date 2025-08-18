@@ -110,10 +110,16 @@ const char masking_glsl[] = GLSL(330,
 	}
 );
 const char blit_shader_glsl[] = GLSL(330,
+	// Opacity and dim is unused by the default shader. They are here for
+	// backwards compatibility with existing shaders.
+	//
+	// Opacity is set to tint.a, dim is set to (tint.r + tint.g + tint.b) / 3.0
 	layout(location = UNIFORM_OPACITY_LOC)
 	uniform float opacity;
 	layout(location = UNIFORM_DIM_LOC)
 	uniform float dim;
+	layout(location = UNIFORM_TINT_LOC)
+	uniform vec4 tint;
 	layout(location = UNIFORM_CORNER_RADIUS_LOC)
 	uniform float corner_radius;
 	layout(location = UNIFORM_BORDER_WIDTH_LOC)
@@ -148,8 +154,8 @@ const char blit_shader_glsl[] = GLSL(330,
 			c = vec4(c.aaa - c.rgb, c.a);
 			border_color = vec4(border_color.aaa - border_color.rgb, border_color.a);
 		}
-		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
-		border_color = vec4(border_color.rgb * (1.0 - dim), border_color.a) * opacity;
+		c = c * tint;
+		border_color = border_color * tint;
 
 		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
 		// Ref: https://en.wikipedia.org/wiki/Relative_luminance
