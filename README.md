@@ -37,12 +37,14 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * xcb-present
 * xcb-glx
 * pixman
-* libconfig
+* libconfig (>= 1.7)
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
 * libGL, libEGL, libepoxy (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre2 (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
 * uthash
+
+If libconfig >= 1.7 is not available on your system, meson will try to build it from git. In which case, you also need `cmake`, and `git`.
 
 On Debian based distributions (e.g. Ubuntu), the needed packages are
 
