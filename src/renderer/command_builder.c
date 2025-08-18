@@ -111,6 +111,16 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		return (unsigned)(cmd_base - cmd);
 	}
 
+	opacity = (float)(opacity * w->frame_opacity);
+	if (opacity > (1. - 1. / MAX_ALPHA)) {
+		// Avoid division by a very small number
+		opacity = 1;
+	}
+	opacity_saved = 0;
+	if (opacity < 1) {
+		opacity_saved = (float)(w->frame_opacity * layer->opacity *
+		                        layer->saved_image_blend / (1 - opacity));
+	}
 	pixman_region32_copy(&cmd->target_mask, frame_region);
 	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
@@ -120,7 +130,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
 	cmd->blit = args_base;
 	cmd->blit.target_mask = &cmd->target_mask;
-	cmd->blit.tint = color_mult_alpha(tint, w->frame_opacity * opacity);
+	cmd->blit.tint = color_mult_alpha(tint, opacity);
 	cmd -= 1;
 	if (layer->saved_image_blend > 0) {
 		pixman_region32_copy(&cmd->target_mask, &cmd[1].target_mask);
@@ -133,7 +143,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		    .width = (int)(layer->window.size.width / w->saved_win_image_scale.width),
 		    .height = (int)(layer->window.size.height / w->saved_win_image_scale.height),
 		};
-		cmd->blit.tint = color_mult_alpha(tint, w->frame_opacity * opacity);
+		cmd->blit.tint = color_mult_alpha(tint, opacity_saved);
 		cmd->blit.target_mask = &cmd->target_mask;
 		cmd->blit.scale = vec2_scale(cmd->blit.scale, w->saved_win_image_scale);
 		cmd -= 1;
