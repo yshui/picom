@@ -127,6 +127,7 @@ static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(UNIFORM_OPACITY_LOC, (float)opacity);
+			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
@@ -251,6 +252,7 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(UNIFORM_OPACITY_LOC, (GLfloat)opacity);
+			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
 		glUniform1f(UNIFORM_SCALE_LOC, (GLfloat)scale_factor);
@@ -360,7 +362,7 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 	// we never actually use that capability anywhere.
 	assert(source->y_inverted);
 
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glBlendFunc(GL_ONE, GL_ZERO);
 	glBindVertexArray(gd->vertex_array_objects[0]);
 	glBindBuffer(GL_ARRAY_BUFFER, gd->buffer_objects[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd->buffer_objects[1]);
