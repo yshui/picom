@@ -180,49 +180,41 @@ void win_get_region_frame_local(const struct win *w, region_t *res) {
 
 gen_by_val(win_get_region_frame_local);
 
+static inline void release_image_and_pixmap(backend_t *base, image_handle image) {
+	xcb_pixmap_t pixmap = base->ops.release_image(base, image);
+	if (pixmap != XCB_NONE) {
+		xcb_free_pixmap(base->c->c, pixmap);
+	}
+}
+
 /// Release the images attached to this window
 static inline void win_release_pixmap(backend_t *base, struct win *w) {
 	log_debug("Releasing pixmap of window %#010x (%s)", win_id(w), w->name);
 	if (w->win_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->win_image);
+		release_image_and_pixmap(base, w->win_image);
 		w->win_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
+
 static inline void win_release_shadow(backend_t *base, struct win *w) {
 	log_debug("Releasing shadow of window %#010x (%s)", win_id(w), w->name);
 	if (w->shadow_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->shadow_image);
+		release_image_and_pixmap(base, w->shadow_image);
 		w->shadow_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
 
 static inline void win_release_mask(backend_t *base, struct win *w) {
 	if (w->mask_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->mask_image);
+		release_image_and_pixmap(base, w->mask_image);
 		w->mask_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
 
 void win_release_saved_win_image(backend_t *base, struct win *w) {
 	if (w->saved_win_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->saved_win_image);
+		release_image_and_pixmap(base, w->saved_win_image);
 		w->saved_win_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
 
