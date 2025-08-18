@@ -79,7 +79,7 @@ OPTIONS
 *--plugins* _PATH_::
 	Specify plugins to load. Plugins will first be searched in current working directory (unless specified in the config file, in which case this step is skipped), then in `$XDG_CONFIG_HOME/picom/plugins`, then in `$XDG_CONFIG_DIRS/picom/plugins`. If all of the above fail, the plugin name is passed directly to the dynamic loader. Can be specified multiple times to load more than one plugins.
 
-*--shadow-color* _STRING_::
+[[shadow-color]]*--shadow-color* _STRING_::
 	Color of shadow, as a hex string (e.g. _#000000_)
 
 *--shadow-red* _VALUE_::
@@ -303,6 +303,9 @@ Within each sub-item, these keys are available: ::
 
   full-shadow:::
 	Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
+
+  shadow-color:::
+	Color of the shadow. Same syntax as <<shadow-color>>.
 
   fade:::
 	Whether to fade the matching window in/out when opening/closing it. When animations are used, this will have no effect. This can only be used to disable fading animations enabled by option <<fading>>.
