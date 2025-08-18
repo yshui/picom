@@ -1256,12 +1256,6 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	*new = win_def;
 	new->a = *attrs;
 	new->shadow_opacity = ps->o.shadow_opacity;
-	new->shadow_color = (struct color){
-	    .red = ps->o.shadow_red,
-	    .green = ps->o.shadow_green,
-	    .blue = ps->o.shadow_blue,
-	    .alpha = 1,
-	};
 	pixman_region32_init(&new->bounding_shape);
 
 	xcb_generic_error_t *e;

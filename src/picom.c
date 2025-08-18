@@ -1864,6 +1864,13 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
 	    .full_shadow = false,
 	    .shadow = opts->shadow_enable,
+	    .shadow_color =
+	        (struct color){
+	            .red = opts->shadow_red,
+	            .green = opts->shadow_green,
+	            .blue = opts->shadow_blue,
+	            .alpha = 1.0,
+	        },
 	    .corner_radius = (unsigned)opts->corner_radius,
 	    .transparent_clipping = opts->transparent_clipping,
 	    .dim = 0,

@@ -164,8 +164,8 @@ enum window_unredir_option {
 };
 
 struct window_maybe_options {
-	/// Radius of rounded window corners, -1 means not set.
-	int corner_radius;
+	/// Shadow color
+	struct color shadow_color;
 
 	/// Window opacity, NaN means not set.
 	double opacity;
@@ -175,6 +175,9 @@ struct window_maybe_options {
 
 	/// The name of the custom fragment shader for this window. NULL means not set.
 	const char *shader;
+
+	/// Radius of rounded window corners, -1 means not set.
+	int corner_radius;
 
 	/// Whether transparent clipping is excluded by the rules.
 	enum tristate transparent_clipping;
@@ -194,6 +197,8 @@ struct window_maybe_options {
 	enum window_unredir_option unredir;
 	/// Whether shadow should be rendered beneath this window.
 	enum tristate full_shadow;
+	/// Whether shadow color is set
+	bool is_shadow_color_set;
 
 	/// Window specific animations
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
@@ -201,6 +206,7 @@ struct window_maybe_options {
 
 /// Like `window_maybe_options`, but all fields are guaranteed to be set.
 struct window_options {
+	struct color shadow_color;
 	double opacity;
 	double dim;
 	const char *shader;

@@ -101,9 +101,6 @@ struct win {
 	/// A mask image for the shape of the window.
 	image_handle mask_image;
 
-	/// Temporary, will be moved into window_options
-	struct color shadow_color;
-
 	// Core members
 	winstate_t state;
 	/// Window attributes.
@@ -322,6 +319,8 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .dim = !safe_isnan(upper.dim) ? upper.dim : lower.dim,
 	    .shader = upper.shader ? upper.shader : lower.shader,
 	    .corner_radius = upper.corner_radius >= 0 ? upper.corner_radius : lower.corner_radius,
+	    .is_shadow_color_set = upper.is_shadow_color_set || lower.is_shadow_color_set,
+	    .shadow_color = upper.is_shadow_color_set ? upper.shadow_color : lower.shadow_color,
 	};
 	win_script_fold(upper.animations, lower.animations, ret.animations);
 	return ret;
@@ -348,6 +347,7 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .opacity = !safe_isnan(maybe.opacity) ? maybe.opacity : def.opacity,
 	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
 	    .shader = maybe.shader ? maybe.shader : def.shader,
+	    .shadow_color = maybe.is_shadow_color_set ? maybe.shadow_color : def.shadow_color,
 	};
 	win_script_fold(maybe.animations, def.animations, ret.animations);
 	return ret;

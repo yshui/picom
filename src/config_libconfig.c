@@ -683,6 +683,11 @@ static c2_condition *parse_rule(struct list_node *rules, config_setting_t *setti
 	if (config_setting_lookup_int(setting, "corner-radius", &ival)) {
 		wopts->corner_radius = ival;
 	}
+	if (config_setting_lookup_string(setting, "shadow-color", &sval)) {
+		wopts->is_shadow_color_set = true;
+		wopts->shadow_color = hex_to_rgb(sval);
+		wopts->shadow_color.alpha = 1.0;
+	}
 
 	auto unredir_setting = config_setting_lookup(setting, "unredir");
 	if (unredir_setting) {
