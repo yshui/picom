@@ -215,10 +215,8 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	scoped_region_t crop = region_from_box(layer->crop);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 
-	auto color = layer->options.shadow_color;
-	color = color_mult_alpha(color, layer->shadow_opacity);
 	cmd->blit = (struct backend_blit_args){
-	    .tint = color,
+	    .tint = layer->shadow_color,
 	    .max_brightness = 1,
 	    .source_mask = layer->options.corner_radius > 0 ? &cmd->source_mask : NULL,
 	    .scale = layer->shadow_scale,

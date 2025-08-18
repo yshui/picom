@@ -12,6 +12,7 @@
 #include "utils/dynarr.h"
 #include "utils/list.h"
 #include "utils/misc.h"
+#include "wm/defs.h"
 #include "wm/win.h"
 #include "wm/wm.h"
 
@@ -95,8 +96,13 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 
 	out_layer->opacity = (float)win_animatable_get(w, WIN_SCRIPT_OPACITY);
 	out_layer->blur_opacity = (float)win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
-	out_layer->shadow_opacity = (float)(win_animatable_get(w, WIN_SCRIPT_SHADOW_OPACITY) *
-	                                    w->shadow_opacity * w->frame_opacity);
+	out_layer->shadow_color.red = (float)win_animatable_get(w, WIN_SCRIPT_SHADOW_RED);
+	out_layer->shadow_color.green = (float)win_animatable_get(w, WIN_SCRIPT_SHADOW_GREEN);
+	out_layer->shadow_color.blue = (float)win_animatable_get(w, WIN_SCRIPT_SHADOW_BLUE);
+	out_layer->shadow_color.alpha = 1.0;
+	out_layer->shadow_color = color_mult_alpha(
+	    out_layer->shadow_color, win_animatable_get(w, WIN_SCRIPT_SHADOW_OPACITY) *
+	                                 w->shadow_opacity * w->frame_opacity);
 	if (out_layer->opacity == 0 && out_layer->blur_opacity == 0) {
 		goto out;
 	}

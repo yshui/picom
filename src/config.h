@@ -77,6 +77,9 @@ enum animation_trigger {
 	ANIMATION_TRIGGER_SIZE,
 	/// When a window's position changes
 	ANIMATION_TRIGGER_POSITION,
+	/// When one of a window's color properties changes,
+	/// This includes: shadow-color
+	ANIMATION_TRIGGER_COLOR,
 
 	ANIMATION_TRIGGER_INVALID,
 	ANIMATION_TRIGGER_COUNT = ANIMATION_TRIGGER_INVALID,
@@ -96,6 +99,7 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_CLOSE] = "close",
     [ANIMATION_TRIGGER_SIZE] = "size",
     [ANIMATION_TRIGGER_POSITION] = "position",
+    [ANIMATION_TRIGGER_COLOR] = "color",
     [ANIMATION_TRIGGER_ALIAS_GEOMETRY] = "geometry",
 };
 

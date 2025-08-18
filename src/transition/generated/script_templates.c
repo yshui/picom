@@ -210,6 +210,9 @@ static struct script *script_template__disappear(int *output_slots) {
 	output_slots[13] = -1;
 	output_slots[14] = -1;
 	output_slots[15] = -1;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 
@@ -427,6 +430,9 @@ static struct script *script_template__appear(int *output_slots) {
 	output_slots[13] = -1;
 	output_slots[14] = -1;
 	output_slots[15] = -1;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 
@@ -653,6 +659,9 @@ static struct script *script_template__slide_out(int *output_slots) {
 	output_slots[13] = 7;
 	output_slots[14] = 8;
 	output_slots[15] = -1;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 
@@ -854,6 +863,9 @@ static struct script *script_template__slide_in(int *output_slots) {
 	output_slots[13] = 7;
 	output_slots[14] = 8;
 	output_slots[15] = -1;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 
@@ -1087,6 +1099,9 @@ static struct script *script_template__fly_out(int *output_slots) {
 	output_slots[13] = -1;
 	output_slots[14] = -1;
 	output_slots[15] = -1;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 
@@ -1275,6 +1290,9 @@ static struct script *script_template__fly_in(int *output_slots) {
 	output_slots[13] = -1;
 	output_slots[14] = -1;
 	output_slots[15] = -1;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 
@@ -1618,6 +1636,9 @@ static struct script *script_template__geometry_change(int *output_slots) {
 	output_slots[13] = -1;
 	output_slots[14] = -1;
 	output_slots[15] = 6;
+	output_slots[16] = -1;
+	output_slots[17] = -1;
+	output_slots[18] = -1;
 	return ret;
 }
 

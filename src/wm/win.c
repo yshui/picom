@@ -1635,6 +1635,8 @@ struct win_script_context win_script_context_prepare(struct session *ps, struct 
 	    .monitor_y = monitor.y1,
 	    .monitor_width = monitor.x2 - monitor.x1,
 	    .monitor_height = monitor.y2 - monitor.y1,
+	    .shadow_color_before = w->previous.shadow_color,
+	    .shadow_color = w->options.shadow_color,
 	};
 	return ret;
 }
@@ -1644,6 +1646,8 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 		return w->running_animation_instance
 		    ->memory[w->running_animation.output_indices[output]];
 	}
+
+	auto wopts = win_options(w);
 	switch (output) {
 	case WIN_SCRIPT_BLUR_OPACITY: return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
 	case WIN_SCRIPT_OPACITY:
@@ -1661,6 +1665,9 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 	case WIN_SCRIPT_CROP_WIDTH:
 	case WIN_SCRIPT_CROP_HEIGHT: return INFINITY;
 	case WIN_SCRIPT_SAVED_IMAGE_BLEND: return 0;
+	case WIN_SCRIPT_SHADOW_RED: return wopts.shadow_color.red;
+	case WIN_SCRIPT_SHADOW_GREEN: return wopts.shadow_color.green;
+	case WIN_SCRIPT_SHADOW_BLUE: return wopts.shadow_color.blue;
 	default: unreachable();
 	}
 	unreachable();
@@ -1717,6 +1724,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	w->previous.state = w->state;
 	w->previous.opacity = w->opacity;
 	w->previous.g = w->g;
+	w->previous.shadow_color = w->options.shadow_color;
 
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
@@ -1737,7 +1745,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	enum animation_trigger trigger = ANIMATION_TRIGGER_INVALID;
 
 	// Animation trigger priority:
-	//   state > position > size > opacity
+	//   state > position > size > opacity > color
 	if (old_state != w->state) {
 		// Send D-Bus signal
 		if (ps->o.dbus) {
@@ -1793,6 +1801,9 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		trigger = win_ctx.opacity > win_ctx.opacity_before
 		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
 		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
+	} else if (!color_eq(win_ctx.shadow_color_before, win_ctx.shadow_color)) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = ANIMATION_TRIGGER_COLOR;
 	}
 
 	if (trigger == ANIMATION_TRIGGER_INVALID) {

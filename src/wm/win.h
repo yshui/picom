@@ -81,6 +81,7 @@ struct win_state_change {
 	winstate_t state;
 	double opacity;
 	struct win_geometry g;
+	struct color shadow_color;
 };
 
 struct win {
@@ -235,28 +236,37 @@ struct win_script_context {
 	double opacity_before, opacity;
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
+	struct color shadow_color, shadow_color_before;
 };
 // NOLINTNEXTLINE(bugprone-sizeof-expression)
 static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
               "win_script_context too large");
 
+#define X(name) offsetof(struct win_script_context, name)
 static const struct script_context_info win_script_context_info[] = {
-    {"window-x", offsetof(struct win_script_context, x)},
-    {"window-y", offsetof(struct win_script_context, y)},
-    {"window-width", offsetof(struct win_script_context, width)},
-    {"window-height", offsetof(struct win_script_context, height)},
-    {"window-x-before", offsetof(struct win_script_context, x_before)},
-    {"window-y-before", offsetof(struct win_script_context, y_before)},
-    {"window-width-before", offsetof(struct win_script_context, width_before)},
-    {"window-height-before", offsetof(struct win_script_context, height_before)},
-    {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
-    {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
-    {"window-monitor-x", offsetof(struct win_script_context, monitor_x)},
-    {"window-monitor-y", offsetof(struct win_script_context, monitor_y)},
-    {"window-monitor-width", offsetof(struct win_script_context, monitor_width)},
-    {"window-monitor-height", offsetof(struct win_script_context, monitor_height)},
+    {"window-x", X(x)},
+    {"window-y", X(y)},
+    {"window-width", X(width)},
+    {"window-height", X(height)},
+    {"window-x-before", X(x_before)},
+    {"window-y-before", X(y_before)},
+    {"window-width-before", X(width_before)},
+    {"window-height-before", X(height_before)},
+    {"window-raw-opacity-before", X(opacity_before)},
+    {"window-raw-opacity", X(opacity)},
+    {"window-monitor-x", X(monitor_x)},
+    {"window-monitor-y", X(monitor_y)},
+    {"window-monitor-width", X(monitor_width)},
+    {"window-monitor-height", X(monitor_height)},
+    {"window-shadow-red", X(shadow_color.red)},
+    {"window-shadow-green", X(shadow_color.green)},
+    {"window-shadow-blue", X(shadow_color.blue)},
+    {"window-shadow-red-before", X(shadow_color_before.red)},
+    {"window-shadow-green-before", X(shadow_color_before.green)},
+    {"window-shadow-blue-before", X(shadow_color_before.blue)},
     {NULL, 0}        //
 };
+#undef X
 
 static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_OFFSET_X] = {"offset-x"},
@@ -275,6 +285,9 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_CROP_WIDTH] = {"crop-width"},
     [WIN_SCRIPT_CROP_HEIGHT] = {"crop-height"},
     [WIN_SCRIPT_SAVED_IMAGE_BLEND] = {"saved-image-blend"},
+    [WIN_SCRIPT_SHADOW_RED] = {"shadow-red"},
+    [WIN_SCRIPT_SHADOW_GREEN] = {"shadow-green"},
+    [WIN_SCRIPT_SHADOW_BLUE] = {"shadow-blue"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
