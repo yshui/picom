@@ -67,12 +67,11 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	if (opacity < 1) {
 		opacity_saved = layer->opacity * layer->saved_image_blend / (1 - opacity);
 	}
+	struct color tint = {.red = 1. - dim, .green = 1. - dim, .blue = 1. - dim, .alpha = 1.};
 	struct backend_blit_args args_base = {
 	    .border_width = border_width,
 	    .corner_radius = layer->options.corner_radius,
-	    .tint = color_mult_alpha(
-	        (struct color){.red = 1. - dim, .green = 1. - dim, .blue = 1. - dim, .alpha = 1.},
-	        opacity),
+	    .tint = color_mult_alpha(tint, opacity),
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
 	    .shader = shader != NULL ? shader->backend_shader : NULL,
@@ -102,7 +101,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		    .width = (int)(layer->window.size.width / w->saved_win_image_scale.width),
 		    .height = (int)(layer->window.size.height / w->saved_win_image_scale.height),
 		};
-		cmd->blit.tint = color_mult_alpha(cmd->blit.tint, opacity_saved);
+		cmd->blit.tint = color_mult_alpha(tint, opacity_saved);
 		cmd->blit.target_mask = &cmd->target_mask;
 		cmd->blit.scale = vec2_scale(cmd->blit.scale, w->saved_win_image_scale);
 		cmd -= 1;
@@ -121,7 +120,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
 	cmd->blit = args_base;
 	cmd->blit.target_mask = &cmd->target_mask;
-	cmd->blit.tint = color_mult_alpha(cmd->blit.tint, w->frame_opacity * opacity);
+	cmd->blit.tint = color_mult_alpha(tint, w->frame_opacity * opacity);
 	cmd -= 1;
 	if (layer->saved_image_blend > 0) {
 		pixman_region32_copy(&cmd->target_mask, &cmd[1].target_mask);
@@ -134,7 +133,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		    .width = (int)(layer->window.size.width / w->saved_win_image_scale.width),
 		    .height = (int)(layer->window.size.height / w->saved_win_image_scale.height),
 		};
-		cmd->blit.tint = color_mult_alpha(cmd->blit.tint, w->frame_opacity * opacity);
+		cmd->blit.tint = color_mult_alpha(tint, w->frame_opacity * opacity);
 		cmd->blit.target_mask = &cmd->target_mask;
 		cmd->blit.scale = vec2_scale(cmd->blit.scale, w->saved_win_image_scale);
 		cmd -= 1;
