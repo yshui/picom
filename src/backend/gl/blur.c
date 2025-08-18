@@ -267,9 +267,9 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 
 static bool
 gl_blur_context_preallocate_textures(struct gl_blur_context *bctx, ivec2 source_size) {
-	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
-		// Resize the temporary textures used for blur in case the root
-		// size changed
+	if (source_size.width > bctx->fb_width || source_size.height > bctx->fb_height) {
+		// Resize the temporary textures used for blur in case the source image
+		// can't fit.
 		bctx->fb_width = source_size.width;
 		bctx->fb_height = source_size.height;
 
