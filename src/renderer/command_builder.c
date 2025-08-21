@@ -51,7 +51,10 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		}
 	}
 	if (layer->options.corner_radius > 0) {
-		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
+		// Scale is applied below, by region_scale.
+		win_remove_region_corners(layer->window.size, SCALE_IDENTITY,
+		                          (int)layer->options.corner_radius,
+		                          layer->window.origin, &cmd->opaque_region);
 	}
 	struct shader_info *shader = NULL;
 	if (layer->options.shader != NULL) {
@@ -188,8 +191,9 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 				region_t mask_without_corners;
 				pixman_region32_init(&mask_without_corners);
 				pixman_region32_copy(&mask_without_corners, &j->target_mask);
-				win_region_remove_corners(layer->win, j->origin,
-				                          &mask_without_corners);
+				win_remove_region_corners(layer->window.size, layer->scale,
+				                          (int)layer->options.corner_radius,
+				                          j->origin, &mask_without_corners);
 				pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask,
 				                         &mask_without_corners);
 				pixman_region32_fini(&mask_without_corners);

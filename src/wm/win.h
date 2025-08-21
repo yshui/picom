@@ -436,13 +436,6 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w);
  */
 void win_extents(const struct win *w, region_t *res);
 region_t win_extents_by_val(const struct win *w);
-/**
- * Get a rectangular region a window occupies, excluding frame and shadow.
- *
- * Return region in global coordinates.
- */
-void win_get_region_noframe_local(const struct win *w, region_t *);
-void win_get_region_noframe_local_without_corners(const struct win *w, region_t *);
 
 /// Get the region for the frame of the window
 void win_get_region_frame_local(const struct win *w, region_t *res);
@@ -552,25 +545,33 @@ static inline attr_unused void win_set_property_stale(struct win *w, xcb_atom_t 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct win *w);
 
-/// Remove the corners of window `w` from region `res`. `origin` is the top-left corner of
-/// `w` in `res`'s coordinate system.
-static inline void
-win_region_remove_corners(const struct win *w, ivec2 origin, region_t *res) {
-	static const int corner_index[][2] = {
+/// Remove the corners of a scaled, rounded rectangle from region `res`. `origin` is the
+/// top-left corner of the rectangle in `res`'s coordinate system. `size` is the size of
+/// the rectangle, `scale` is the scaling factor. `corner_radius` is the _unscaled_ radius
+/// of the rounded corners. The top-left corner of the rectangle is the scaling origin.
+static inline void win_remove_region_corners(ivec2 size, vec2 scale, int corner_radius,
+                                             ivec2 origin, region_t *res) {
+	static const struct {
+		int x, y;
+	} corner_index[] = {
 	    {0, 0},
 	    {0, 1},
 	    {1, 0},
 	    {1, 1},
 	};
-	int corner_radius = (int)win_options(w).corner_radius;
 	rect_t rectangles[4];
 	for (size_t i = 0; i < ARR_SIZE(corner_index); i++) {
+		double x1 = origin.x +
+		            corner_index[i].x * (size.width - corner_radius) * scale.x,
+		       y1 = origin.y +
+		            corner_index[i].y * (size.height - corner_radius) * scale.y,
+		       x2 = x1 + corner_radius * scale.x, y2 = y1 + corner_radius * scale.y;
 		rectangles[i] = (rect_t){
-		    .x1 = origin.x + corner_index[i][0] * (w->widthb - corner_radius),
-		    .y1 = origin.y + corner_index[i][1] * (w->heightb - corner_radius),
+		    .x1 = (int32_t)floor(x1),
+		    .y1 = (int32_t)floor(y1),
+		    .x2 = (int32_t)ceil(x2),
+		    .y2 = (int32_t)ceil(y2),
 		};
-		rectangles[i].x2 = rectangles[i].x1 + corner_radius;
-		rectangles[i].y2 = rectangles[i].y1 + corner_radius;
 	}
 	region_t corners;
 	pixman_region32_init_rects(&corners, rectangles, 4);
@@ -578,24 +579,10 @@ win_region_remove_corners(const struct win *w, ivec2 origin, region_t *res) {
 	pixman_region32_fini(&corners);
 }
 
-/// Like `win_region_remove_corners`, but `origin` is (0, 0).
-static inline void win_region_remove_corners_local(const struct win *w, region_t *res) {
-	win_region_remove_corners(w, (ivec2){0, 0}, res);
-}
-
 static inline region_t attr_unused win_get_bounding_shape_global_by_val(struct win *w) {
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
-	pixman_region32_translate(&ret, w->g.x, w->g.y);
-	return ret;
-}
-
-static inline region_t win_get_bounding_shape_global_without_corners_by_val(struct win *w) {
-	region_t ret;
-	pixman_region32_init(&ret);
-	pixman_region32_copy(&ret, &w->bounding_shape);
-	win_region_remove_corners_local(w, &ret);
 	pixman_region32_translate(&ret, w->g.x, w->g.y);
 	return ret;
 }
