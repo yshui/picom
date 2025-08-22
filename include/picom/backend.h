@@ -103,6 +103,8 @@ struct backend_blur_args {
 	/// The source mask for the blur operation, may be NULL. Only parts of the source
 	/// image covered by the mask should participate in the blur operation.
 	const struct backend_mask_image *source_mask;
+	/// The scaling factor of the source mask.
+	vec2 source_mask_scale;
 	/// Region of the target image that will be covered by the blur operation, in the
 	/// source image's coordinate.
 	const region_t *target_mask;
