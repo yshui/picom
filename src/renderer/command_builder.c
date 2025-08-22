@@ -269,6 +269,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	    .opacity = layer->blur_opacity,
 	    .target_mask = &cmd->target_mask,
 	    .source_mask = layer->options.corner_radius > 0 ? &cmd->source_mask : NULL,
+	    .source_mask_scale = layer->scale,
 	};
 	return 1;
 }
