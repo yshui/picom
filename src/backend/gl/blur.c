@@ -51,10 +51,11 @@ struct gl_blur_context {
 /**
  * Blur contents in a particular region.
  */
-static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
-                           const struct backend_mask_image *mask, const GLuint vao[2],
-                           const int vao_nelems[2], struct gl_texture *source,
-                           GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
+static bool
+gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
+               const struct backend_mask_image *mask, vec2 mask_scale,
+               const GLuint vao[2], const int vao_nelems[2], struct gl_texture *source,
+               GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
 	int curr = 0;
 	for (int i = 0; i < bctx->npasses; ++i) {
 		auto p = &bctx->blur_shader[i];
@@ -95,6 +96,7 @@ static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 		glUniform2f(UNIFORM_MASK_OFFSET_LOC, 0.0F, 0.0F);
 		glUniform1i(UNIFORM_MASK_INVERTED_LOC, 0);
 		glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0.0F);
+		glUniform2f(UNIFORM_MASK_SCALE_LOC, 1.0F, 1.0F);
 
 		// The number of indices in the selected vertex array
 		GLsizei nelems;
@@ -127,8 +129,10 @@ static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->inverted);
 				glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC,
 				            (float)mask->corner_radius);
-				glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)(mask->origin.x),
-				            (float)(mask->origin.y));
+				glUniform2f(UNIFORM_MASK_OFFSET_LOC,
+				            (float)mask->origin.x, (float)mask->origin.y);
+				glUniform2f(UNIFORM_MASK_SCALE_LOC, (float)mask_scale.x,
+				            (float)mask_scale.y);
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
@@ -155,8 +159,8 @@ static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 ///            [0]: for sampling from blurred result into the target fbo.
 ///            [1]: for sampling from the source texture into blurred textures.
 bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
-                         const struct backend_mask_image *mask, const GLuint vao[2],
-                         const int vao_nelems[2], struct gl_texture *source,
+                         const struct backend_mask_image *mask, vec2 mask_scale,
+                         const GLuint vao[2], const int vao_nelems[2], struct gl_texture *source,
                          GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
 	int iterations = bctx->blur_texture_count;
 	int scale_factor = 1;
@@ -218,6 +222,7 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 	glUniform2f(UNIFORM_MASK_OFFSET_LOC, 0.0F, 0.0F);
 	glUniform1i(UNIFORM_MASK_INVERTED_LOC, 0);
 	glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0.0F);
+	glUniform2f(UNIFORM_MASK_SCALE_LOC, 1.0F, 1.0F);
 	glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
 
 	for (int i = iterations - 1; i >= 0; --i) {
@@ -254,6 +259,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 				            (float)mask->corner_radius);
 				glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)(mask->origin.x),
 				            (float)(mask->origin.y));
+				glUniform2f(UNIFORM_MASK_SCALE_LOC, (float)mask_scale.x,
+				            (float)mask_scale.y);
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
@@ -408,15 +415,15 @@ bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
 
 	auto target_fbo = gl_bind_image_to_fbo(gd, (image_handle)target);
 	if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
-		ret = gl_dual_kawase_blur(args->opacity, bctx, args->source_mask,
-		                          gd->vertex_array_objects, vao_nelems, source,
-		                          gd->samplers[GL_SAMPLER_BLUR], target_fbo,
-		                          gd->default_mask_texture);
+		ret = gl_dual_kawase_blur(
+		    args->opacity, bctx, args->source_mask, args->source_mask_scale,
+		    gd->vertex_array_objects, vao_nelems, source,
+		    gd->samplers[GL_SAMPLER_BLUR], target_fbo, gd->default_mask_texture);
 	} else {
 		ret = gl_kernel_blur(args->opacity, bctx, args->source_mask,
-		                     gd->vertex_array_objects, vao_nelems, source,
-		                     gd->samplers[GL_SAMPLER_BLUR], target_fbo,
-		                     gd->default_mask_texture);
+		                     args->source_mask_scale, gd->vertex_array_objects,
+		                     vao_nelems, source, gd->samplers[GL_SAMPLER_BLUR],
+		                     target_fbo, gd->default_mask_texture);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -634,7 +641,7 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		// Build program
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){shader_str, masking_glsl, NULL});
+		    (const char *[]){shader_str, scaled_masking_glsl, NULL});
 		free(shader_str);
 		if (!pass->prog) {
 			log_error("Failed to create GLSL program.");
@@ -659,7 +666,7 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){blend_with_mask_frag, masking_glsl, NULL});
+		    (const char *[]){blend_with_mask_frag, scaled_masking_glsl, NULL});
 
 		// Setup projection matrix
 		glUseProgram(pass->prog);
@@ -808,7 +815,7 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		// Build program
 		up_pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){shader_str, masking_glsl, NULL});
+		    (const char *[]){shader_str, scaled_masking_glsl, NULL});
 		free(shader_str);
 		if (!up_pass->prog) {
 			log_error("Failed to create GLSL program.");

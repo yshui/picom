@@ -625,6 +625,7 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 		mask_pict = xrender_process_mask(xd, args->source_mask, mask_extent,
 		                                 args->opacity != 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_pict_origin, &mask_allocated);
+		set_picture_scale(xd->base.c, mask_pict, args->source_mask_scale);
 		mask_pict_origin.x -= extent_resized->x1;
 		mask_pict_origin.y -= extent_resized->y1;
 	}

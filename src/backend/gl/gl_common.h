@@ -41,6 +41,7 @@ struct gl_blur_context;
 
 // Added in backend API 2.0
 #define UNIFORM_TINT_LOC 22
+#define UNIFORM_MASK_SCALE_LOC 23
 #define NUMBER_OF_UNIFORMS (UNIFORM_TINT_LOC + 1)
 
 struct gl_shader {
@@ -122,7 +123,12 @@ struct gl_data {
 typedef struct session session_t;
 
 #define GL_PROG_MAIN_INIT                                                                \
-	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
+	{                                                                                \
+	    .prog = 0,                                                                   \
+	    .unifm_opacity = -1,                                                         \
+	    .unifm_invert_color = -1,                                                    \
+	    .unifm_tex = -1,                                                             \
+	}
 
 void gl_prepare(backend_t *base, const region_t *reg);
 /// Convert a mask formed by a collection of rectangles to OpenGL vertex and texture
@@ -318,6 +324,6 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define QUOTE(...) #__VA_ARGS__
 
 extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
-    copy_area_frag[], copy_area_with_dither_frag[], fill_frag[], fill_vert[],
-    interpolating_frag[], interpolating_vert[], blit_shader_glsl[], blit_shader_default[],
-    present_vertex_shader[], dither_glsl[];
+    scaled_masking_glsl[], copy_area_frag[], copy_area_with_dither_frag[], fill_frag[],
+    fill_vert[], interpolating_frag[], interpolating_vert[], blit_shader_glsl[],
+    blit_shader_default[], present_vertex_shader[], dither_glsl[];
