@@ -173,6 +173,13 @@ static inline vec2 vec2_scale(vec2 a, vec2 scale) {
 	};
 }
 
+static inline vec2 vec2_reciprocal(vec2 a) {
+	return (vec2){
+	    .x = 1.0 / a.x,
+	    .y = 1.0 / a.y,
+	};
+}
+
 /// Check if two boxes have a non-zero intersection area.
 static inline bool ibox_overlap(struct ibox a, struct ibox b) {
 	if (a.size.width <= 0 || a.size.height <= 0 || b.size.width <= 0 || b.size.height <= 0) {

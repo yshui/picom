@@ -212,8 +212,13 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	if (layer->options.corner_radius > 0) {
 		cmd->source_mask.corner_radius = layer->options.corner_radius;
 		cmd->source_mask.inverted = true;
-		cmd->source_mask.origin =
-		    ivec2_as(ivec2_sub(layer->window.origin, layer->shadow.origin));
+		// The offset between shadow and window is `window.origin -
+		// shadow.origin`, in _screen_ coordinates. Since shadow will be scaled,
+		// we need to divide by the scale to get the offset in source image
+		// (i.e. shadow) coordinates.
+		cmd->source_mask.origin = vec2_scale(
+		    ivec2_as(ivec2_sub(layer->window.origin, layer->shadow.origin)),
+		    vec2_reciprocal(layer->shadow_scale));
 	}
 
 	scoped_region_t crop = region_from_box(layer->crop);
