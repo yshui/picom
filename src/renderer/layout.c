@@ -68,14 +68,20 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_HEIGHT),
 	});
 	if (w_opts.shadow) {
-		out_layer->shadow_scale = (vec2){
+		vec2 scale = {
 		    .x = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_X),
 		    .y = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_Y),
 		};
+		out_layer->shadow_scale = scale;
+		// If shadow_offset is not zero, the shadow and the window will have
+		// different scale origins. This manifests as shadow and window having an
+		// apparent movement relative to each other during a scale animation.
+		// Although this can be fixed in animation scripts, it's reasonable to
+		// expect shadows and windows are scaled at the same origin.
 		out_layer->shadow.origin =
-		    vec2_as((vec2){.x = w->g.x + w->shadow_dx +
+		    vec2_as((vec2){.x = w->g.x + w->shadow_dx * scale.x +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
-		                   .y = w->g.y + w->shadow_dy +
+		                   .y = w->g.y + w->shadow_dy * scale.y +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
 		out_layer->shadow.size =
 		    vec2_as((vec2){.width = w->shadow_width, .height = w->shadow_height});
