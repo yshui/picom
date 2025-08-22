@@ -233,7 +233,7 @@ static inline void xrender_record_back_damage(struct xrender_data *xd,
 /// @param allocated whether the returned picture is newly allocated
 static xcb_render_picture_t
 xrender_process_mask(struct xrender_data *xd, const struct backend_mask_image *mask,
-                     rect_t extent, xcb_render_picture_t alpha_pict, ivec2 *new_origin,
+                     rect_t extent, xcb_render_picture_t alpha_pict, vec2 *new_origin,
                      bool *allocated) {
 	auto inner = (struct xrender_image_data_inner *)mask->image;
 	if (!inner) {
@@ -248,7 +248,7 @@ xrender_process_mask(struct xrender_data *xd, const struct backend_mask_image *m
 	auto const h_u16 = to_u16_checked(extent.y2 - extent.y1);
 	*allocated = true;
 	*new_origin =
-	    (ivec2){.x = extent.x1 + mask->origin.x, .y = extent.y1 + mask->origin.y};
+	    (vec2){.x = extent.x1 + mask->origin.x, .y = extent.y1 + mask->origin.y};
 	x_clear_picture_clip_region(xd->base.c, inner->pict);
 	auto ret = x_create_picture_with_pictfmt(
 	    xd->base.c, extent.x2 - extent.x1, extent.y2 - extent.y1, inner->pictfmt,
@@ -306,9 +306,9 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	}
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->source_mask != NULL) {
-		ivec2 mask_origin = args->source_mask->origin;
-		auto extent_to_mask =
-		    region_translate_rect(extent, ivec2_neg(ivec2_add(mask_origin, origin)));
+		vec2 mask_origin = args->source_mask->origin;
+		auto extent_to_mask = region_translate_rect(
+		    extent, vec2_as(vec2_neg(vec2_add(mask_origin, ivec2_as(origin)))));
 		mask_pict = xrender_process_mask(xd, args->source_mask, extent_to_mask,
 		                                 args->tint.alpha < 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_origin, &mask_allocated);
@@ -615,12 +615,12 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	xcb_render_picture_t src_pict = source->pict;
 	auto mask_pict = xd->alpha_pict[(int)(args->opacity * MAX_ALPHA)];
 	bool mask_allocated = false;
-	ivec2 mask_pict_origin = {};
+	vec2 mask_pict_origin = {};
 	if (args->source_mask != NULL) {
 		// Translate the target mask region to the mask's coordinate
 		auto mask_extent = *pixman_region32_extents(args->target_mask);
-		mask_extent =
-		    region_translate_rect(mask_extent, ivec2_neg(args->source_mask->origin));
+		mask_extent = region_translate_rect(
+		    mask_extent, vec2_as(vec2_neg(args->source_mask->origin)));
 		mask_pict_origin = args->source_mask->origin;
 		mask_pict = xrender_process_mask(xd, args->source_mask, mask_extent,
 		                                 args->opacity != 1.0 ? mask_pict : XCB_NONE,

@@ -144,6 +144,10 @@ static inline vec2 vec2_add(vec2 a, vec2 b) {
 	};
 }
 
+static inline vec2 vec2_neg(vec2 a) {
+	return (vec2){.x = -a.x, .y = -a.y};
+}
+
 static inline vec2 vec2_ceil(vec2 a) {
 	return (vec2){
 	    .x = ceil(a.x),

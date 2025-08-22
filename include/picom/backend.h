@@ -92,7 +92,7 @@ struct backend_mask_image {
 	/// rounded.
 	double corner_radius;
 	/// Origin of the mask image, in the source image's coordinate.
-	ivec2 origin;
+	vec2 origin;
 	/// Whether the mask image should be inverted.
 	bool inverted;
 };

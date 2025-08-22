@@ -213,7 +213,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		cmd->source_mask.corner_radius = layer->options.corner_radius;
 		cmd->source_mask.inverted = true;
 		cmd->source_mask.origin =
-		    ivec2_sub(layer->window.origin, layer->shadow.origin);
+		    ivec2_as(ivec2_sub(layer->window.origin, layer->shadow.origin));
 	}
 
 	scoped_region_t crop = region_from_box(layer->crop);
@@ -256,7 +256,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	cmd->op = BACKEND_COMMAND_BLUR;
 	cmd->origin = (ivec2){};
 	if (layer->options.corner_radius > 0) {
-		cmd->source_mask.origin = layer->window.origin;
+		cmd->source_mask.origin = ivec2_as(layer->window.origin);
 		cmd->source_mask.corner_radius = layer->options.corner_radius;
 		cmd->source_mask.inverted = false;
 	}
