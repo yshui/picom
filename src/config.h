@@ -385,6 +385,8 @@ typedef struct options {
 	struct conv **blur_kerns;
 	/// Number of convolution kernels
 	int blur_kernel_count;
+	/// Custom fragment shader for painting the root window pixmap
+	char *root_pixmap_shader;
 	/// Custom fragment shader for painting windows
 	char *window_shader_fg;
 	/// Rules to change custom fragment shader for painting windows.

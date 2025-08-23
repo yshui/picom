@@ -27,4 +27,5 @@ void command_builder_command_list_free(struct backend_command *cmds);
 void command_builder_build(struct command_builder *cb, struct layout *layout,
                            bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                            double max_brightness, const struct x_monitors *monitors,
+                           const struct shader_info *root_pixmap_shader,
                            const struct shader_info *shaders);

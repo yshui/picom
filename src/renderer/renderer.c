@@ -322,9 +322,16 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 	auto cmds = layout->commands;
 	// These assertions are the limitation of this renderer. If we expand its
 	// capabilities, we might remove these.
-	assert(cmds[0].op == BACKEND_COMMAND_COPY_AREA &&
-	       cmds[0].source == BACKEND_COMMAND_SOURCE_BACKGROUND);
-	cmds[0].copy_area.source_image = root_image ?: r->black_image;
+	assert(cmds[0].source == BACKEND_COMMAND_SOURCE_BACKGROUND);
+	switch (cmds[0].op) {
+	case BACKEND_COMMAND_COPY_AREA:
+		cmds[0].copy_area.source_image = root_image ?: r->black_image;
+		break;
+	case BACKEND_COMMAND_BLIT:
+		cmds[0].blit.source_image = root_image ?: r->black_image;
+		break;
+	default: assert(false && "Unexpected desktop background command");
+	}
 	assert(layout->first_layer_start == 1);
 
 	auto layer = layout->layers - 1;
@@ -431,6 +438,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      xcb_sync_fence_t xsync_fence, bool use_damage, bool monitor_repaint,
                      bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                      double max_brightness, const struct x_monitors *monitors,
+                     const struct shader_info *root_pixmap_shader,
                      const struct shader_info *shaders, uint64_t *after_damage_us) {
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
@@ -452,7 +460,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	renderer_ensure_images_ready(r, backend, monitor_repaint);
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
-	                      max_brightness, monitors, shaders);
+	                      max_brightness, monitors, root_pixmap_shader, shaders);
 	if (log_get_level_tls() <= LOG_LEVEL_TRACE) {
 		auto layer = layout->layers - 1;
 		auto layer_end = &layout->commands[layout->first_layer_start];

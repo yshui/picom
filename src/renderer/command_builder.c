@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <picom/backend.h>
 #include <picom/types.h>
 
 #include "backend/backend.h"
@@ -437,6 +438,7 @@ void command_builder_free(struct command_builder *cb) {
 void command_builder_build(struct command_builder *cb, struct layout *layout,
                            bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                            double max_brightness, const struct x_monitors *monitors,
+                           const struct shader_info *root_pixmap_shader,
                            const struct shader_info *shaders) {
 
 	unsigned ncmds = 1;
@@ -488,13 +490,36 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 	}
 
 	// Command for the desktop background
-	cmd->op = BACKEND_COMMAND_COPY_AREA;
-	cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
-	cmd->origin = (ivec2){};
-	pixman_region32_reset(
-	    &cmd->target_mask,
-	    (rect_t[]){{.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});
-	cmd->copy_area.region = &cmd->target_mask;
+	if (root_pixmap_shader == NULL) {
+		// Just a simple copy_area
+		cmd->op = BACKEND_COMMAND_COPY_AREA;
+		cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
+		cmd->origin = (ivec2){};
+		pixman_region32_reset(
+		    &cmd->target_mask,
+		    (rect_t[]){
+		        {.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});
+		cmd->copy_area.region = &cmd->target_mask;
+	} else {
+		// Has shader for desktop background, use blit.
+		cmd->op = BACKEND_COMMAND_BLIT;
+		cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
+		cmd->origin = (ivec2){};
+		pixman_region32_reset(
+		    &cmd->target_mask,
+		    (rect_t[]){
+		        {.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});
+		pixman_region32_init(&cmd->opaque_region);
+		pixman_region32_copy(&cmd->opaque_region, &cmd->target_mask);
+		cmd->blit = (struct backend_blit_args){
+		    .tint = (struct color){1, 1, 1, 1},
+		    .max_brightness = 1,
+		    .scale = SCALE_IDENTITY,
+		    .effective_size = layout->size,
+		    .target_mask = &cmd->target_mask,
+		    .shader = root_pixmap_shader,
+		};
+	}
 	assert(cmd == list->commands);
 
 	layout->first_layer_start = 1;

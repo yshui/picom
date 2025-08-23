@@ -144,6 +144,7 @@ static inline void command_blur_damage(region_t *damage, region_t *scratch_regio
 /// parts of the final screen will be affected by the damages.
 void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
                            ivec2 blur_size, region_t *damage) {
+	// TODO(yshui): take occulusion into consideration when calculating damage.
 	log_trace("Damage for buffer age %d", buffer_age);
 	unsigned past_layer_rank = 0, curr_layer_rank = 0;
 	auto past_layout = layout_manager_layout(lm, buffer_age);
@@ -162,6 +163,17 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 		                           (unsigned)curr_layout->size.width,
 		                           (unsigned)curr_layout->size.height);
 		return;
+	}
+	if (curr_layout->number_of_commands > 0) {
+		auto background = &curr_layout->commands[0];
+		assert(background->source == BACKEND_COMMAND_SOURCE_BACKGROUND);
+		if (background->op == BACKEND_COMMAND_BLIT && background->blit.shader != NULL &&
+		    (background->blit.shader->attributes & SHADER_ATTRIBUTE_ANIMATED) != 0) {
+			pixman_region32_union_rect(damage, damage, 0, 0,
+			                           (unsigned)curr_layout->size.width,
+			                           (unsigned)curr_layout->size.height);
+			return;
+		}
 	}
 	if (log_get_level_tls() <= LOG_LEVEL_TRACE) {
 		log_trace("Comparing across %d layouts:", buffer_age);
@@ -314,8 +326,8 @@ void commands_cull_with_damage(struct layout *layout, const region_t *damage,
 	// can draw consecutive opaque windows top down with depth test, which will work
 	// on OpenGL. But xrender won't like it. So that would be backend specific.
 	//
-	// Which is to say, there might be better way of utilizing the GPU for this, but
-	// that will be complicated. And being a compositor makes doing this on CPU
+	// Which is to say, there might be better ways of utilizing the GPU for culling,
+	// but that will be complicated. And being a compositor makes doing this on CPU
 	// easier, we only need to handle a dozen axis aligned rectangles, not hundreds of
 	// thousands of triangles. So this is what we are stuck with for now.
 	region_t scratch_region, tmp;

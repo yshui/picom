@@ -36,6 +36,7 @@
 #include <xcb/xcb_aux.h>
 #include <xcb/xfixes.h>
 
+#include <picom/backend.h>
 #include <picom/types.h>
 #include <test.h>
 
@@ -694,6 +695,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 	bool unredir_possible = false;
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
+	if (ps->root_pixmap_shader != NULL &&
+	    ps->root_pixmap_shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
+		*animation = true;
+	}
 	wm_stack_foreach_safe(ps->wm, cursor, next_cursor) {
 		__label__ skip_window;
 		auto w = wm_ref_deref(cursor);
@@ -1714,8 +1719,8 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		    ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
 		    ps->o.force_win_blend, ps->o.blur_background_frame,
 		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->shaders,
-		    &after_damage_us);
+		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
+		    ps->root_pixmap_shader, ps->shaders, &after_damage_us);
 		if (!succeeded) {
 			log_fatal("Render failure");
 			abort();
@@ -1806,19 +1811,14 @@ static void config_file_change_cb(void *_ps) {
 	reset_enable(ps->loop, NULL, 0);
 }
 
-static bool load_shader_source(session_t *ps, const char *path) {
-	if (!path) {
-		// Using the default shader.
-		return false;
-	}
-
+static struct shader_info *load_shader_source(session_t *ps, const char *path) {
 	log_info("Loading shader source from %s", path);
 
 	struct shader_info *shader = NULL;
 	HASH_FIND_STR(ps->shaders, path, shader);
 	if (shader) {
 		log_debug("Shader already loaded, reusing");
-		return false;
+		return shader;
 	}
 
 	shader = ccalloc(1, struct shader_info);
@@ -1846,7 +1846,7 @@ static bool load_shader_source(session_t *ps, const char *path) {
 		          path, read_bytes, num_bytes);
 		goto err;
 	}
-	return false;
+	return shader;
 err:
 	HASH_DEL(ps->shaders, shader);
 	if (f) {
@@ -1855,7 +1855,7 @@ err:
 	free(shader->source);
 	free(shader->key);
 	free(shader);
-	return true;
+	return NULL;
 }
 
 static struct window_options win_options_from_config(const struct options *opts) {
@@ -2079,13 +2079,21 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Load shader source file specified in the shader rules
 	c2_condition_list_foreach(&ps->o.window_shader_fg_rules, i) {
-		if (!load_shader_source(ps, c2_condition_get_data(i))) {
+		const char *path = c2_condition_get_data(i);
+		if (path != NULL && load_shader_source(ps, path) == NULL) {
 			log_error("Failed to load shader source file for some of the "
 			          "window shader rules");
 		}
 	}
-	if (load_shader_source(ps, ps->o.window_shader_fg)) {
+	if (ps->o.window_shader_fg != NULL &&
+	    load_shader_source(ps, ps->o.window_shader_fg) == NULL) {
 		log_error("Failed to load window shader source file");
+	}
+	if (ps->o.root_pixmap_shader != NULL) {
+		ps->root_pixmap_shader = load_shader_source(ps, ps->o.root_pixmap_shader);
+		if (ps->root_pixmap_shader == NULL) {
+			log_error("Failed to load root pixmap shader");
+		}
 	}
 
 	c2_condition_list_foreach(&ps->o.rules, i) {

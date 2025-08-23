@@ -27,4 +27,5 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      xcb_sync_fence_t xsync_fence, bool use_damage, bool monitor_repaint,
                      bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                      double max_brightness, const struct x_monitors *monitors,
+                     const struct shader_info *root_pixmap_shader,
                      const struct shader_info *shaders, uint64_t *after_damage_us);

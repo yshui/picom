@@ -1139,6 +1139,11 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 		    locate_auxiliary_file("shaders", sval, config_get_include_dir(&cfg));
 	}
 
+	if (config_lookup_string(&cfg, "root-pixmap-shader", &sval)) {
+		opt->root_pixmap_shader =
+		    locate_auxiliary_file("shaders", sval, config_get_include_dir(&cfg));
+	}
+
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
 

@@ -99,6 +99,7 @@ typedef struct session {
 	void *file_watch_handle;
 	/// libev mainloop
 	struct ev_loop *loop;
+	struct shader_info *root_pixmap_shader;
 	/// Shaders
 	struct shader_info *shaders;
 
