@@ -125,7 +125,7 @@ struct backend_blit_args {
 	/// mask should be modified. This is the target's coordinate system.
 	const region_t *target_mask;
 	/// Custom shader for this blit operation.
-	void *shader;
+	const struct shader_info *shader;
 	/// Tint. Multiply each color channel by a specific factor. i.e.
 	/// out.c = in.c * tint.c, where c = r, g, b, or a.
 	///

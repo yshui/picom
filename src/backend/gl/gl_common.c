@@ -598,7 +598,8 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 		    (float)args->source_mask->corner_radius;
 		from_uniforms[UNIFORM_MASK_INVERTED_LOC].i = args->source_mask->inverted;
 	}
-	*shader = args->shader ?: &gd->default_shader;
+	*shader = (args->shader && args->shader->backend_shader) ? args->shader->backend_shader
+	                                                         : &gd->default_shader;
 	if ((*shader)->uniform_bitmask & (1 << UNIFORM_TIME_LOC)) {
 		struct timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
