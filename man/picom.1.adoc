@@ -185,7 +185,7 @@ OPTIONS
 	Blur background of windows when the window frame is not opaque.  Implies *--blur-background*. Bad in performance, with driver-dependent behavior. The name may change.
 
 *--blur-background-fixed*::
-	Use fixed blur strength rather than adjusting according to window opacity.
+	Use fixed blur strength for a window during fading. This only applies to the *--fading* option, and will be a no-op if animation scripts are used.
 
 *--blur-kern* _MATRIX_::
 	Specify the blur convolution kernel, with the following format:
