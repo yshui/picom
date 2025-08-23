@@ -711,7 +711,6 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			HASH_FIND_STR(ps->shaders, window_options.shader, fg_shader);
 		}
 		if (fg_shader != NULL && fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
-			pixman_region32_copy(&w->damaged, &w->bounding_shape);
 			*animation = true;
 		}
 

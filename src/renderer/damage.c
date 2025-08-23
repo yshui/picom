@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <picom/backend.h>
+
 #include "backend/backend.h"
+#include "common.h"
 #include "layout.h"
 #include "region.h"
 #include "utils/dynarr.h"
@@ -75,6 +78,12 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	    cmd1->blit.corner_radius  != cmd2->blit.corner_radius  ||
 	    cmd1->blit.max_brightness != cmd2->blit.max_brightness ||
 	    cmd1->blit.color_inverted != cmd2->blit.color_inverted ||
+
+	    // (we already checked cmd1 and cmd2 have the same shader)
+	    // If the custom shader is animated, we consider the whole window
+	    // damaged.
+	    (cmd1->blit.shader != NULL &&
+	     cmd1->blit.shader->attributes & SHADER_ATTRIBUTE_ANIMATED) ||
 
 	    // Second part, if round corner is enabled, then border width and effective size
 	    // affect the whole image too.
