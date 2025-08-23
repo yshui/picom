@@ -508,9 +508,12 @@ void generate_fading_config(struct options *opt) {
 		uint64_t triggers = 0;
 		dtostr(duration, &duration_str);
 
-		// Fading in from nothing, i.e. `open` and `show`
+		// Fading in from nothing, i.e. `open` and `show`. These will fade blur
+		// opacity with the window opacity. Unless `blur-background-fixed` is
+		// used, in which case blur-opacity stays at 1.
+		int start = opt->blur_background_fixed ? 1 : 0;
 		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
-		          duration_str, 0, 1);
+		          duration_str, start, 1);
 
 		struct win_script fade_in1 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_in1, str));
@@ -551,9 +554,10 @@ void generate_fading_config(struct options *opt) {
 		uint64_t triggers = 0;
 		dtostr(duration, &duration_str);
 
-		// Fading out to nothing, i.e. `hide` and `close`
+		// Fading out to nothing, i.e. `hide` and `close`. Same as above.
+		int end = opt->blur_background_fixed ? 1 : 0;
 		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
-		          duration_str, 1, 0);
+		          duration_str, 1, end);
 		struct win_script fade_out1 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_out1, str));
 		if (opt->animations[ANIMATION_TRIGGER_CLOSE].script == NULL &&
