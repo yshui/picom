@@ -20,18 +20,25 @@ struct glx_fbconfig_info {
 bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
                        struct glx_fbconfig_info *info);
 
+#define GLX_EXTS                                                                         \
+	X(SGI_video_sync)                                                                \
+	X(SGI_swap_control)                                                              \
+	X(OML_sync_control)                                                              \
+	X(MESA_swap_control)                                                             \
+	X(EXT_swap_control)                                                              \
+	X(EXT_texture_from_pixmap)                                                       \
+	X(ARB_create_context)                                                            \
+	X(EXT_buffer_age)                                                                \
+	X(ARB_create_context_robustness)
+
 struct glxext_info {
 	bool initialized;
-	bool has_GLX_SGI_video_sync;
-	bool has_GLX_SGI_swap_control;
-	bool has_GLX_OML_sync_control;
-	bool has_GLX_MESA_swap_control;
-	bool has_GLX_EXT_swap_control;
-	bool has_GLX_EXT_texture_from_pixmap;
-	bool has_GLX_ARB_create_context;
-	bool has_GLX_EXT_buffer_age;
-	bool has_GLX_MESA_query_renderer;
-	bool has_GLX_ARB_create_context_robustness;
+#define X(name) bool has_##name;
+	GLX_EXTS
+#undef X
+#ifdef GLX_MESA_query_renderer
+	bool has_MESA_query_renderer;
+#endif
 };
 
 extern struct glxext_info glxext;
