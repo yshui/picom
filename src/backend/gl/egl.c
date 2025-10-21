@@ -193,8 +193,9 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	gd->ctx = eglCreateContext(
 	    gd->display, config, NULL,
 	    (EGLint[]){EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 3,
-	               EGL_CONTEXT_OPENGL_PROFILE_MASK,
-	               EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT, EGL_NONE});
+	               EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+	               EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY,
+	               EGL_LOSE_CONTEXT_ON_RESET, EGL_NONE});
 	if (gd->ctx == EGL_NO_CONTEXT) {
 		log_error("Failed to get EGL context: %#x", eglGetError());
 		goto end;
