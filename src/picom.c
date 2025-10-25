@@ -1846,6 +1846,7 @@ static struct shader_info *load_shader_source(session_t *ps, const char *path) {
 		          path, read_bytes, num_bytes);
 		goto err;
 	}
+	fclose(f);
 	return shader;
 err:
 	HASH_DEL(ps->shaders, shader);
