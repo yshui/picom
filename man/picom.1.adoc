@@ -225,7 +225,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 +
 --
 * `xrender` backend performs all rendering operations with X Render extension. It is what `xcompmgr` uses, and is generally a safe fallback when you encounter rendering artifacts or instability.
-* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (*--invert-color-include*) or blur (*--blur-background*). It requires proper OpenGL 2.0 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. *--xrender-sync-fence* might be needed on some systems to avoid delay in changes of screen contents.
+* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (*--invert-color-include*) or blur (*--blur-background*). It requires proper OpenGL 3.3 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. *--xrender-sync-fence* might be needed on some systems to avoid delay in changes of screen contents.
 --
 
 *--no-use-damage*::
