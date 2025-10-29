@@ -79,3 +79,4 @@ doxygen/
 
 # Subproject files
 subprojects/libconfig
+subprojects/.wraplock
