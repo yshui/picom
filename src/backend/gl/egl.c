@@ -286,6 +286,7 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	return (image_handle)inner;
 err:
 	free(eglpixmap);
+	free(inner);
 	return NULL;
 }
 

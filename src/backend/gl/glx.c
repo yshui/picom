@@ -441,10 +441,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	gl_check_err();
 	return (image_handle)inner;
 err:
-	if (glxpixmap && *glxpixmap) {
-		glXDestroyPixmap(base->c->dpy, *glxpixmap);
-	}
 	free(glxpixmap);
+	free(inner);
 	return NULL;
 }
 
