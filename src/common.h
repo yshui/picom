@@ -147,8 +147,6 @@ typedef struct session {
 	// === Operation related ===
 	/// Whether there is a pending quest to get the focused window
 	bool pending_focus_check;
-	/// Flags related to the root window
-	uint64_t root_flags;
 	/// Program options.
 	options_t o;
 	/// State object for c2.
@@ -177,8 +175,6 @@ typedef struct session {
 	struct renderer *renderer;
 	/// Whether all windows are currently redirected.
 	bool redirected;
-	/// Pre-generated alpha pictures.
-	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
 	long long fade_time;
 	/// If we should quit
@@ -191,21 +187,6 @@ typedef struct session {
 	struct wm *wm;
 
 	struct window_options window_options_default;
-
-	// === Shadow/dimming related ===
-	/// 1x1 black Picture.
-	xcb_render_picture_t black_picture;
-	/// 1x1 Picture of the shadow color.
-	xcb_render_picture_t cshadow_picture;
-	/// 1x1 white Picture.
-	xcb_render_picture_t white_picture;
-	/// Backend shadow context.
-	struct backend_shadow_context *shadow_context;
-	// for shadow precomputation
-
-	// === Software-optimization-related ===
-	/// Nanosecond offset of the first painting.
-	long paint_tm_offset;
 
 	// === X extension related ===
 	/// Information about monitors.
@@ -220,8 +201,6 @@ typedef struct session {
 #endif
 } session_t;
 
-/// Enumeration for window event hints.
-typedef enum { WIN_EVMODE_UNKNOWN, WIN_EVMODE_FRAME, WIN_EVMODE_CLIENT } win_evmode_t;
 struct wintype_info {
 	const char *name;
 	const char *atom;
@@ -229,21 +208,7 @@ struct wintype_info {
 extern const struct wintype_info WINTYPES[NUM_WINTYPES];
 extern session_t *ps_g;
 
-void ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
-
 // === Functions ===
-
-/**
- * Get current time in struct timeval.
- */
-static inline struct timeval get_time_timeval(void) {
-	struct timeval tv = {0, 0};
-
-	gettimeofday(&tv, NULL);
-
-	// Return a time of all 0 if the call fails
-	return tv;
-}
 
 /**
  * Get current time in struct timespec.
@@ -257,13 +222,6 @@ static inline struct timespec get_time_timespec(void) {
 
 	// Return a time of all 0 if the call fails
 	return tm;
-}
-
-/**
- * Return the painting target window.
- */
-static inline xcb_window_t get_tgt_window(session_t *ps) {
-	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
 /**
@@ -291,14 +249,3 @@ static inline bool wid_has_prop(xcb_connection_t *c, xcb_window_t w, xcb_atom_t 
 }
 
 void force_repaint(session_t *ps);
-
-/**
- * Set a <code>bool</code> array of all wintypes to true.
- */
-static inline void wintype_arr_enable(bool arr[]) {
-	wintype_t i;
-
-	for (i = 0; i < NUM_WINTYPES; ++i) {
-		arr[i] = true;
-	}
-}

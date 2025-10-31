@@ -1973,14 +1973,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .overlay = XCB_NONE,
 	    .reg_win = XCB_NONE,
 	    .redirected = false,
-	    .alpha_picts = NULL,
 	    .fade_time = 0L,
 	    .quit = false,
-
-	    .black_picture = XCB_NONE,
-	    .cshadow_picture = XCB_NONE,
-	    .white_picture = XCB_NONE,
-	    .shadow_context = NULL,
 
 	    .last_msc = 0,
 

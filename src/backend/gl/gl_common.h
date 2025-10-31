@@ -110,10 +110,6 @@ struct gl_data {
 
 	GLuint default_mask_texture;
 
-	/// Called when an gl_texture is decoupled from the texture it refers. Returns
-	/// the decoupled user_data
-	void *(*decouple_texture_user_data)(backend_t *base, void *user_data);
-
 	/// Release the user data attached to a gl_texture
 	void (*release_user_data)(backend_t *base, struct gl_texture *);
 
@@ -121,14 +117,6 @@ struct gl_data {
 };
 
 typedef struct session session_t;
-
-#define GL_PROG_MAIN_INIT                                                                \
-	{                                                                                \
-	    .prog = 0,                                                                   \
-	    .unifm_opacity = -1,                                                         \
-	    .unifm_invert_color = -1,                                                    \
-	    .unifm_tex = -1,                                                             \
-	}
 
 void gl_prepare(backend_t *base, const region_t *reg);
 /// Convert a mask formed by a collection of rectangles to OpenGL vertex and texture
@@ -174,8 +162,6 @@ void gl_deinit(struct gl_data *gd);
 GLuint gl_new_texture(void);
 
 xcb_pixmap_t gl_release_image(backend_t *base, image_handle image);
-
-image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);
 
 bool gl_blur(struct backend_base *gd, ivec2 origin, image_handle target,
              const struct backend_blur_args *args);

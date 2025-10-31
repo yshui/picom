@@ -96,10 +96,6 @@ void egl_deinit(backend_t *base) {
 	free(gd);
 }
 
-static void *egl_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	return NULL;
-}
-
 static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
 	return eglSwapInterval(dpy, interval);
 }
@@ -215,7 +211,6 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 		goto end;
 	}
 
-	gd->gl.decouple_texture_user_data = egl_decouple_user_data;
 	gd->gl.release_user_data = egl_release_image;
 
 	if (ps->o.vsync) {

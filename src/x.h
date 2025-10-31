@@ -420,8 +420,6 @@ xcb_pixmap_t x_get_root_back_pixmap(struct x_connection *c, struct atom *atoms);
 /// root window background pixmap
 bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom);
 
-bool x_fence_sync(struct x_connection *, xcb_sync_fence_t);
-
 struct x_convolution_kernel {
 	int size;
 	int capacity;

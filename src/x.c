@@ -964,39 +964,6 @@ bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
 	       atom == atoms->a_XSETROOT_ID;
 }
 
-/**
- * Synchronizes a X Render drawable to ensure all pending painting requests
- * are completed.
- */
-bool x_fence_sync(struct x_connection *c, xcb_sync_fence_t f) {
-	// TODO(richardgv): If everybody just follows the rules stated in X Sync
-	// prototype, we need only one fence per screen, but let's stay a bit
-	// cautious right now
-
-	auto e = xcb_request_check(c->c, xcb_sync_trigger_fence_checked(c->c, f));
-	if (e) {
-		log_error_x_error(c, e, "Failed to trigger the fence");
-		goto err;
-	}
-
-	e = xcb_request_check(c->c, xcb_sync_await_fence_checked(c->c, 1, &f));
-	if (e) {
-		log_error_x_error(c, e, "Failed to await on a fence");
-		goto err;
-	}
-
-	e = xcb_request_check(c->c, xcb_sync_reset_fence_checked(c->c, f));
-	if (e) {
-		log_error_x_error(c, e, "Failed to reset the fence");
-		goto err;
-	}
-	return true;
-
-err:
-	free(e);
-	return false;
-}
-
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {
 	auto cookie = xcb_present_notify_msc(c->c, window, 0, msc, 1, 0);
 	x_set_error_action_abort(c, cookie);

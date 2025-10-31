@@ -197,10 +197,6 @@ void glx_deinit(backend_t *base) {
 	free(gd);
 }
 
-static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	return NULL;
-}
-
 static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
 	bool vsync_enabled = false;
 	if (glxext.has_MESA_swap_control) {
@@ -328,7 +324,6 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 		goto end;
 	}
 
-	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
 	gd->gl.release_user_data = glx_release_image;
 
 	if (ps->o.vsync) {
