@@ -34,11 +34,6 @@
 #include <picom/backend.h>
 #include <picom/types.h>
 
-// X resource checker
-#ifdef DEBUG_XRC
-#include "xrescheck.h"
-#endif
-
 // FIXME This list of includes should get shorter
 #include "backend/driver.h"
 #include "config.h"

@@ -99,11 +99,6 @@ if get_option('dbus')
 	srcs += ['dbus.c', 'rtkit.c']
 endif
 
-if get_option('xrescheck')
-	cflags += ['-DDEBUG_XRC']
-	srcs += ['xrescheck.c']
-endif
-
 if get_option('unittest')
 	cflags += ['-DUNIT_TEST']
 endif

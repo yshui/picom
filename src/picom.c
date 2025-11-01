@@ -2422,11 +2422,6 @@ static void session_destroy(session_t *ps) {
 	ev_io_stop(ps->loop, &ps->xiow);
 	destroy_atoms(ps->atoms);
 
-#ifdef DEBUG_XRC
-	// Report about resource leakage
-	xrc_report_xid();
-#endif
-
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->draw_timer);
