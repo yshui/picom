@@ -179,10 +179,9 @@ static void glx_release_image(backend_t *base, struct gl_texture *tex) {
 void glx_deinit(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
 
-	gl_deinit(&gd->gl);
-
 	// Destroy GLX context
 	if (gd->ctx) {
+		gl_deinit(&gd->gl);
 		glXMakeCurrent(base->c->dpy, None, NULL);
 		glXDestroyContext(base->c->dpy, gd->ctx);
 		gd->ctx = 0;
@@ -297,7 +296,7 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 		}
 
 		gd->ctx = glXCreateContextAttribsARB(ps->c.dpy, cfg[i], 0, true, attributes);
-		free(cfg);
+		free((void *)cfg);
 
 		if (!gd->ctx) {
 			log_error("Failed to get GLX context.");
