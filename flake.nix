@@ -25,6 +25,7 @@
           picom = prev.callPackage ./package.nix {
             inherit git-ignore-nix;
             llvmPackages = prev."llvmPackages_${llvmVersion}";
+            withDocs = true;
           };
         };
         overlays = [
@@ -69,9 +70,9 @@
         }
         // (nixpkgs.lib.optionalAttrs (system == "x86_64-linux") rec {
           picom-cross = {
-            armv7l = pkgs.pkgsCross.armv7l-hf-multiplatform.picom;
-            aarch64 = pkgs.pkgsCross.aarch64-multiplatform.picom;
-            i686 = pkgs.pkgsi686Linux.picom;
+            armv7l = pkgs.pkgsCross.armv7l-hf-multiplatform.picom.override { withDocs = false; };
+            aarch64 = pkgs.pkgsCross.aarch64-multiplatform.picom.override { withDocs = false; };
+            i686 = pkgs.pkgsi686Linux.picom.override { withDocs = false; };
             merged = pkgs.runCommand "picom-merged" { } ''
               mkdir $out
               ln -s ${picom-cross.armv7l} $out/armv7l

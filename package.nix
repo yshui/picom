@@ -3,20 +3,14 @@
   dbus,
   docbook_xml_dtd_45,
   docbook_xsl,
-  fetchFromGitHub,
   llvmPackages,
   lib,
   libconfig,
-  libdrm,
   libev,
   libGL,
   libepoxy,
   libX11,
   libxcb,
-  libxdg_basedir,
-  libXext,
-  libxml2,
-  libxslt,
   makeWrapper,
   meson,
   ninja,
@@ -32,6 +26,7 @@
   xorgproto,
   xwininfo,
   withDebug ? false,
+  withDocs ? false,
   git-ignore-nix,
   devShell ? false,
 }:
@@ -49,9 +44,6 @@ stdenv.mkDerivation (finalAttrs: {
   strictDeps = true;
 
   nativeBuildInputs = [
-    asciidoctor
-    docbook_xml_dtd_45
-    docbook_xsl
     makeWrapper
     meson
     ninja
@@ -69,21 +61,21 @@ stdenv.mkDerivation (finalAttrs: {
         pygit2
       ]
     ))
+  ])
+  ++ (lib.optional withDocs [
+    asciidoctor
+    docbook_xml_dtd_45
+    docbook_xsl
   ]);
 
   buildInputs = [
     dbus
     libconfig
-    libdrm
     libev
     libGL
     libepoxy
     libX11
     libxcb
-    libxdg_basedir
-    libXext
-    libxml2
-    libxslt
     pcre2
     pixman
     uthash
@@ -99,7 +91,7 @@ stdenv.mkDerivation (finalAttrs: {
   dontStrip = withDebug;
 
   mesonFlags = [
-    "-Dwith_docs=true"
+    (lib.mesonBool "with_docs" withDocs)
   ];
 
   installFlags = [ "PREFIX=$(out)" ];
