@@ -1789,6 +1789,10 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		trigger = win_ctx.opacity > win_ctx.opacity_before
 		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
 		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
+	} else if (win_ctx.blur_opacity_before != win_ctx.blur_opacity) {
+		trigger = win_ctx.blur_opacity > win_ctx.blur_opacity_before
+		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
+		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
 	} else if (!color_eq(win_ctx.shadow_color_before, win_ctx.shadow_color)) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = ANIMATION_TRIGGER_COLOR;

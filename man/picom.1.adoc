@@ -517,9 +517,9 @@ animations = ({
 
 	  _hide_:: When a window is minimized or iconified.
 
-	  _increase-opacity_:: When the opacity of a window is increased.
+	  _increase-opacity_:: When the opacity or the blur opacity of a window is increased. If the opacity and the blur opacity changed in different directions, the opacity change takes precedence.
 
-	  _decrease-opacity_:: When the opacity of a window is decreased.
+	  _decrease-opacity_:: When the opacity or the blur opacity of a window is decreased. If the opacity and the blur opacity changed in different directions, the opacity change takes precedence.
 
 	  _size_, _position_:: When the size or position of a window is changed. If both changed, the position trigger has priority. (EXPERIMENTAL)
 
