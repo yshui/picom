@@ -712,7 +712,8 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w, bool f
 }
 
 static inline double win_get_blur_opacity(const struct win *w) {
-	return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
+	auto wopts = win_options(w);
+	return w->state == WSTATE_MAPPED ? wopts.blur_opacity : 0.0;
 }
 
 /// Finish the unmapping of a window (e.g. after fading has finished).

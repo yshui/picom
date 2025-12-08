@@ -174,6 +174,10 @@ struct window_maybe_options {
 	/// Window opacity, NaN means not set.
 	double opacity;
 
+	/// Opacity of the blurred background, NaN means not set, ignored if
+	/// blur_background is disabled.
+	double blur_opacity;
+
 	/// Window dim level, NaN means not set.
 	double dim;
 
@@ -212,6 +216,7 @@ struct window_maybe_options {
 struct window_options {
 	struct color shadow_color;
 	double opacity;
+	double blur_opacity;
 	double dim;
 	const char *shader;
 	unsigned int corner_radius;

@@ -304,6 +304,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
     .paint = TRI_UNKNOWN,
     .dim = NAN,
     .opacity = NAN,
+    .blur_opacity = NAN,
     .shader = NULL,
     .corner_radius = -1,
     .unredir = WINDOW_UNREDIR_INVALID,
@@ -316,10 +317,15 @@ static inline void win_script_fold(const struct win_script *upper,
 	}
 }
 
+/// Return `a` if it's not NaN, otherwise return `def`.
+static inline double __attribute__((always_inline, const)) number_or_d(double a, double def) {
+	return safe_isnan(a) ? def : a;
+}
+
 /// Combine two window options. The `upper` value has higher priority, the `lower` value
 /// will only be used if the corresponding value in `upper` is not set (e.g. it is
 /// TRI_UNKNOWN for tristate values, NaN for opacity, -1 for corner_radius).
-static inline struct window_maybe_options __attribute__((always_inline))
+static inline struct window_maybe_options __attribute__((always_inline, const))
 win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_options lower) {
 	struct window_maybe_options ret = {
 	    .unredir = upper.unredir == WINDOW_UNREDIR_INVALID ? lower.unredir : upper.unredir,
@@ -332,8 +338,9 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .paint = tri_or(upper.paint, lower.paint),
 	    .transparent_clipping =
 	        tri_or(upper.transparent_clipping, lower.transparent_clipping),
-	    .opacity = !safe_isnan(upper.opacity) ? upper.opacity : lower.opacity,
-	    .dim = !safe_isnan(upper.dim) ? upper.dim : lower.dim,
+	    .opacity = number_or_d(upper.opacity, lower.opacity),
+	    .blur_opacity = number_or_d(upper.blur_opacity, lower.blur_opacity),
+	    .dim = number_or_d(upper.dim, lower.dim),
 	    .shader = upper.shader ? upper.shader : lower.shader,
 	    .corner_radius = upper.corner_radius >= 0 ? upper.corner_radius : lower.corner_radius,
 	    .is_shadow_color_set = upper.is_shadow_color_set || lower.is_shadow_color_set,
@@ -345,7 +352,7 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 
 /// Unwrap a `window_maybe_options` to a `window_options`, using the default value for
 /// values that are not set in the `window_maybe_options`.
-static inline struct window_options __attribute__((always_inline))
+static inline struct window_options __attribute__((always_inline, const))
 win_maybe_options_or(struct window_maybe_options maybe, struct window_options def) {
 	assert(def.unredir != WINDOW_UNREDIR_INVALID);
 	struct window_options ret = {
@@ -361,8 +368,9 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .paint = tri_or_bool(maybe.paint, def.paint),
 	    .transparent_clipping =
 	        tri_or_bool(maybe.transparent_clipping, def.transparent_clipping),
-	    .opacity = !safe_isnan(maybe.opacity) ? maybe.opacity : def.opacity,
-	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
+	    .opacity = number_or_d(maybe.opacity, def.opacity),
+	    .blur_opacity = number_or_d(maybe.blur_opacity, def.blur_opacity),
+	    .dim = number_or_d(maybe.dim, def.dim),
 	    .shader = maybe.shader ? maybe.shader : def.shader,
 	    .shadow_color = maybe.is_shadow_color_set ? maybe.shadow_color : def.shadow_color,
 	};
@@ -370,7 +378,7 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	return ret;
 }
 
-static inline struct window_options __attribute__((always_inline))
+static inline struct window_options __attribute__((always_inline, const))
 win_options(const struct win *w) {
 	return win_maybe_options_or(
 	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);

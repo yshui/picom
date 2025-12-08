@@ -316,6 +316,9 @@ Within each sub-item, these keys are available: ::
   opacity:::
 	Opacity of the matching window. (0.0 - 1.0). If not explicitly set by a rule, the opacity value from the window properties (e.g. pass:[_]NET_WM_WINDOW_OPACITY) will be used.
 
+  blur-opacity:::
+	Opacity of the background blur. (0.0 - 1.0). If not explicitly set by a rule, this will be 1.0. Ignored by `blur-background` is not enabled.
+
   dim:::
 	Dim level of the matching window. Larger value means more dimming. (0.0 - 1.0)
 

@@ -688,6 +688,9 @@ static bool parse_rule(struct list_node *rules, config_setting_t *setting,
 	if (config_setting_lookup_float(setting, "opacity", &fval)) {
 		wopts->opacity = normalize_d(fval);
 	}
+	if (config_setting_lookup_float(setting, "blur-opacity", &fval)) {
+		wopts->blur_opacity = normalize_d(fval);
+	}
 	if (config_setting_lookup_float(setting, "dim", &fval)) {
 		wopts->dim = normalize_d(fval);
 	}
