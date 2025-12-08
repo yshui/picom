@@ -1,7 +1,7 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:nixos/nixpkgs/release-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/release-25.11";
     git-ignore-nix = {
       url = "github:hercules-ci/gitignore.nix/master";
       inputs.nixpkgs.follows = "nixpkgs";
