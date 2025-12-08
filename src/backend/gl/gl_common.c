@@ -175,8 +175,8 @@ static void gl_destroy_window_shader_inner(struct gl_shader *shader) {
 	gl_check_err();
 }
 
-void gl_destroy_window_shader(backend_t *backend_data attr_unused, void *shader) {
-	gl_destroy_window_shader_inner(shader);
+void gl_destroy_window_shader(backend_t *backend_data attr_unused, shader_handle shader) {
+	gl_destroy_window_shader_inner((struct gl_shader *)shader);
 	free(shader);
 }
 
@@ -598,8 +598,7 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 		    (float)args->source_mask->corner_radius;
 		from_uniforms[UNIFORM_MASK_INVERTED_LOC].i = args->source_mask->inverted;
 	}
-	*shader = (args->shader && args->shader->backend_shader) ? args->shader->backend_shader
-	                                                         : &gd->default_shader;
+	*shader = args->shader ? (struct gl_shader *)args->shader : &gd->default_shader;
 	if ((*shader)->uniform_bitmask & (1 << UNIFORM_TIME_LOC)) {
 		struct timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -857,7 +856,7 @@ void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *s
 	return ret;
 }
 
-uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *shader) {
+uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, shader_handle shader) {
 	auto win_shader = (struct gl_shader *)shader;
 	uint64_t ret = 0;
 	if (glGetUniformLocation(win_shader->prog, "time") >= 0) {

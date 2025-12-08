@@ -76,6 +76,10 @@ typedef struct image_handle {
 	// Intentionally left blank
 } *image_handle;
 
+typedef struct shader_handle {
+	// Intentionally left blank
+} *shader_handle;
+
 /// A mask for various backend operations.
 ///
 /// The mask is composed of both a mask region and a mask image. The resulting mask
@@ -125,7 +129,7 @@ struct backend_blit_args {
 	/// mask should be modified. This is the target's coordinate system.
 	const region_t *target_mask;
 	/// Custom shader for this blit operation.
-	const struct shader_info *shader;
+	shader_handle shader;
 	/// Tint. Multiply each color channel by a specific factor. i.e.
 	/// out.c = in.c * tint.c, where c = r, g, b, or a.
 	///
@@ -330,7 +334,7 @@ struct backend_operations {
 	/// Free a shader object.
 	///
 	/// Required if create_shader is present.
-	void (*destroy_shader)(backend_t *backend_data, void *shader)
+	void (*destroy_shader)(backend_t *backend_data, shader_handle shader)
 	    __attribute__((nonnull(1, 2)));
 
 	/// Create a new, uninitialized image with the given format and size.
@@ -402,7 +406,7 @@ struct backend_operations {
 	/// Get the attributes of a shader.
 	///
 	/// Optional, Returns a bitmask of attributes, see `shader_attributes`.
-	uint64_t (*get_shader_attributes)(backend_t *backend_data, void *shader)
+	uint64_t (*get_shader_attributes)(backend_t *backend_data, shader_handle shader)
 	    __attribute__((nonnull(1, 2)));
 
 	/// Get the age of the buffer content we are currently rendering on top
