@@ -80,6 +80,7 @@ struct win_geometry {
 struct win_state_change {
 	winstate_t state;
 	double opacity;
+	double blur_opacity;
 	struct win_geometry g;
 	struct color shadow_color;
 };
@@ -234,6 +235,7 @@ struct win_script_context {
 	double x, y, width, height;
 	double x_before, y_before, width_before, height_before;
 	double opacity_before, opacity;
+	double blur_opacity_before, blur_opacity;
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
 	struct color shadow_color, shadow_color_before;
@@ -254,6 +256,8 @@ static const struct script_context_info win_script_context_info[] = {
     {"window-height-before", X(height_before)},
     {"window-raw-opacity-before", X(opacity_before)},
     {"window-raw-opacity", X(opacity)},
+    {"window-blur-opacity-before", X(blur_opacity_before)},
+    {"window-blur-opacity", X(blur_opacity)},
     {"window-monitor-x", X(monitor_x)},
     {"window-monitor-y", X(monitor_y)},
     {"window-monitor-width", X(monitor_width)},

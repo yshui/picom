@@ -711,6 +711,10 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w, bool f
 	return opacity;
 }
 
+static inline double win_get_blur_opacity(const struct win *w) {
+	return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
+}
+
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
 void unmap_win_finish(session_t *ps, struct win *w) {
@@ -1592,7 +1596,8 @@ void unmap_win_start(struct win *w) {
 	w->opacity = 0.0F;
 }
 
-struct win_script_context win_script_context_prepare(struct session *ps, struct win *w) {
+static inline struct win_script_context
+win_script_context_prepare(struct session *ps, struct win *w) {
 	auto monitor_index = win_find_monitor(&ps->monitors, w);
 	auto monitor =
 	    monitor_index >= 0
@@ -1610,6 +1615,8 @@ struct win_script_context win_script_context_prepare(struct session *ps, struct 
 	    .width_before = w->previous.g.width + w->previous.g.border_width * 2,
 	    .height_before = w->previous.g.height + w->previous.g.border_width * 2,
 	    .opacity_before = w->previous.opacity,
+	    .blur_opacity = win_get_blur_opacity(w),
+	    .blur_opacity_before = w->previous.blur_opacity,
 	    .monitor_x = monitor.x1,
 	    .monitor_y = monitor.y1,
 	    .monitor_width = monitor.x2 - monitor.x1,
@@ -1628,7 +1635,7 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 
 	auto wopts = win_options(w);
 	switch (output) {
-	case WIN_SCRIPT_BLUR_OPACITY: return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
+	case WIN_SCRIPT_BLUR_OPACITY: return win_get_blur_opacity(w);
 	case WIN_SCRIPT_OPACITY:
 	case WIN_SCRIPT_SHADOW_OPACITY: return w->opacity;
 	case WIN_SCRIPT_CROP_X:
@@ -1704,6 +1711,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	w->previous.opacity = w->opacity;
 	w->previous.g = w->g;
 	w->previous.shadow_color = w->options.shadow_color;
+	w->previous.blur_opacity = win_get_blur_opacity(w);
 
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
