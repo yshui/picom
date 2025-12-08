@@ -26,6 +26,7 @@
             inherit git-ignore-nix;
             llvmPackages = prev."llvmPackages_${llvmVersion}";
             withDocs = true;
+            withTools = true;
           };
         };
         overlays = [
@@ -69,17 +70,26 @@
           default = pkgs.picom;
         }
         // (nixpkgs.lib.optionalAttrs (system == "x86_64-linux") rec {
-          picom-cross = {
-            armv7l = pkgs.pkgsCross.armv7l-hf-multiplatform.picom.override { withDocs = false; };
-            aarch64 = pkgs.pkgsCross.aarch64-multiplatform.picom.override { withDocs = false; };
-            i686 = pkgs.pkgsi686Linux.picom.override { withDocs = false; };
-            merged = pkgs.runCommand "picom-merged" { } ''
-              mkdir $out
-              ln -s ${picom-cross.armv7l} $out/armv7l
-              ln -s ${picom-cross.aarch64} $out/aarch64
-              ln -s ${picom-cross.i686} $out/i686
-            '';
-          };
+          picom-cross =
+            let
+              mkMinimal =
+                picom:
+                picom.override {
+                  withDocs = false;
+                  withTools = false;
+                };
+            in
+            {
+              armv7l = mkMinimal pkgs.pkgsCross.armv7l-hf-multiplatform.picom;
+              aarch64 = mkMinimal pkgs.pkgsCross.aarch64-multiplatform.picom;
+              i686 = mkMinimal pkgs.pkgsi686Linux.picom;
+              merged = pkgs.runCommand "picom-merged" { } ''
+                mkdir $out
+                ln -s ${picom-cross.armv7l} $out/armv7l
+                ln -s ${picom-cross.aarch64} $out/aarch64
+                ln -s ${picom-cross.i686} $out/i686
+              '';
+            };
         });
         devShells.default = mkDevShell (packages.default.override { devShell = true; });
         devShells.useClang = devShells.default.override {
