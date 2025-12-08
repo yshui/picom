@@ -350,11 +350,11 @@ static bool parse_animation_one(struct win_script *animations,
 			auto trigger_i = trigger_i_str == NULL
 			                     ? ANIMATION_TRIGGER_INVALID
 			                     : parse_animation_trigger(trigger_i_str);
-			if (trigger_types & (1 << trigger_i)) {
+			if (trigger_types & (1U << trigger_i)) {
 				log_warn("Duplicate trigger \"%s\" set at line %d",
 				         trigger_i_str, config_setting_source_line(triggers));
 			}
-			trigger_types |= 1 << trigger_i;
+			trigger_types |= 1U << trigger_i;
 		}
 	} else {
 		trigger_types = 1 << parse_animation_trigger(trigger0);

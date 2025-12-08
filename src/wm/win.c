@@ -604,7 +604,7 @@ wid_get_prop_window_types(struct x_connection *c, struct atom *atoms, xcb_window
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
 			if (get_atom_with_nul(atoms, WINTYPES[j].atom, c->c) == prop.atom[i]) {
-				ret |= (1 << j);
+				ret |= (1U << j);
 				break;
 			}
 		}
