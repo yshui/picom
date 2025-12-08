@@ -111,6 +111,8 @@ typedef struct session {
 	xcb_window_t debug_window;
 	/// The backend data the root pixmap bound to
 	image_handle root_image;
+	/// The geometry of the root image
+	rect_t root_image_extent;
 	/// The root pixmap generation, incremented every time
 	/// the root pixmap changes
 	uint64_t root_image_generation;

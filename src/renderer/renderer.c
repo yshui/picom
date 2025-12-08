@@ -316,27 +316,18 @@ renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct wi
 /// Go through the list of commands and replace symbolic image references with real
 /// images. Allocate images for windows when necessary.
 static bool renderer_prepare_commands(struct renderer *r, struct backend_base *backend,
-                                      void *blur_context, image_handle root_image,
-                                      struct layout *layout) {
+                                      void *blur_context, struct layout *layout) {
 	auto end = &layout->commands[layout->number_of_commands];
 	auto cmds = layout->commands;
 	// These assertions are the limitation of this renderer. If we expand its
 	// capabilities, we might remove these.
-	assert(cmds[0].source == BACKEND_COMMAND_SOURCE_BACKGROUND);
-	switch (cmds[0].op) {
-	case BACKEND_COMMAND_COPY_AREA:
-		cmds[0].copy_area.source_image = root_image ?: r->black_image;
-		break;
-	case BACKEND_COMMAND_BLIT:
-		cmds[0].blit.source_image = root_image ?: r->black_image;
-		break;
-	default: assert(false && "Unexpected desktop background command");
-	}
-	assert(layout->first_layer_start == 1);
+	assert(cmds[0].source == BACKEND_COMMAND_SOURCE_CLEAR);
+	assert(cmds[0].op == BACKEND_COMMAND_COPY_AREA);
+	cmds[0].copy_area.source_image = r->black_image;
 
 	auto layer = layout->layers - 1;
-	auto layer_end = &layout->commands[layout->first_layer_start];
-	for (auto cmd = &cmds[1]; cmd != end; cmd++) {
+	auto layer_end = &cmds[layout->first_layer_start];
+	for (auto cmd = layer_end; cmd != end; cmd++) {
 		if (cmd == layer_end) {
 			layer += 1;
 			assert(layer->number_of_commands > 0);
@@ -349,7 +340,6 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 		auto w = layer->win;
 		switch (cmd->op) {
 		case BACKEND_COMMAND_BLIT:
-			assert(cmd->source != BACKEND_COMMAND_SOURCE_BACKGROUND);
 			if (cmd->source == BACKEND_COMMAND_SOURCE_SHADOW) {
 				if (w->shadow_mask == NULL &&
 				    !renderer_bind_shadow(r, backend, w)) {
@@ -433,8 +423,9 @@ void renderer_ensure_images_ready(struct renderer *r, struct backend_base *backe
 
 /// @return true if a frame is rendered, false if this frame is skipped.
 bool renderer_render(struct renderer *r, struct backend_base *backend,
-                     image_handle root_image, struct layout_manager *lm,
-                     struct command_builder *cb, void *blur_context, uint64_t render_start_us,
+                     image_handle root_image, const rect_t *root_image_extent,
+                     struct layout_manager *lm, struct command_builder *cb,
+                     void *blur_context, uint64_t render_start_us,
                      xcb_sync_fence_t xsync_fence, bool use_damage, bool monitor_repaint,
                      bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                      double max_brightness, const struct x_monitors *monitors,
@@ -460,7 +451,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	renderer_ensure_images_ready(r, backend, monitor_repaint);
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
-	                      max_brightness, monitors, root_pixmap_shader, shaders);
+	                      max_brightness, monitors, root_image, root_image_extent,
+	                      root_pixmap_shader, shaders);
 	if (log_get_level_tls() <= LOG_LEVEL_TRACE) {
 		auto layer = layout->layers - 1;
 		auto layer_end = &layout->commands[layout->first_layer_start];
@@ -511,7 +503,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	*after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 	log_trace("Getting damage took %" PRIu64 " us", *after_damage_us - render_start_us);
 
-	if (!renderer_prepare_commands(r, backend, blur_context, root_image, layout)) {
+	if (!renderer_prepare_commands(r, backend, blur_context, layout)) {
 		log_error("Failed to prepare render commands");
 		return false;
 	}

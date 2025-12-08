@@ -888,11 +888,14 @@ void root_damaged(session_t *ps) {
 			    r->depth == ps->c.screen_info->root_depth
 			        ? ps->c.screen_info->root_visual
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
-			free(r);
 
 			ps->root_image = ps->backend_data->ops.bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
 			ps->root_image_generation += 1;
+			ps->root_image_extent = (rect_t){
+			    .x1 = r->x, .x2 = r->x + r->width, .y1 = r->y, .y2 = r->y + r->height};
+			free(r);
+
 			if (!ps->root_image) {
 			err:
 				log_error("Failed to bind root back pixmap");
@@ -1714,9 +1717,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		    ps->layout_manager, ps->wm, ps->root_image_generation,
 		    (ivec2){.width = ps->root_width, .height = ps->root_height});
 		bool succeeded = renderer_render(
-		    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
-		    ps->command_builder, ps->backend_blur_context, render_start_us,
-		    ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
+		    ps->renderer, ps->backend_data, ps->root_image, &ps->root_image_extent,
+		    ps->layout_manager, ps->command_builder, ps->backend_blur_context,
+		    render_start_us, ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
 		    ps->o.force_win_blend, ps->o.blur_background_frame,
 		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
 		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,

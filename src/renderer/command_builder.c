@@ -309,14 +309,11 @@ command_builder_apply_transparent_clipping(struct layout *layout, region_t *scra
 			layer_start -= layer->number_of_commands;
 		}
 
-		if (i->op == BACKEND_COMMAND_BLUR ||
-		    (i->op == BACKEND_COMMAND_BLIT &&
-		     i->source != BACKEND_COMMAND_SOURCE_BACKGROUND)) {
+		if (i->op == BACKEND_COMMAND_BLUR || i->op == BACKEND_COMMAND_BLIT) {
 			pixman_region32_subtract(&i->target_mask, &i->target_mask,
 			                         scratch_region);
 		}
-		if (i->op == BACKEND_COMMAND_BLIT &&
-		    i->source != BACKEND_COMMAND_SOURCE_BACKGROUND) {
+		if (i->op == BACKEND_COMMAND_BLIT) {
 			pixman_region32_subtract(&i->opaque_region, &i->opaque_region,
 			                         scratch_region);
 		}
@@ -438,10 +435,11 @@ void command_builder_free(struct command_builder *cb) {
 void command_builder_build(struct command_builder *cb, struct layout *layout,
                            bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                            double max_brightness, const struct x_monitors *monitors,
+                           image_handle root_image, const rect_t *root_image_extent,
                            const struct shader_info *root_pixmap_shader,
                            const struct shader_info *shaders) {
 
-	unsigned ncmds = 1;
+	unsigned ncmds = root_image != NULL ? 2 : 1;
 	dynarr_foreach(layout->layers, layer) {
 		auto mode = win_calc_mode_raw(layer->win);
 		if (layer->options.blur_background && layer->blur_opacity > 0 &&
@@ -489,40 +487,47 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 		pixman_region32_fini(&frame_region);
 	}
 
+	layout->first_layer_start = (unsigned)(cmd + 1 - layout->commands);
+
 	// Command for the desktop background
-	if (root_pixmap_shader == NULL) {
-		// Just a simple copy_area
-		cmd->op = BACKEND_COMMAND_COPY_AREA;
-		cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
+	const rect_t root_rect = {
+	    .x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height};
+
+	if (root_image != NULL) {
+		cmd->source = BACKEND_COMMAND_SOURCE_IMAGE;
 		cmd->origin = (ivec2){};
-		pixman_region32_reset(
-		    &cmd->target_mask,
-		    (rect_t[]){
-		        {.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});
-		cmd->copy_area.region = &cmd->target_mask;
-	} else {
-		// Has shader for desktop background, use blit.
-		cmd->op = BACKEND_COMMAND_BLIT;
-		cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
-		cmd->origin = (ivec2){};
-		pixman_region32_reset(
-		    &cmd->target_mask,
-		    (rect_t[]){
-		        {.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});
-		pixman_region32_init(&cmd->opaque_region);
-		pixman_region32_copy(&cmd->opaque_region, &cmd->target_mask);
-		cmd->blit = (struct backend_blit_args){
-		    .tint = (struct color){1, 1, 1, 1},
-		    .max_brightness = 1,
-		    .scale = SCALE_IDENTITY,
-		    .effective_size = layout->size,
-		    .target_mask = &cmd->target_mask,
-		    .shader = root_pixmap_shader,
-		};
+		pixman_region32_reset(&cmd->target_mask, root_image_extent);
+
+		if (root_pixmap_shader == NULL) {
+			// Just a simple copy_area
+			cmd->op = BACKEND_COMMAND_COPY_AREA;
+			cmd->copy_area.region = &cmd->target_mask;
+			cmd->copy_area.source_image = root_image;
+		} else {
+			// Has shader for desktop background, use blit.
+			cmd->op = BACKEND_COMMAND_BLIT;
+			pixman_region32_init(&cmd->opaque_region);
+			pixman_region32_copy(&cmd->opaque_region, &cmd->target_mask);
+			cmd->blit = (struct backend_blit_args){
+			    .tint = (struct color){1, 1, 1, 1},
+			    .max_brightness = 1,
+			    .scale = SCALE_IDENTITY,
+			    .effective_size = layout->size,
+			    .target_mask = &cmd->target_mask,
+			    .shader = root_pixmap_shader,
+			    .source_image = root_image,
+			};
+		}
+		cmd--;
 	}
+
+	cmd->op = BACKEND_COMMAND_COPY_AREA;
+	cmd->source = BACKEND_COMMAND_SOURCE_CLEAR;
+	cmd->origin = (ivec2){};
+	pixman_region32_reset(&cmd->target_mask, &root_rect);
+	cmd->copy_area.region = &cmd->target_mask;
 	assert(cmd == list->commands);
 
-	layout->first_layer_start = 1;
 	layout->number_of_commands = ncmds;
 
 	command_builder_apply_transparent_clipping(layout, &cb->scratch_region);
