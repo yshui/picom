@@ -1669,8 +1669,8 @@ static bool win_advance_animation(struct win *w, double delta_t,
 		auto elapsed_slot =
 		    script_elapsed_slot(w->running_animation_instance->script);
 		w->running_animation_instance->memory[elapsed_slot] += delta_t;
-		auto result =
-		    script_instance_evaluate(w->running_animation_instance, (void *)win_ctx);
+		auto result = script_instance_evaluate(w->running_animation_instance,
+		                                       (void *)win_ctx, false);
 		if (result != SCRIPT_EVAL_OK) {
 			log_error("Failed to run animation script: %d", result);
 			return true;
@@ -1908,7 +1908,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	}
 	w->running_animation_instance = new_animation;
 	w->running_animation = wopts.animations[trigger];
-	script_instance_evaluate(w->running_animation_instance, &win_ctx);
+	script_instance_evaluate(w->running_animation_instance, &win_ctx, true);
 	return script_instance_is_finished(w->running_animation_instance);
 }
 
