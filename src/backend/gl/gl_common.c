@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+#include <ctype.h>
 #include <epoxy/gl.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -17,6 +18,7 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
+#include "test.h"
 #include "utils/misc.h"
 
 #include "gl_common.h"
@@ -818,11 +820,187 @@ static inline void gl_init_uniform_bitmask(struct gl_shader *shader) {
 	}
 }
 
-static bool gl_create_window_shader_inner(struct gl_shader *out_shader, const char *source) {
-	const char *vert[2] = {vertex_shader, NULL};
-	const char *frag[] = {blit_shader_glsl, masking_glsl, source, NULL};
+struct glsl_parse_state {
+	const char *cursor;
+	bool last_char_is_space;
+};
 
-	if (!gl_shader_from_stringv(vert, frag, out_shader)) {
+/// Find the next character in GLSL. Skipping over comments, multiple whitespaces are
+/// condensed into one space.
+static char glsl_next_char(struct glsl_parse_state *state) {
+	while (true) {
+		char curr = *state->cursor;
+		// invariant state->cursor[step] is never out-of-bound.
+		int step = curr ? 1 : 0;
+
+		if (curr == '/') {
+			char next = state->cursor[1];
+			// comments should be replaced with a single space
+			if (next == '*') {
+				curr = ' ';
+				for (step++; state->cursor[step]; step++) {
+					if (state->cursor[step] == '*' &&
+					    state->cursor[step + 1] == '/') {
+						step += 2;
+						break;
+					}
+				}
+			} else if (next == '/') {
+				curr = ' ';
+				for (step++; state->cursor[step] && state->cursor[step] != '\n';
+				     step++) {
+					if (state->cursor[step] == '\\' &&
+					    state->cursor[step + 1] == '\n') {
+						step++;
+					}
+				}
+			}
+		} else if (curr == '\\') {
+			char next = state->cursor[1];
+			if (next == '\n') {
+				// line-continuation should remove one new-line character.
+				curr = state->cursor[2];
+				step = 3;
+			}
+		} else if (isspace(curr) && curr != '\n') {
+			// normalize all whitespaces
+			curr = ' ';
+		}
+
+		state->cursor += step;
+		if (!state->last_char_is_space || curr != ' ') {
+			// if we already outputed a space, then the next char we output
+			// must be non-whitespace.
+			state->last_char_is_space = (curr == ' ');
+			return curr;
+		}
+	}
+}
+
+/// Find an appropriate location to insert `#define`s into a GLSL shader. GLSL requires
+/// `#version` and `#extension` directives to come before everything else. But things like
+/// comments, white spaces etc. are allowed. There can also be line-continuations ('\').
+/// This function handles those.
+static const char *skip_glsl_header(const char *source) {
+	struct glsl_parse_state p = {
+	    .cursor = source,
+	    .last_char_is_space = false,
+	};
+	const char *begin_of_line = source;
+	while (true) {
+		char curr = glsl_next_char(&p);
+		if (!curr) {
+			return p.cursor;
+		}
+		if (curr == ' ') {
+			continue;
+		}
+		if (curr == '\n') {
+			begin_of_line = p.cursor;
+			continue;
+		}
+		if (curr != '#') {
+			// if we get anything other than the start of a directive, we know
+			// we've reached the end of the header.
+			return begin_of_line;
+		}
+
+		char next = glsl_next_char(&p);
+		if (next == ' ') {
+			next = glsl_next_char(&p);
+		}
+		if (next == '\n' || !next) {
+			log_warn("Syntax error in shader: %s.", source);
+			return NULL;
+		}
+
+		// Longest directive is #extension
+		char directive[10];
+		size_t pos = 0;
+		while (next && next != ' ' && next != '\n') {
+			if (pos >= ARR_SIZE(directive) - 1) {
+				log_warn("Invalid GLSL directive in shader: %s.", source);
+				return NULL;
+			}
+			directive[pos++] = next;
+			next = glsl_next_char(&p);
+		}
+		directive[pos++] = '\0';
+		if (strcmp(directive, "extension") != 0 && strcmp(directive, "version") != 0) {
+			return begin_of_line;
+		}
+		while (next && next != '\n') {
+			next = glsl_next_char(&p);
+		}
+		begin_of_line = p.cursor;
+	}
+}
+
+TEST_CASE(glsl_parser) {
+	const char *shader = "// aewr\n # version 110\n /* comment */ # extension\n/* "
+	                     "# extension asdf\n#extension\n*/ int main() {}";
+	const char *end_of_header = skip_glsl_header(shader);
+	TEST_EQUAL(end_of_header, &shader[50]);
+
+	shader = "# vers\\\ni\\\non 11\\\n0 \nasdf// #extension \nasdf";
+	end_of_header = skip_glsl_header(shader);
+	TEST_EQUAL(end_of_header, &shader[21]);
+
+	shader = "#version 460\n asdf /*\n*/ #extension";
+	end_of_header = skip_glsl_header(shader);
+	TEST_EQUAL(end_of_header, &shader[13]);
+
+	shader = "#version 460\n#waeroihasdfnoae";
+	end_of_header = skip_glsl_header(shader);
+	TEST_EQUAL(end_of_header, NULL);
+}
+
+static bool
+gl_create_window_shader_inner(struct gl_shader *out_shader,
+                              const struct shader_specification *spec, const char *source) {
+	char *expanded_source = (char *)source;
+	const char tmpl[] = "#define";
+	size_t defines_len = 0;
+	struct shader_defines_iter def_it;
+	if (spec && shader_spec_get_defines(spec, &def_it)) {
+		const char *source_pos = skip_glsl_header(source);
+		if (!source_pos) {
+			// Shader might be invalid, but try prepending anyway.
+			source_pos = source;
+		}
+
+		long header_len = source_pos - source;
+
+		do {
+			// + 3 for two spaces and a newline.
+			defines_len += ARR_SIZE(tmpl) - 1 + 3 + strlen(def_it.name) +
+			               strlen(def_it.value);
+		} while (shader_spec_defines_iter_next(spec, &def_it));
+		expanded_source = ccalloc(defines_len + strlen(source) + 1, char);
+
+		char *pos = expanded_source;
+		memcpy(pos, source, (size_t)header_len);
+		pos += header_len;
+
+		shader_spec_get_defines(spec, &def_it);
+		do {
+			int len = snprintf(pos, defines_len + 1, "%s %s %s\n", tmpl,
+			                   def_it.name, def_it.value);
+			BUG_ON(len < 0);
+			assert((size_t)len <= defines_len);
+			pos += len;
+			defines_len -= (size_t)len;
+		} while (shader_spec_defines_iter_next(spec, &def_it));
+		strcpy(pos, source_pos);
+	}
+	const char *vert[2] = {vertex_shader, NULL};
+	const char *frag[] = {blit_shader_glsl, masking_glsl, expanded_source, NULL};
+
+	bool succeeded = gl_shader_from_stringv(vert, frag, out_shader);
+	if (expanded_source != source) {
+		free(expanded_source);
+	}
+	if (!succeeded) {
 		return false;
 	}
 
@@ -848,10 +1026,9 @@ static bool gl_create_window_shader_inner(struct gl_shader *out_shader, const ch
 }
 
 void *gl_create_window_shader(backend_t *backend_data attr_unused,
-                              const struct shader_specification *spec attr_unused,
-                              const char *source) {
+                              const struct shader_specification *spec, const char *source) {
 	auto ret = ccalloc(1, struct gl_shader);
-	if (!gl_create_window_shader_inner(ret, source)) {
+	if (!gl_create_window_shader_inner(ret, spec, source)) {
 		free(ret);
 		return NULL;
 	}
@@ -927,7 +1104,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Initialize shaders
-	if (!gl_create_window_shader_inner(&gd->default_shader, blit_shader_default)) {
+	if (!gl_create_window_shader_inner(&gd->default_shader, NULL, blit_shader_default)) {
 		log_error("Failed to create window shaders");
 		return false;
 	}

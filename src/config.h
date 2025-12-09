@@ -109,6 +109,11 @@ struct shader_specification {
 	char data[];
 };
 
+struct shader_defines_iter {
+	const char *name;
+	const char *value;
+};
+
 static inline struct shader_specification *shader_spec_from_path(const char *path) {
 	auto len = strlen(path) + 1;
 	struct shader_specification *ret =
@@ -121,6 +126,32 @@ static inline struct shader_specification *shader_spec_from_path(const char *pat
 
 static inline const char *shader_spec_get_path(const struct shader_specification *spec) {
 	return spec->data;
+}
+
+static inline bool shader_spec_get_defines(const struct shader_specification *spec,
+                                           struct shader_defines_iter *iter) {
+	const char *end = &spec->data[spec->size];
+	const char *first = spec->data + strlen(spec->data) + 1;
+	if (first >= end) {
+		return false;
+	}
+	iter->name = first;
+	iter->value = first + strlen(first) + 1;
+	assert(iter->value < end);
+	return true;
+}
+
+static inline bool shader_spec_defines_iter_next(const struct shader_specification *spec,
+                                                 struct shader_defines_iter *iter) {
+	const char *end = &spec->data[spec->size];
+	const char *next = iter->value + strlen(iter->value) + 1;
+	if (next >= end) {
+		return false;
+	}
+	iter->name = next;
+	iter->value = next + strlen(next) + 1;
+	assert(iter->value < end);
+	return true;
 }
 
 struct script;
