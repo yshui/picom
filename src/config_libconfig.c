@@ -645,12 +645,12 @@ static const struct {
     {"transparent-clipping", offsetof(struct window_maybe_options, transparent_clipping)},
 };
 
-static c2_condition *parse_rule(struct list_node *rules, config_setting_t *setting,
-                                struct script ***out_scripts, bool *deprecated) {
+static bool parse_rule(struct list_node *rules, config_setting_t *setting,
+                       struct script ***out_scripts, bool *deprecated) {
 	if (!config_setting_is_group(setting)) {
 		log_error("Invalid rule at line %d. It must be a group.",
 		          config_setting_source_line(setting));
-		return NULL;
+		return false;
 	}
 	int ival;
 	double fval;
@@ -661,7 +661,7 @@ static c2_condition *parse_rule(struct list_node *rules, config_setting_t *setti
 		if (!rule) {
 			log_error("Failed to parse rule at line %d.",
 			          config_setting_source_line(setting));
-			return NULL;
+			return false;
 		}
 	} else {
 		// If no match condition is specified, it matches all windows
@@ -704,21 +704,23 @@ static c2_condition *parse_rule(struct list_node *rules, config_setting_t *setti
 	}
 
 	config_setting_lookup_string(setting, "shader", &wopts->shader);
-	return rule;
+	return true;
 }
-
-static void parse_rules(struct list_node *rules, config_setting_t *setting,
+static bool parse_rules(struct list_node *rules, config_setting_t *setting,
                         struct script ***out_scripts, bool *deprecated) {
 	if (!config_setting_is_list(setting)) {
 		log_error("Invalid value for \"rules\" at line %d. It must be a list.",
 		          config_setting_source_line(setting));
-		return;
+		return false;
 	}
 	const auto length = (unsigned int)config_setting_length(setting);
 	for (unsigned int i = 0; i < length; i++) {
 		auto sub = config_setting_get_elem(setting, i);
-		parse_rule(rules, sub, out_scripts, deprecated);
+		if (!parse_rule(rules, sub, out_scripts, deprecated)) {
+			return false;
+		}
 	}
+	return true;
 }
 
 static const char **
@@ -842,7 +844,11 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	config_setting_t *rules = config_lookup(&cfg, "rules");
 	if (rules) {
 		bool deprecated = false;
-		parse_rules(&opt->rules, rules, &opt->all_scripts, &deprecated);
+		if (!parse_rules(&opt->rules, rules, &opt->all_scripts, &deprecated)) {
+			log_fatal("Couldn't parse window rules at line %d.",
+			          config_setting_source_line(rules));
+			goto out;
+		}
 		if (deprecated) {
 			report_deprecated_option(opt, "rules", false);
 		}
