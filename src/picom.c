@@ -2380,7 +2380,6 @@ static void session_destroy(session_t *ps) {
 	render_statistics_destroy(&ps->render_stats);
 
 	// Release custom window shaders
-	free(ps->o.window_shader_fg);
 	struct shader_info *shader, *tmp;
 	HASH_ITER(hh, ps->shaders, shader, tmp) {
 		HASH_DEL(ps->shaders, shader);

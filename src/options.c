@@ -979,6 +979,8 @@ void options_destroy(struct options *options) {
 	free(options->config_file_path);
 	free(options->write_pid_path);
 	free(options->logpath);
+	free(options->window_shader_fg);
+	free(options->root_pixmap_shader);
 
 	for (int i = 0; i < options->blur_kernel_count; ++i) {
 		free(options->blur_kerns[i]);
