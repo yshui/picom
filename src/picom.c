@@ -2324,6 +2324,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	return ps;
 err:
 	render_statistics_destroy(&ps->render_stats);
+	options_destroy(&ps->o);
 	free(ps);
 	return NULL;
 }

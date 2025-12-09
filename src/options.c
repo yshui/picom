@@ -955,8 +955,10 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 
 static void free_window_maybe_options(void *data) {
 	auto wopts = (struct window_maybe_options *)data;
-	free((void *)wopts->shader);
-	free(wopts);
+	if (wopts) {
+		free((void *)wopts->shader);
+		free(wopts);
+	}
 }
 
 void options_destroy(struct options *options) {
