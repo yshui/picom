@@ -76,6 +76,7 @@ our_commits.sort(key=lambda x: x.commit_time)
 
 changelog_categories = {
 	'BugFix': 'Bug fixes',
+	'Behavior': 'Behavior changes',
 	'BuildFix': 'Build fixes',
 	'BuildChange': 'Build changes',
 	'NewFeature': 'New features',
