@@ -24,6 +24,7 @@
 #include "log.h"
 #include "utils/kernel.h"
 #include "utils/list.h"
+#include "utils/misc.h"
 #include "wm/defs.h"
 
 typedef struct session session_t;
@@ -103,6 +104,25 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_ALIAS_GEOMETRY] = "geometry",
 };
 
+struct shader_specification {
+	size_t size;
+	char data[];
+};
+
+static inline struct shader_specification *shader_spec_from_path(const char *path) {
+	auto len = strlen(path) + 1;
+	struct shader_specification *ret =
+	    calloc(1, offsetof(struct shader_specification, data[len]));
+	BUG_ON(ret == NULL);
+	ret->size = len;
+	strcpy(ret->data, path);
+	return ret;
+}
+
+static inline const char *shader_spec_get_path(const struct shader_specification *spec) {
+	return spec->data;
+}
+
 struct script;
 struct win_script {
 	/// A running animation can be configured to prevent other animations from
@@ -167,6 +187,8 @@ enum window_unredir_option {
 	WINDOW_UNREDIR_INVALID,
 };
 
+struct shader_specification;
+
 struct window_maybe_options {
 	/// Shadow color
 	struct color shadow_color;
@@ -182,7 +204,7 @@ struct window_maybe_options {
 	double dim;
 
 	/// The name of the custom fragment shader for this window. NULL means not set.
-	const char *shader;
+	const struct shader_specification *shader;
 
 	/// Radius of rounded window corners, -1 means not set.
 	int corner_radius;
@@ -218,7 +240,7 @@ struct window_options {
 	double opacity;
 	double blur_opacity;
 	double dim;
-	const char *shader;
+	const struct shader_specification *shader;
 	unsigned int corner_radius;
 	enum window_unredir_option unredir;
 	bool transparent_clipping;
@@ -391,9 +413,9 @@ typedef struct options {
 	/// Number of convolution kernels
 	int blur_kernel_count;
 	/// Custom fragment shader for painting the root window pixmap
-	char *root_pixmap_shader;
+	struct shader_specification *root_pixmap_shader;
 	/// Custom fragment shader for painting windows
-	char *window_shader_fg;
+	struct shader_specification *window_shader_fg;
 	/// Rules to change custom fragment shader for painting windows.
 	struct list_node window_shader_fg_rules;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.

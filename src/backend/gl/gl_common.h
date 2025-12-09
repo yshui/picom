@@ -139,7 +139,8 @@ GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *shaders, int nshaders);
 GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
 GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders);
-void *gl_create_window_shader(backend_t *backend_data, const char *source);
+void *gl_create_window_shader(backend_t *backend_data,
+                              const struct shader_specification *spec, const char *source);
 void gl_destroy_window_shader(backend_t *backend_data, shader_handle shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, shader_handle shader);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);

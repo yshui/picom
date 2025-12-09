@@ -14,6 +14,7 @@
 #define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
 
 typedef pixman_region32_t region_t;
+struct shader_specification;
 
 struct xvisual_info {
 	/// Bit depth of the red component
@@ -328,8 +329,8 @@ struct backend_operations {
 	/// Create a shader object from a shader source.
 	///
 	/// Optional
-	void *(*create_shader)(backend_t *backend_data, const char *source)
-	    __attribute__((nonnull(1, 2)));
+	void *(*create_shader)(backend_t *backend_data, const struct shader_specification *,
+	                       const char *source) __attribute__((nonnull(1, 2, 3)));
 
 	/// Free a shader object.
 	///

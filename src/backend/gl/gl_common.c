@@ -847,7 +847,9 @@ static bool gl_create_window_shader_inner(struct gl_shader *out_shader, const ch
 	return true;
 }
 
-void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *source) {
+void *gl_create_window_shader(backend_t *backend_data attr_unused,
+                              const struct shader_specification *spec attr_unused,
+                              const char *source) {
 	auto ret = ccalloc(1, struct gl_shader);
 	if (!gl_create_window_shader_inner(ret, source)) {
 		free(ret);

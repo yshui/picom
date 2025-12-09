@@ -57,10 +57,11 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		                          (int)layer->options.corner_radius,
 		                          layer->window.origin, &cmd->opaque_region);
 	}
-	
+
 	const struct shader_info *shader_info = NULL;
 	if (layer->options.shader != NULL) {
-		HASH_FIND_STR(shaders, layer->options.shader, shader_info);
+		HASH_FIND(hh, shaders, layer->options.shader->data,
+		          layer->options.shader->size, shader_info);
 	}
 
 	float opacity = layer->opacity * (1 - layer->saved_image_blend);
