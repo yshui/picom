@@ -1884,6 +1884,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .clip_shadow_above = false,
 	    .unredir = WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE,
 	    .opacity = 1,
+	    .blur_opacity = 1,
 	};
 	memcpy(ret.animations, opts->animations, sizeof(ret.animations));
 	return ret;

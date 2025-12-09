@@ -474,7 +474,7 @@ static void parse_animations(struct win_script *animations, config_setting_t *se
 #define FADING_TEMPLATE_2                                                                \
 	"blur-opacity = { "                                                              \
 	"  duration = %s; "                                                              \
-	"  start = %d; end = %d; "                                                       \
+	"  start = %s; end = %s; "                                                       \
 	"};"
 
 static bool compile_win_script_from_string(struct win_script *result, const char *input) {
@@ -511,9 +511,11 @@ void generate_fading_config(struct options *opt) {
 		// Fading in from nothing, i.e. `open` and `show`. These will fade blur
 		// opacity with the window opacity. Unless `blur-background-fixed` is
 		// used, in which case blur-opacity stays at 1.
-		int start = opt->blur_background_fixed ? 1 : 0;
+		auto start = opt->blur_background_fixed
+		                 ? "\"window-blur-opacity\""
+		                 : "\"window-blur-opacity-before\"";
 		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
-		          duration_str, start, 1);
+		          duration_str, start, "\"window-blur-opacity\"");
 
 		struct win_script fade_in1 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_in1, str));
@@ -530,8 +532,10 @@ void generate_fading_config(struct options *opt) {
 			script_free(fade_in1.script);
 		}
 
-		// Fading for opacity change, for these, the blur opacity doesn't change.
-		asnprintf(&str, &len, FADING_TEMPLATE_1, duration_str);
+		// Fading for opacity change.
+		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
+		          duration_str, "\"window-blur-opacity-before\"",
+		          "\"window-blur-opacity\"");
 		struct win_script fade_in2 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_in2, str));
 		triggers = 0;
@@ -555,9 +559,10 @@ void generate_fading_config(struct options *opt) {
 		dtostr(duration, &duration_str);
 
 		// Fading out to nothing, i.e. `hide` and `close`. Same as above.
-		int end = opt->blur_background_fixed ? 1 : 0;
+		auto end = opt->blur_background_fixed ? "\"window-blur-opacity-before\""
+		                                      : "\"window-blur-opacity\"";
 		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
-		          duration_str, 1, end);
+		          duration_str, "\"window-blur-opacity-before\"", end);
 		struct win_script fade_out1 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_out1, str));
 		if (opt->animations[ANIMATION_TRIGGER_CLOSE].script == NULL &&
@@ -574,7 +579,9 @@ void generate_fading_config(struct options *opt) {
 		}
 
 		// Fading for opacity change
-		asnprintf(&str, &len, FADING_TEMPLATE_1, duration_str);
+		asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration_str,
+		          duration_str, "\"window-blur-opacity-before\"",
+		          "\"window-blur-opacity\"");
 		struct win_script fade_out2 = {.is_generated = true};
 		BUG_ON(!compile_win_script_from_string(&fade_out2, str));
 		triggers = 0;
@@ -680,6 +687,9 @@ static bool parse_rule(struct list_node *rules, config_setting_t *setting,
 	}
 	if (config_setting_lookup_float(setting, "opacity", &fval)) {
 		wopts->opacity = normalize_d(fval);
+	}
+	if (config_setting_lookup_float(setting, "blur-opacity", &fval)) {
+		wopts->blur_opacity = normalize_d(fval);
 	}
 	if (config_setting_lookup_float(setting, "dim", &fval)) {
 		wopts->dim = normalize_d(fval);
