@@ -2546,7 +2546,8 @@ int PICOM_MAIN(int argc, char **argv) {
 		if (!ps_g) {
 			log_fatal("Failed to create new session.");
 			ret_code = 1;
-			break;
+			quit = true;
+			goto end;
 		}
 		if (need_fork) {
 			// Finishing up daemonization
@@ -2579,6 +2580,7 @@ int PICOM_MAIN(int argc, char **argv) {
 		session_destroy(ps_g);
 		free(ps_g);
 		ps_g = NULL;
+	end:
 		if (dpy) {
 			XCloseDisplay(dpy);
 		}
