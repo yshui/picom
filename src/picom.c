@@ -2099,7 +2099,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		if (data->shader == NULL) {
 			continue;
 		}
-		if (load_shader_source(ps, data->shader)) {
+		if (load_shader_source(ps, data->shader) == NULL) {
 			log_error("Failed to load shader source file for window rules");
 		}
 	}
