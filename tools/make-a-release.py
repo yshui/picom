@@ -95,34 +95,32 @@ for commit in our_commits:
 		m = r_related.fullmatch(line)
 		if m:
 			for issue in m.group(1).split(' '):
-				related_issues.append(int(issue[1:]))
+				if issue.startswith('#'):
+					related_issues.append(int(issue[1:]))
 		elif line.startswith('Fixes') or line.startswith('Related'):
 			print(f'WARN: Possibly invalid issue reference: {line}')
 		elif line.startswith('Merge pull request #'):
 			related_issues.append(int(line.split()[3][1:]))
 
-	changelog = [i for i, line in enumerate(lines) if line.startswith('Changelog:')]
-	if len(changelog) > 1:
-		print('WARN: Multiple Changelog lines')
-	if not changelog:
-		continue
-	line = changelog[0] + 1
-	changelog = lines[changelog[0]].removeprefix('Changelog:')
-	while line < len(lines) and lines[line].strip() != '':
-		changelog += ' ' + lines[line]
-		line += 1
-	cat, changelog = changelog.split(':', 1)
-	cat = cat.strip()
-	changelog = changelog.strip()
-	if cat not in changelog_categories:
-		print(f'WARN: Unknown category: {cat}')
-		changelog = f'({cat}) {changelog}'
-		cat = 'Uncategorized'
-	if related_issues:
-		changelog += f' ({" ".join(f"#{issue}" for issue in related_issues)})'
+	commit_changelogs = [i for i, line in enumerate(lines) if line.startswith('Changelog:')]
+	for change in commit_changelogs:
+		line = change + 1
+		text = lines[change].removeprefix('Changelog:')
+		while line < len(lines) and lines[line].strip() != '':
+			text += ' ' + lines[line]
+			line += 1
+		cat, text = text.split(':', 1)
+		cat = cat.strip()
+		text = text.strip()
+		if cat not in changelog_categories:
+			print(f'WARN: Unknown category: {cat}')
+			text = f'({cat}) {changelog}'
+			cat = 'Uncategorized'
+		if related_issues:
+			text += f' ({" ".join(f"#{issue}" for issue in related_issues)})'
 
-	changelogs[cat].append(changelog)
-	print(f'Commit {commit.id}: {changelog} [{cat}]')
+		changelogs[cat].append(text)
+		print(f'Commit {commit.id}: {text} [{cat}]')
 
 # are we already on a tag?
 for ref in repo.references.iterator(pygit2.enums.ReferenceFilter.TAGS):
