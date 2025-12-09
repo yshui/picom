@@ -2019,14 +2019,14 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Parse configuration file
 	if (!parse_config(&ps->o, config_file)) {
-		return NULL;
+		goto err;
 	}
 
 	// Parse all of the rest command line options
 	if (!get_cfg(&ps->o, argc, argv)) {
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
-		return NULL;
+		goto err;
 	}
 
 	show_config_warning_message_box(&ps->o);
@@ -2323,6 +2323,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 	return ps;
 err:
+	render_statistics_destroy(&ps->render_stats);
 	free(ps);
 	return NULL;
 }
