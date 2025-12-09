@@ -90,7 +90,7 @@ changelogs = {category: [] for category in changelog_categories}
 for commit in our_commits:
 	lines = commit.message.split('\n')
 	related_issues = []
-	r_related = re.compile(r'(?:Fixes|Related|Related-to):?\s+(.+)')
+	r_related = re.compile(r'(?:Fixes|Related|Related-to|Closes):?\s+(.+)')
 	for line in lines:
 		m = r_related.fullmatch(line)
 		if m:
@@ -106,7 +106,7 @@ for commit in our_commits:
 	for change in commit_changelogs:
 		line = change + 1
 		text = lines[change].removeprefix('Changelog:')
-		while line < len(lines) and lines[line].strip() != '':
+		while line < len(lines) and lines[line].strip() != '' and not lines[line].startswith('Changelog:'):
 			text += ' ' + lines[line]
 			line += 1
 		cat, text = text.split(':', 1)
