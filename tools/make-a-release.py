@@ -75,14 +75,14 @@ our_commits = [repo.get(commit) for commit in our_commits]
 our_commits.sort(key=lambda x: x.commit_time)
 
 changelog_categories = {
-	'BugFix': 'Bug fixes',
-	'Behavior': 'Behavior changes',
-	'BuildFix': 'Build fixes',
-	'BuildChange': 'Build changes',
 	'NewFeature': 'New features',
+	'Behavior': 'Behavior changes',
 	'Deprecation': 'Deprecations',
-	'Internal': 'Internal changes',
 	'Uncategorized': 'Other changes',
+	'BuildChange': 'Build changes',
+	'BugFix': 'Bug fixes',
+	'BuildFix': 'Build fixes',
+	'Internal': 'Internal changes',
 }
 
 changelogs = {category: [] for category in changelog_categories}

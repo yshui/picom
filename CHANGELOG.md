@@ -1,45 +1,15 @@
 # v13-rc1 (2025-Dec-09)
 
-## Bug fixes
-
-* Fix sometimes window property changes aren't reflected in picom.
-* Fix shadow-opacity being applied twice. You may need to adjust your shadow-opacity settings. Changelog: BugFix: Properly fix the longstanding "request too big" problem when uploading shadow images. (Previous workaround: 69b3eee76b6f3ec6be1d2402151d8882279a74a4) (#257)
-* Properly fix the longstanding "request too big" problem when uploading shadow images. (Previous workaround: 69b3eee76b6f3ec6be1d2402151d8882279a74a4) (#257)
-* Fix window frames not being blended correctly when using `frame-opacity` with `saved-image-blend`.
-* Fix shadow not being correctly masked when scaled. (#1389)
-* Fix misaligned shadow and window when they are scaled. (#1389)
-* Fix unexpected relative movement between shadow and window when they are scaled. (#1389)
-* background blur does not cover the entire background if the window has rounded corner and is scaled.
-* Fix shaders in window-shader-fg-rule being erroneously reported as failed to load.
-* Fix --blur-background-fixed having no effect. (#1402)
-* Fix assertion failure when running with some window managers (e.g. qtile) and no window is focused (#1384)
-
-## Behavior changes
-
-* The desktop background image is no longer smeared to fill the screen. If it's too small, it will be too small.
-
 ## New features
 
 * Separate the "geometry" animation trigger into "size" and "position" to allow finer-grained control. "geometry" is kept as an alias for setting both "size" and "position".
-* Add a "urgent" target that can be used in rules to match urgent (according to ICCCM) windows.
+* Add a "urgent" target that can be used in rules to match urgent (according to ICCCM) windows. (#1445)
 * New "shadow-color" per-window option can now be used in `rules` to give each window a different shadow color. (#257)
 * Added new animation trigger `color`, which can now be used to transition window shadow-color changes. (#257)
-* Add support for using custom shaders when rendering the desktop background.
-* New variables "window-blur-opacity-before", and "window-blur-opacity" are now available in animation scripts.
-* New per-window option `blur-opacity` can now be used in `rules`.
-* Macro definitions can now be specified when setting `shader` in window rules.
-
-## Internal changes
-
-* Breaking change to backend API, to allow better image creation, and applying tints to windows.
-* Refactor shadow rendering, preparing for dynamic shadow colors. Changelog: BugFix: Fix shadow-opacity being applied twice. You may need to adjust your shadow-opacity settings. Changelog: BugFix: Properly fix the longstanding "request too big" problem when uploading shadow images. (Previous workaround: 69b3eee76b6f3ec6be1d2402151d8882279a74a4) (#257)
-* Backend API 2.0 breaking change, backend_mask_image.origin is now a vec2.
-* Backend API 2.0 breaking change, backend_blur_args now has source_mask_scale.
-* Backend API 2.0 breaking change, `backend_blit_args.shader` is now `struct shader_info *` instead of `void *`.
-
-## Other changes
-
-* Hide picom from menus by default (#1155)
+* Add support for using custom shaders when rendering the desktop background. (#1440)
+* New variables "window-blur-opacity-before", and "window-blur-opacity" are now available in animation scripts. (#919)
+* New per-window option `blur-opacity` can now be used in `rules`. (#919)
+* Macro definitions can now be specified when setting `shader` in window rules. (#1066)
 
 ## Deprecations
 
@@ -54,6 +24,36 @@
   - `respect-prop-shadow`
   - `sw-opti`
   - `clear-shadow`
+
+## Behavior changes
+
+* The desktop background image is no longer smeared to fill the screen. If it's too small, it will be too small. (#1464)
+
+## Bug fixes
+
+* Fix sometimes window property changes aren't reflected in picom.
+* Fix shadow-opacity being applied twice. You may need to adjust your shadow-opacity settings. 
+* Properly fix the longstanding "request too big" problem when uploading shadow images. (Previous workaround: 69b3eee76b6f3ec6be1d2402151d8882279a74a4) (#257)
+* Fix window frames not being blended correctly when using `frame-opacity` with `saved-image-blend`.
+* Fix shadow not being correctly masked when scaled. (#1389)
+* Fix misaligned shadow and window when they are scaled. (#1389)
+* Fix unexpected relative movement between shadow and window when they are scaled. (#1389)
+* background blur does not cover the entire background if the window has rounded corner and is scaled.
+* Fix shaders in window-shader-fg-rule being erroneously reported as failed to load.
+* Fix --blur-background-fixed having no effect. (#1402)
+* Fix assertion failure when running with some window managers (e.g. qtile) and no window is focused (#1384)
+
+## Other changes
+
+* Hide picom from menus by default (#1155)
+
+## Internal changes
+
+* Breaking change to backend API, to allow better image creation, and applying tints to windows.
+* Refactor shadow rendering, preparing for dynamic shadow colors.
+* Backend API 2.0 breaking change, backend_mask_image.origin is now a vec2.
+* Backend API 2.0 breaking change, backend_blur_args now has source_mask_scale.
+* Backend API 2.0 breaking change, `backend_blit_args.shader` is now `shader_handle` instead of `void *`.
 
 # 12.4 (2024-Nov-09)
 
