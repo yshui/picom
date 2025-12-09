@@ -52,6 +52,8 @@ struct backend_command {
 	struct backend_mask_image source_mask;
 	/// Target mask for the operation.
 	region_t target_mask;
+	/// Extra information attached to the shader used in this command.
+	const struct shader_info *shader_info;
 };
 
 bool backend_execute(struct backend_base *backend, image_handle target, unsigned ncmds,

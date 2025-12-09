@@ -341,7 +341,18 @@ Within each sub-item, these keys are available: ::
 	Whether to make the matching window clip other windows like opaque windows do, instead of blending on top of them. When applied to transparent windows, this means nothing will be painted under the transparent parts of the window, essentially cuts a hole in the screen.
 
   shader:::
-	GLSL fragment shader path for rendering window contents. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
+	GLSL fragment shader specification for rendering window contents. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface. This option can be a simple path to the shader file, but it's also possible to specify extra options to the shader. Currently, the only extra options supported are macro defines. Syntax:
++
+----
+shader = {
+	path = "path/to/shader.glsl";
+	defines = {
+		COLOR = "vec4(1.0, 0.0, 0.0, 1.0)";
+	};
+};
+----
++
+This will prepend `#define COLOR vec4(1.0, 0.0, 0.0, 1.0)` to your shader (note the lack of double quotes). The value of a define MUST be a string, any string will be accepted and no sanitization is performed.
 
   [[window-rules-animations]]animations:::
 	Define window-specific animation scripts. The format of this option is the same as the top-level _animations_ option. You can find more information in the xref:_animations[*ANIMATIONS*] section. If animation scripts are defined in multiple matching rules, they will be merged together. If multiple matching rules contain animation scripts for the same trigger, the last one will take effect, the same as other options.

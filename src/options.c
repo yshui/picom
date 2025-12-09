@@ -144,16 +144,15 @@ static bool store_string(const struct picom_option * /*opt*/, const struct picom
 static bool store_shader(const struct picom_option *opt, const struct picom_arg *arg,
                          const char *arg_str, void *output) {
 	scoped_charp cwd = getcwd(NULL, 0);
-	scoped_charp shader = locate_auxiliary_file("shaders", arg_str, cwd);
-	if (!shader) {
+	scoped_charp full_path = locate_auxiliary_file("shaders", arg_str, cwd);
+	if (!full_path) {
 		log_error("Couldn't find shader file \"%s\" for %s", arg_str, opt->long_name);
 		return false;
 	}
 
-	char **dst = (char **)(output + arg->offset);
+	auto dst = (struct shader_specification **)(output + arg->offset);
 	free(*dst);
-	*dst = shader;
-	shader = NULL;
+	*dst = shader_spec_from_path(full_path);
 	return true;
 }
 

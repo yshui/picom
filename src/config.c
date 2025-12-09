@@ -611,15 +611,16 @@ void *parse_window_shader_prefix(const char *src, const char **end, void *user_d
 	size_t length;
 	char *tmp = (char *)trim_both(untrimed_shader_source, &length);
 	tmp[length] = '\0';
-	char *shader_source = NULL;
+	struct shader_specification *shader_source = NULL;
 
 	if (strcasecmp(tmp, "default") != 0) {
-		shader_source = locate_auxiliary_file("shaders", tmp, include_dir);
-		if (!shader_source) {
+		char *full_path = locate_auxiliary_file("shaders", tmp, include_dir);
+		if (!full_path) {
 			log_error("Custom shader file \"%s\" not found for rule: %s", tmp, src);
-			free(shader_source);
 			return NULL;
 		}
+		shader_source = shader_spec_from_path(full_path);
+		free(full_path);
 	}
 
 	*end = endptr + 1;

@@ -82,8 +82,8 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	    // (we already checked cmd1 and cmd2 have the same shader)
 	    // If the custom shader is animated, we consider the whole window
 	    // damaged.
-	    (cmd1->blit.shader != NULL &&
-	     cmd1->blit.shader->attributes & SHADER_ATTRIBUTE_ANIMATED) ||
+	    (cmd1->shader_info != NULL &&
+	     cmd1->shader_info->attributes & SHADER_ATTRIBUTE_ANIMATED) ||
 
 	    // Second part, if round corner is enabled, then border width and effective size
 	    // affect the whole image too.
@@ -177,8 +177,8 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 		// animated.
 		is_background_changed =
 		    background->op == BACKEND_COMMAND_BLIT &&
-		    background->blit.shader != NULL &&
-		    (background->blit.shader->attributes & SHADER_ATTRIBUTE_ANIMATED) != 0;
+		    background->shader_info != NULL &&
+		    (background->shader_info->attributes & SHADER_ATTRIBUTE_ANIMATED) != 0;
 	}
 	if (is_background_changed) {
 		// TODO(yshui) this is crude, even though the background has changed, that

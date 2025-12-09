@@ -57,10 +57,16 @@
 struct atom;
 struct conv;
 
+struct shader_source {
+	const char *path;
+	const char *source;
+	UT_hash_handle hh;
+};
+
 struct shader_info {
-	char *key;
-	char *source;
-	void *backend_shader;
+	const struct shader_specification *spec;
+	const char *source;
+	shader_handle backend_shader;
 	uint64_t attributes;
 	UT_hash_handle hh;
 };
@@ -95,6 +101,8 @@ typedef struct session {
 	/// libev mainloop
 	struct ev_loop *loop;
 	struct shader_info *root_pixmap_shader;
+	/// Shader sources
+	struct shader_source *shader_sources;
 	/// Shaders
 	struct shader_info *shaders;
 

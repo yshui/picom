@@ -57,9 +57,11 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		                          (int)layer->options.corner_radius,
 		                          layer->window.origin, &cmd->opaque_region);
 	}
-	struct shader_info *shader = NULL;
+
+	const struct shader_info *shader_info = NULL;
 	if (layer->options.shader != NULL) {
-		HASH_FIND_STR(shaders, layer->options.shader, shader);
+		HASH_FIND(hh, shaders, layer->options.shader->data,
+		          layer->options.shader->size, shader_info);
 	}
 
 	float opacity = layer->opacity * (1 - layer->saved_image_blend);
@@ -78,7 +80,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .tint = color_mult_alpha(tint, opacity),
 	    .scale = layer->scale,
 	    .effective_size = layer->window.size,
-	    .shader = shader,
+	    .shader = shader_info ? shader_info->backend_shader : NULL,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
@@ -90,6 +92,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
 	cmd->origin = layer->window.origin;
+	cmd->shader_info = shader_info;
 	cmd->blit = args_base;
 	cmd->blit.target_mask = &cmd->target_mask;
 	cmd -= 1;
@@ -98,6 +101,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		cmd->opaque_region = cmd[1].opaque_region;
 		pixman_region32_init(&cmd[1].opaque_region);
 		cmd->op = BACKEND_COMMAND_BLIT;
+		cmd->shader_info = shader_info;
 		cmd->source = BACKEND_COMMAND_SOURCE_WINDOW_SAVED;
 		cmd->origin = layer->window.origin;
 		cmd->blit = args_base;
@@ -132,6 +136,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->window.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
+	cmd->shader_info = shader_info;
 	cmd->blit = args_base;
 	cmd->blit.target_mask = &cmd->target_mask;
 	cmd->blit.tint = color_mult_alpha(tint, opacity);
@@ -142,6 +147,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 		cmd->op = BACKEND_COMMAND_BLIT;
 		cmd->source = BACKEND_COMMAND_SOURCE_WINDOW_SAVED;
 		cmd->origin = layer->window.origin;
+		cmd->shader_info = shader_info;
 		cmd->blit = args_base;
 		cmd->blit.effective_size = (ivec2){
 		    .width = (int)(layer->window.size.width / w->saved_win_image_scale.width),
@@ -170,6 +176,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->shadow.origin;
 	cmd->source = BACKEND_COMMAND_SOURCE_SHADOW;
+	cmd->shader_info = NULL;
 	pixman_region32_clear(&cmd->target_mask);
 	pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
 	                           layer->shadow.origin.x, layer->shadow.origin.y,
@@ -496,6 +503,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 	if (root_image != NULL) {
 		cmd->source = BACKEND_COMMAND_SOURCE_IMAGE;
 		cmd->origin = (ivec2){};
+		cmd->shader_info = root_pixmap_shader;
 		pixman_region32_reset(&cmd->target_mask, root_image_extent);
 
 		if (root_pixmap_shader == NULL) {
@@ -514,7 +522,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 			    .scale = SCALE_IDENTITY,
 			    .effective_size = layout->size,
 			    .target_mask = &cmd->target_mask,
-			    .shader = root_pixmap_shader,
+			    .shader = root_pixmap_shader->backend_shader,
 			    .source_image = root_image,
 			};
 		}
