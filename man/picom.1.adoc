@@ -679,7 +679,7 @@ _d_ is a timing function, which is a group with several options specifying its b
 
 These options are valid for a timing function: :::
 
-  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _step_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_. This option is optional, is not specified, the curve will be linear.
+  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _steps_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_. The _curve_ option is optional, is not specified, the linear curve will be used.
 
   _delay_:: The number of seconds to wait before the value starts changing. Optional, defaults to 0.
 
