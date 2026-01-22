@@ -449,7 +449,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 	unsigned ncmds = root_image != NULL ? 2 : 1;
 	dynarr_foreach(layout->layers, layer) {
 		auto mode = win_calc_mode_raw(layer->win);
-		if (layer->options.blur_background && layer->blur_opacity > 0 &&
+		if (layer->options.blur_background && layer->blur_opacity != 0 &&
 		    (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0 ||
 		     (blur_frame && mode == WMODE_FRAME_TRANS))) {
 			// Needs blur
