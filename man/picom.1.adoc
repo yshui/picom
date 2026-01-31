@@ -79,7 +79,7 @@ OPTIONS
 *--plugins* _PATH_::
 	Specify plugins to load. Plugins will first be searched in current working directory (unless specified in the config file, in which case this step is skipped), then in `$XDG_CONFIG_HOME/picom/plugins`, then in `$XDG_CONFIG_DIRS/picom/plugins`. If all of the above fail, the plugin name is passed directly to the dynamic loader. Can be specified multiple times to load more than one plugins.
 
-*--shadow-color* _STRING_::
+[[shadow-color]]*--shadow-color* _STRING_::
 	Color of shadow, as a hex string (e.g. _#000000_)
 
 *--shadow-red* _VALUE_::
@@ -185,7 +185,7 @@ OPTIONS
 	Blur background of windows when the window frame is not opaque.  Implies *--blur-background*. Bad in performance, with driver-dependent behavior. The name may change.
 
 *--blur-background-fixed*::
-	Use fixed blur strength rather than adjusting according to window opacity.
+	Use fixed blur strength for a window during fading. This only applies to the *--fading* option, and will be a no-op if animation scripts are used.
 
 *--blur-kern* _MATRIX_::
 	Specify the blur convolution kernel, with the following format:
@@ -225,7 +225,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 +
 --
 * `xrender` backend performs all rendering operations with X Render extension. It is what `xcompmgr` uses, and is generally a safe fallback when you encounter rendering artifacts or instability.
-* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (*--invert-color-include*) or blur (*--blur-background*). It requires proper OpenGL 2.0 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. *--xrender-sync-fence* might be needed on some systems to avoid delay in changes of screen contents.
+* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (*--invert-color-include*) or blur (*--blur-background*). It requires proper OpenGL 3.3 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. *--xrender-sync-fence* might be needed on some systems to avoid delay in changes of screen contents.
 --
 
 *--no-use-damage*::
@@ -263,6 +263,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 
 [[window-shader-fg-rule]]*--window-shader-fg-rule* _SHADER_:__CONDITION__::
 	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of _SHADER:CONDITION_, e.g. "shader.frag:name = 'window'". Leading and trailing whitespaces in _SHADER_ will be trimmed. If _SHADER_ is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Using this is discouraged, see the xref:_window_rules[*WINDOW RULES*] section for the recommended way to set window-specific shaders.
+
+*--root-pixmap-shader* _SHADER_::
+	Specify GLSL fragment shader path for rendering the root pixmap. The root pixmap usually is your desktop wallpaper, though for some desktop environment this is not the case. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
 
 *--dithered-present*::
 	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
@@ -304,11 +307,17 @@ Within each sub-item, these keys are available: ::
   full-shadow:::
 	Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
 
+  shadow-color:::
+	Color of the shadow. Same syntax as <<shadow-color>>.
+
   fade:::
 	Whether to fade the matching window in/out when opening/closing it. When animations are used, this will have no effect. This can only be used to disable fading animations enabled by option <<fading>>.
 
   opacity:::
 	Opacity of the matching window. (0.0 - 1.0). If not explicitly set by a rule, the opacity value from the window properties (e.g. pass:[_]NET_WM_WINDOW_OPACITY) will be used.
+
+  blur-opacity:::
+	Opacity of the background blur. (0.0 - 1.0). If not explicitly set by a rule, this will be 1.0. Ignored by `blur-background` is not enabled.
 
   dim:::
 	Dim level of the matching window. Larger value means more dimming. (0.0 - 1.0)
@@ -332,7 +341,18 @@ Within each sub-item, these keys are available: ::
 	Whether to make the matching window clip other windows like opaque windows do, instead of blending on top of them. When applied to transparent windows, this means nothing will be painted under the transparent parts of the window, essentially cuts a hole in the screen.
 
   shader:::
-	GLSL fragment shader path for rendering window contents. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface.
+	GLSL fragment shader specification for rendering window contents. See section xref:_shader_interface[*SHADER INTERFACE*] below for more details on the interface. This option can be a simple path to the shader file, but it's also possible to specify extra options to the shader. Currently, the only extra options supported are macro defines. Syntax:
++
+----
+shader = {
+	path = "path/to/shader.glsl";
+	defines = {
+		COLOR = "vec4(1.0, 0.0, 0.0, 1.0)";
+	};
+};
+----
++
+This will prepend `#define COLOR vec4(1.0, 0.0, 0.0, 1.0)` to your shader (note the lack of double quotes). The value of a define MUST be a string, any string will be accepted and no sanitization is performed.
 
   [[window-rules-animations]]animations:::
 	Define window-specific animation scripts. The format of this option is the same as the top-level _animations_ option. You can find more information in the xref:_animations[*ANIMATIONS*] section. If animation scripts are defined in multiple matching rules, they will be merged together. If multiple matching rules contain animation scripts for the same trigger, the last one will take effect, the same as other options.
@@ -422,6 +442,9 @@ Supported predefined targets are: :::
   `role`::::
 	Window role. This is the value of _pass:[_]WM_WINDOW_ROLE_.
 
+  `urgent`::::
+	Whether the window is expecting immediate user action, as defined by the ICCCM. This only checks if the urgency bit is set in _WM_HINTS_. Interpretation of this bit varies among applications and window managers. Some of them also sets _pass:[_]NET_WM_STATE_DEMANDS_ATTENTION_ in _pass:[_]NET_WM_STATE_ to indicate urgency, so you might want to also check that (e.g. `_NET_WM_STATE@[*] = '_NET_WM_STATE_DEMANDS_ATTENTION'`).
+
 +
 _Target_ can be followed by an optional `@` if the window attribute should be be looked up on client window. Otherwise the frame window will be used.
 
@@ -505,11 +528,13 @@ animations = ({
 
 	  _hide_:: When a window is minimized or iconified.
 
-	  _increase-opacity_:: When the opacity of a window is increased.
+	  _increase-opacity_:: When the opacity or the blur opacity of a window is increased. If the opacity and the blur opacity changed in different directions, the opacity change takes precedence.
 
-	  _decrease-opacity_:: When the opacity of a window is decreased.
+	  _decrease-opacity_:: When the opacity or the blur opacity of a window is decreased. If the opacity and the blur opacity changed in different directions, the opacity change takes precedence.
 
 	  _size_, _position_:: When the size or position of a window is changed. If both changed, the position trigger has priority. (EXPERIMENTAL)
+
+	  _color_:: When some color property of a window is changed. Right now this only includes _shadow-color_.
 
 	  [[trigger-geometry]]_geometry_:: Alias of size + position.
 +
@@ -654,7 +679,7 @@ _d_ is a timing function, which is a group with several options specifying its b
 
 These options are valid for a timing function: :::
 
-  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _step_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_. This option is optional, is not specified, the curve will be linear.
+  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _steps_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_. The _curve_ option is optional, is not specified, the linear curve will be used.
 
   _delay_:: The number of seconds to wait before the value starts changing. Optional, defaults to 0.
 
@@ -699,7 +724,7 @@ Currently, these output variables are supported: :::
 
   _offset-x_, _offset-y_:: The offset of the window in the X and Y direction, respectively. The window body will be moved by this amount. Note this does not affect the shadow, so if you define these but not _shadow-offset-x_ or _shadow-offset-y_, the shadow will remain where the window was without the animation.
 
-  _shadow-offset-x_, _shadow-offset-y_:: The offset of the shadow in the X and Y direction, respectively. The shadow will be moved by this amount.
+  _shadow-offset-x_, _shadow-offset-y_:: The offset of the shadow in the X and Y direction, respectively. The shadow will be moved by this amount. This offset applies *after* the window and the shadow has been scaled.
 
   _opacity_:: The opacity of the window. This is a number between 0 and 1.
 
@@ -707,7 +732,9 @@ Currently, these output variables are supported: :::
 
   _shadow-opacity_:: The opacity of the shadow. This is a number between 0 and 1.
 
-  _scale-x_, _scale-y_, _shadow-scale-x_, _shadow-scale-y_:: The scaling factor of the window and shadow in the X and Y direction, respectively. 1.0 means no scaling. The window body and the shadow are scaled independently.
+  _shadow-red_, _shadow-green_, _shadow-blue_:: Color of the shadow. Each component is specified separately, each number is between 0 and 1.
+
+  _scale-x_, _scale-y_, _shadow-scale-x_, _shadow-scale-y_:: The scaling factor of the window and shadow in the X and Y direction, respectively. 1.0 means no scaling. The window body and the shadow are scaled independently. When they are scaled, the scale origin will be the top-left corner of the window, for *both* of them.
 
   _crop-x_, _crop-y_, _crop-width_, _crop-height_:: These four values combined defines a rectangle on the screen. The window and its shadow will be cropped to this rectangle. If not defined, the window and shadow will not be cropped.
 
@@ -740,6 +767,10 @@ Currently, these context variables are defined: :::
   _window-monitor-x_, _window-monitor-y_, _window-monitor-width_, _window-monitor-height_:: Defines the rectangle which reflects the monitor the window is on. If the window is not fully contained in any monitor, the rectangle will reflect the entire virtual screen.
 
   _window-raw-opacity-before_, _window-raw-opacity_:: Animation triggers are usually accompanied by a change in the window's opacity. For example, when a window is opened, its opacity changes from 0 to 1. These two variables reflect the opacity of the window for the previous and current frame. They are useful if you want to smoothly transition the window's opacity.
+
+  _window-blur-opacity-before_, _window-blur-opacity_:: The blur opacity of the window for the previous and current frame.
+
+  _window-shadow-red_, _window-shadow-green_, _window-shadow-blue_, _window-shadow-red-before_, _window-shadow-green-before_, _window-shadow-blue-before_:: Color of the shadow before and after the shadow color change. (See notes below about _window-*-before_ variables.
 
 IMPORTANT: All of the _window-*-before_ variables are updated every frame, and reflects the state of the window in the previous frame. Which means they will only be meaningful for a single frame, when an animation has just been triggered. Which means you should only use them to define the _start_, _end_, _duration_, or _delay_ values of a timing function, since these values are only evaluated once when the animation starts.
 --

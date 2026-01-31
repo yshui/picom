@@ -36,8 +36,8 @@ struct layer {
 	float opacity;
 	/// Opacity of the background blur of this window
 	float blur_opacity;
-	/// Opacity of this window's shadow
-	float shadow_opacity;
+	/// Color of this window's shadow, alpha is shadow opacity
+	struct color shadow_color;
 	/// How much the image of this window should be blended with the saved image
 	float saved_image_blend;
 	/// Crop the content of this layer to this box, in screen coordinates.

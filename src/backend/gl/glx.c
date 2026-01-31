@@ -179,10 +179,9 @@ static void glx_release_image(backend_t *base, struct gl_texture *tex) {
 void glx_deinit(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
 
-	gl_deinit(&gd->gl);
-
 	// Destroy GLX context
 	if (gd->ctx) {
+		gl_deinit(&gd->gl);
 		glXMakeCurrent(base->c->dpy, None, NULL);
 		glXDestroyContext(base->c->dpy, gd->ctx);
 		gd->ctx = 0;
@@ -197,19 +196,15 @@ void glx_deinit(backend_t *base) {
 	free(gd);
 }
 
-static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	return NULL;
-}
-
 static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
 	bool vsync_enabled = false;
-	if (glxext.has_GLX_MESA_swap_control) {
+	if (glxext.has_MESA_swap_control) {
 		vsync_enabled = (glXSwapIntervalMESA((uint)interval) == 0);
 	}
-	if (!vsync_enabled && glxext.has_GLX_SGI_swap_control) {
+	if (!vsync_enabled && glxext.has_SGI_swap_control) {
 		vsync_enabled = (glXSwapIntervalSGI(interval) == 0);
 	}
-	if (!vsync_enabled && glxext.has_GLX_EXT_swap_control) {
+	if (!vsync_enabled && glxext.has_EXT_swap_control) {
 		// glXSwapIntervalEXT doesn't return if it's successful
 		glXSwapIntervalEXT(dpy, drawable, interval);
 		vsync_enabled = true;
@@ -264,12 +259,12 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 		goto end;
 	}
 
-	if (!glxext.has_GLX_EXT_texture_from_pixmap) {
+	if (!glxext.has_EXT_texture_from_pixmap) {
 		log_error("GLX_EXT_texture_from_pixmap is not supported by your driver");
 		goto end;
 	}
 
-	if (!glxext.has_GLX_ARB_create_context) {
+	if (!glxext.has_ARB_create_context) {
 		log_error("GLX_ARB_create_context is not supported by your driver");
 		goto end;
 	}
@@ -295,13 +290,13 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 		                          0,
 		                          0,
 		                          0};
-		if (glxext.has_GLX_ARB_create_context_robustness) {
+		if (glxext.has_ARB_create_context_robustness) {
 			attributes[6] = GLX_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB;
 			attributes[7] = GLX_LOSE_CONTEXT_ON_RESET_ARB;
 		}
 
 		gd->ctx = glXCreateContextAttribsARB(ps->c.dpy, cfg[i], 0, true, attributes);
-		free(cfg);
+		free((void *)cfg);
 
 		if (!gd->ctx) {
 			log_error("Failed to get GLX context.");
@@ -328,7 +323,6 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 		goto end;
 	}
 
-	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
 	gd->gl.release_user_data = glx_release_image;
 
 	if (ps->o.vsync) {
@@ -441,10 +435,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	gl_check_err();
 	return (image_handle)inner;
 err:
-	if (glxpixmap && *glxpixmap) {
-		glXDestroyPixmap(base->c->dpy, *glxpixmap);
-	}
 	free(glxpixmap);
+	free(inner);
 	return NULL;
 }
 
@@ -456,7 +448,7 @@ static bool glx_present(backend_t *base) {
 }
 
 static int glx_buffer_age(backend_t *base) {
-	if (!glxext.has_GLX_EXT_buffer_age) {
+	if (!glxext.has_EXT_buffer_age) {
 		return -1;
 	}
 
@@ -486,7 +478,7 @@ static void glx_diagnostics(backend_t *base) {
 	}
 
 #ifdef GLX_MESA_query_renderer
-	if (glxext.has_GLX_MESA_query_renderer) {
+	if (glxext.has_MESA_query_renderer) {
 		unsigned int accelerated = 0;
 		glXQueryCurrentRendererIntegerMESA(GLX_RENDERER_ACCELERATED_MESA, &accelerated);
 		printf("* Accelerated: %d\n", accelerated);
@@ -557,23 +549,15 @@ void glxext_init(Display *dpy, int screen) {
 		return;
 	}
 	glxext.initialized = true;
-#define check_ext(name)                                                                  \
-	glxext.has_##name = epoxy_has_glx_extension(dpy, screen, #name);                 \
-	log_info("Extension " #name " - %s", glxext.has_##name ? "present" : "absent")
+#define X(name)                                                                          \
+	glxext.has_##name = epoxy_has_glx_extension(dpy, screen, "GLX_" #name);          \
+	log_info("GLX extension " #name " - %s", glxext.has_##name ? "present" : "absent");
 
-	check_ext(GLX_SGI_video_sync);
-	check_ext(GLX_SGI_swap_control);
-	check_ext(GLX_OML_sync_control);
-	check_ext(GLX_MESA_swap_control);
-	check_ext(GLX_EXT_swap_control);
-	check_ext(GLX_EXT_texture_from_pixmap);
-	check_ext(GLX_ARB_create_context);
-	check_ext(GLX_EXT_buffer_age);
-	check_ext(GLX_ARB_create_context_robustness);
+	GLX_EXTS;
 #ifdef GLX_MESA_query_renderer
-	check_ext(GLX_MESA_query_renderer);
+	X(MESA_query_renderer);
 #endif
-#undef check_ext
+#undef X
 }
 
 BACKEND_ENTRYPOINT(glx_register) {

@@ -93,7 +93,7 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 			if (!pixman_region32_not_empty(cmd->blit.target_mask)) {
 				continue;
 			}
-			if (cmd->blit.opacity < 1. / MAX_ALPHA) {
+			if (cmd->blit.tint.alpha < 1. / MAX_ALPHA) {
 				continue;
 			}
 			succeeded =
@@ -126,7 +126,8 @@ static inline const char *render_command_source_name(enum backend_command_source
 	case BACKEND_COMMAND_SOURCE_WINDOW: return "window";
 	case BACKEND_COMMAND_SOURCE_WINDOW_SAVED: return "window_saved";
 	case BACKEND_COMMAND_SOURCE_SHADOW: return "shadow";
-	case BACKEND_COMMAND_SOURCE_BACKGROUND: return "background";
+	case BACKEND_COMMAND_SOURCE_IMAGE: return "image";
+	case BACKEND_COMMAND_SOURCE_CLEAR: return "clear";
 	}
 	unreachable();
 }

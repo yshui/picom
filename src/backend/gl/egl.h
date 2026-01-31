@@ -7,12 +7,20 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
+#define EGL_EXTS                                                                         \
+	X(EXT_buffer_age)                                                                \
+	X(EXT_create_context_robustness)                                                 \
+	X(KHR_image_pixmap)
+
 struct eglext_info {
 	bool initialized;
-	bool has_EGL_MESA_query_driver;
-	bool has_EGL_EXT_buffer_age;
-	bool has_EGL_EXT_create_context_robustness;
-	bool has_EGL_KHR_image_pixmap;
+
+#ifdef EGL_MESA_query_driver
+	bool has_MESA_query_driver;
+#endif
+#define X(x) bool has_##x;
+	EGL_EXTS
+#undef X
 };
 
 extern struct eglext_info eglext;

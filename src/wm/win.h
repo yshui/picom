@@ -80,7 +80,9 @@ struct win_geometry {
 struct win_state_change {
 	winstate_t state;
 	double opacity;
+	double blur_opacity;
 	struct win_geometry g;
+	struct color shadow_color;
 };
 
 struct win {
@@ -95,7 +97,10 @@ struct win {
 	/// How much to scale the saved_win_image, so that it is the same size as the
 	/// current window image.
 	vec2 saved_win_image_scale;
-	image_handle shadow_image;
+	/// A mask image for the shadow. This is usually a blurred `mask_image`, though
+	/// for some backends this can be generated on the CPU.
+	image_handle shadow_mask;
+	/// A mask image for the shape of the window.
 	image_handle mask_image;
 
 	// Core members
@@ -230,30 +235,42 @@ struct win_script_context {
 	double x, y, width, height;
 	double x_before, y_before, width_before, height_before;
 	double opacity_before, opacity;
+	double blur_opacity_before, blur_opacity;
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
+	struct color shadow_color, shadow_color_before;
 };
 // NOLINTNEXTLINE(bugprone-sizeof-expression)
 static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
               "win_script_context too large");
 
+#define X(name) offsetof(struct win_script_context, name)
 static const struct script_context_info win_script_context_info[] = {
-    {"window-x", offsetof(struct win_script_context, x)},
-    {"window-y", offsetof(struct win_script_context, y)},
-    {"window-width", offsetof(struct win_script_context, width)},
-    {"window-height", offsetof(struct win_script_context, height)},
-    {"window-x-before", offsetof(struct win_script_context, x_before)},
-    {"window-y-before", offsetof(struct win_script_context, y_before)},
-    {"window-width-before", offsetof(struct win_script_context, width_before)},
-    {"window-height-before", offsetof(struct win_script_context, height_before)},
-    {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
-    {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
-    {"window-monitor-x", offsetof(struct win_script_context, monitor_x)},
-    {"window-monitor-y", offsetof(struct win_script_context, monitor_y)},
-    {"window-monitor-width", offsetof(struct win_script_context, monitor_width)},
-    {"window-monitor-height", offsetof(struct win_script_context, monitor_height)},
+    {"window-x", X(x)},
+    {"window-y", X(y)},
+    {"window-width", X(width)},
+    {"window-height", X(height)},
+    {"window-x-before", X(x_before)},
+    {"window-y-before", X(y_before)},
+    {"window-width-before", X(width_before)},
+    {"window-height-before", X(height_before)},
+    {"window-raw-opacity-before", X(opacity_before)},
+    {"window-raw-opacity", X(opacity)},
+    {"window-blur-opacity-before", X(blur_opacity_before)},
+    {"window-blur-opacity", X(blur_opacity)},
+    {"window-monitor-x", X(monitor_x)},
+    {"window-monitor-y", X(monitor_y)},
+    {"window-monitor-width", X(monitor_width)},
+    {"window-monitor-height", X(monitor_height)},
+    {"window-shadow-red", X(shadow_color.red)},
+    {"window-shadow-green", X(shadow_color.green)},
+    {"window-shadow-blue", X(shadow_color.blue)},
+    {"window-shadow-red-before", X(shadow_color_before.red)},
+    {"window-shadow-green-before", X(shadow_color_before.green)},
+    {"window-shadow-blue-before", X(shadow_color_before.blue)},
     {NULL, 0}        //
 };
+#undef X
 
 static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_OFFSET_X] = {"offset-x"},
@@ -272,6 +289,9 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_CROP_WIDTH] = {"crop-width"},
     [WIN_SCRIPT_CROP_HEIGHT] = {"crop-height"},
     [WIN_SCRIPT_SAVED_IMAGE_BLEND] = {"saved-image-blend"},
+    [WIN_SCRIPT_SHADOW_RED] = {"shadow-red"},
+    [WIN_SCRIPT_SHADOW_GREEN] = {"shadow-green"},
+    [WIN_SCRIPT_SHADOW_BLUE] = {"shadow-blue"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
@@ -284,6 +304,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
     .paint = TRI_UNKNOWN,
     .dim = NAN,
     .opacity = NAN,
+    .blur_opacity = NAN,
     .shader = NULL,
     .corner_radius = -1,
     .unredir = WINDOW_UNREDIR_INVALID,
@@ -296,10 +317,15 @@ static inline void win_script_fold(const struct win_script *upper,
 	}
 }
 
+/// Return `a` if it's not NaN, otherwise return `def`.
+static inline double __attribute__((always_inline, const)) number_or_d(double a, double def) {
+	return safe_isnan(a) ? def : a;
+}
+
 /// Combine two window options. The `upper` value has higher priority, the `lower` value
 /// will only be used if the corresponding value in `upper` is not set (e.g. it is
 /// TRI_UNKNOWN for tristate values, NaN for opacity, -1 for corner_radius).
-static inline struct window_maybe_options __attribute__((always_inline))
+static inline struct window_maybe_options __attribute__((always_inline, const))
 win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_options lower) {
 	struct window_maybe_options ret = {
 	    .unredir = upper.unredir == WINDOW_UNREDIR_INVALID ? lower.unredir : upper.unredir,
@@ -312,10 +338,13 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .paint = tri_or(upper.paint, lower.paint),
 	    .transparent_clipping =
 	        tri_or(upper.transparent_clipping, lower.transparent_clipping),
-	    .opacity = !safe_isnan(upper.opacity) ? upper.opacity : lower.opacity,
-	    .dim = !safe_isnan(upper.dim) ? upper.dim : lower.dim,
+	    .opacity = number_or_d(upper.opacity, lower.opacity),
+	    .blur_opacity = number_or_d(upper.blur_opacity, lower.blur_opacity),
+	    .dim = number_or_d(upper.dim, lower.dim),
 	    .shader = upper.shader ? upper.shader : lower.shader,
 	    .corner_radius = upper.corner_radius >= 0 ? upper.corner_radius : lower.corner_radius,
+	    .is_shadow_color_set = upper.is_shadow_color_set || lower.is_shadow_color_set,
+	    .shadow_color = upper.is_shadow_color_set ? upper.shadow_color : lower.shadow_color,
 	};
 	win_script_fold(upper.animations, lower.animations, ret.animations);
 	return ret;
@@ -323,7 +352,7 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 
 /// Unwrap a `window_maybe_options` to a `window_options`, using the default value for
 /// values that are not set in the `window_maybe_options`.
-static inline struct window_options __attribute__((always_inline))
+static inline struct window_options __attribute__((always_inline, const))
 win_maybe_options_or(struct window_maybe_options maybe, struct window_options def) {
 	assert(def.unredir != WINDOW_UNREDIR_INVALID);
 	struct window_options ret = {
@@ -339,15 +368,17 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .paint = tri_or_bool(maybe.paint, def.paint),
 	    .transparent_clipping =
 	        tri_or_bool(maybe.transparent_clipping, def.transparent_clipping),
-	    .opacity = !safe_isnan(maybe.opacity) ? maybe.opacity : def.opacity,
-	    .dim = !safe_isnan(maybe.dim) ? maybe.dim : def.dim,
+	    .opacity = number_or_d(maybe.opacity, def.opacity),
+	    .blur_opacity = number_or_d(maybe.blur_opacity, def.blur_opacity),
+	    .dim = number_or_d(maybe.dim, def.dim),
 	    .shader = maybe.shader ? maybe.shader : def.shader,
+	    .shadow_color = maybe.is_shadow_color_set ? maybe.shadow_color : def.shadow_color,
 	};
 	win_script_fold(maybe.animations, def.animations, ret.animations);
 	return ret;
 }
 
-static inline struct window_options __attribute__((always_inline))
+static inline struct window_options __attribute__((always_inline, const))
 win_options(const struct win *w) {
 	return win_maybe_options_or(
 	    win_maybe_options_fold(w->options_override, w->options), *w->options_default);
@@ -417,13 +448,6 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w);
  */
 void win_extents(const struct win *w, region_t *res);
 region_t win_extents_by_val(const struct win *w);
-/**
- * Get a rectangular region a window occupies, excluding frame and shadow.
- *
- * Return region in global coordinates.
- */
-void win_get_region_noframe_local(const struct win *w, region_t *);
-void win_get_region_noframe_local_without_corners(const struct win *w, region_t *);
 
 /// Get the region for the frame of the window
 void win_get_region_frame_local(const struct win *w, region_t *res);
@@ -533,25 +557,33 @@ static inline attr_unused void win_set_property_stale(struct win *w, xcb_atom_t 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct win *w);
 
-/// Remove the corners of window `w` from region `res`. `origin` is the top-left corner of
-/// `w` in `res`'s coordinate system.
-static inline void
-win_region_remove_corners(const struct win *w, ivec2 origin, region_t *res) {
-	static const int corner_index[][2] = {
+/// Remove the corners of a scaled, rounded rectangle from region `res`. `origin` is the
+/// top-left corner of the rectangle in `res`'s coordinate system. `size` is the size of
+/// the rectangle, `scale` is the scaling factor. `corner_radius` is the _unscaled_ radius
+/// of the rounded corners. The top-left corner of the rectangle is the scaling origin.
+static inline void win_remove_region_corners(ivec2 size, vec2 scale, int corner_radius,
+                                             ivec2 origin, region_t *res) {
+	static const struct {
+		int x, y;
+	} corner_index[] = {
 	    {0, 0},
 	    {0, 1},
 	    {1, 0},
 	    {1, 1},
 	};
-	int corner_radius = (int)win_options(w).corner_radius;
 	rect_t rectangles[4];
 	for (size_t i = 0; i < ARR_SIZE(corner_index); i++) {
+		double x1 = origin.x +
+		            corner_index[i].x * (size.width - corner_radius) * scale.x,
+		       y1 = origin.y +
+		            corner_index[i].y * (size.height - corner_radius) * scale.y,
+		       x2 = x1 + corner_radius * scale.x, y2 = y1 + corner_radius * scale.y;
 		rectangles[i] = (rect_t){
-		    .x1 = origin.x + corner_index[i][0] * (w->widthb - corner_radius),
-		    .y1 = origin.y + corner_index[i][1] * (w->heightb - corner_radius),
+		    .x1 = (int32_t)floor(x1),
+		    .y1 = (int32_t)floor(y1),
+		    .x2 = (int32_t)ceil(x2),
+		    .y2 = (int32_t)ceil(y2),
 		};
-		rectangles[i].x2 = rectangles[i].x1 + corner_radius;
-		rectangles[i].y2 = rectangles[i].y1 + corner_radius;
 	}
 	region_t corners;
 	pixman_region32_init_rects(&corners, rectangles, 4);
@@ -559,24 +591,10 @@ win_region_remove_corners(const struct win *w, ivec2 origin, region_t *res) {
 	pixman_region32_fini(&corners);
 }
 
-/// Like `win_region_remove_corners`, but `origin` is (0, 0).
-static inline void win_region_remove_corners_local(const struct win *w, region_t *res) {
-	win_region_remove_corners(w, (ivec2){0, 0}, res);
-}
-
 static inline region_t attr_unused win_get_bounding_shape_global_by_val(struct win *w) {
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
-	pixman_region32_translate(&ret, w->g.x, w->g.y);
-	return ret;
-}
-
-static inline region_t win_get_bounding_shape_global_without_corners_by_val(struct win *w) {
-	region_t ret;
-	pixman_region32_init(&ret);
-	pixman_region32_copy(&ret, &w->bounding_shape);
-	win_region_remove_corners_local(w, &ret);
 	pixman_region32_translate(&ret, w->g.x, w->g.y);
 	return ret;
 }

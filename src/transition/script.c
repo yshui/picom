@@ -1178,13 +1178,12 @@ void script_instance_resume_from(struct script_instance *old, struct script_inst
 	}
 }
 
-enum script_evaluation_result
-script_instance_evaluate(struct script_instance *instance, void *context) {
+enum script_evaluation_result script_instance_evaluate(struct script_instance *instance,
+                                                       void *context, bool do_branch_once) {
 	auto script = instance->script;
-	auto stack = (double *)&instance->memory[script->n_slots];
+	auto stack = &instance->memory[script->n_slots];
 	unsigned top = 0;
 	double l, r;
-	bool do_branch_once = instance->memory[script->elapsed_slot] == 0;
 	for (auto i = script->instrs;; i++) {
 		switch (i->type) {
 		case INST_IMM: stack[top++] = i->imm; break;
@@ -1303,7 +1302,7 @@ TEST_CASE(scripts_1) {
 		TEST_NOTEQUAL(c, NULL);
 
 		struct script_instance *instance = script_instance_new(script);
-		auto result = script_instance_evaluate(instance, NULL);
+		auto result = script_instance_evaluate(instance, NULL, true);
 		TEST_EQUAL(result, SCRIPT_EVAL_OK);
 		TEST_EQUAL(instance->memory[script->elapsed_slot + 1], 10.5);
 		TEST_EQUAL(instance->memory[outputs[0].slot], 10);
@@ -1314,12 +1313,12 @@ TEST_CASE(scripts_1) {
 		TEST_TRUE(!script_instance_is_finished(instance));
 
 		instance->memory[instance->script->elapsed_slot] += 5.5;
-		result = script_instance_evaluate(instance, NULL);
+		result = script_instance_evaluate(instance, NULL, false);
 		TEST_EQUAL(result, SCRIPT_EVAL_OK);
 		TEST_EQUAL(instance->memory[outputs[4].slot], 214);
 
 		instance->memory[instance->script->elapsed_slot] += 5.5;
-		result = script_instance_evaluate(instance, NULL);
+		result = script_instance_evaluate(instance, NULL, false);
 		TEST_EQUAL(result, SCRIPT_EVAL_OK);
 		TEST_EQUAL(instance->memory[outputs[0].slot], 10);
 		TEST_EQUAL(instance->memory[outputs[1].slot], 20);

@@ -36,6 +36,7 @@
 #include <xcb/xcb_aux.h>
 #include <xcb/xfixes.h>
 
+#include <picom/backend.h>
 #include <picom/types.h>
 #include <test.h>
 
@@ -548,11 +549,11 @@ static bool initialize_backend(session_t *ps) {
 		HASH_ITER2(ps->shaders, shader) {
 			assert(shader->backend_shader == NULL);
 			shader->backend_shader = ps->backend_data->ops.create_shader(
-			    ps->backend_data, shader->source);
+			    ps->backend_data, shader->spec, shader->source);
 			if (shader->backend_shader == NULL) {
 				log_warn("Failed to create shader for shader "
 				         "file %s, this shader will not be used",
-				         shader->key);
+				         shader_spec_get_path(shader->spec));
 			} else {
 				shader->attributes = 0;
 				if (ps->backend_data->ops.get_shader_attributes) {
@@ -561,7 +562,8 @@ static bool initialize_backend(session_t *ps) {
 					        ps->backend_data, shader->backend_shader);
 				}
 				log_debug("Shader %s has attributes %" PRIu64,
-				          shader->key, shader->attributes);
+				          shader_spec_get_path(shader->spec),
+				          shader->attributes);
 			}
 		}
 	}
@@ -578,12 +580,8 @@ static bool initialize_backend(session_t *ps) {
 			ps->pending_updates = true;
 		}
 	}
-	ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
-	                            (struct color){.alpha = ps->o.shadow_opacity,
-	                                           .red = ps->o.shadow_red,
-	                                           .green = ps->o.shadow_green,
-	                                           .blue = ps->o.shadow_blue},
-	                            ps->o.dithered_present);
+	ps->renderer =
+	    renderer_new(ps->backend_data, ps->o.shadow_radius, ps->o.dithered_present);
 	if (!ps->renderer) {
 		log_fatal("Failed to create renderer, aborting...");
 		goto err;
@@ -698,6 +696,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 	bool unredir_possible = false;
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
+	if (ps->root_pixmap_shader != NULL &&
+	    ps->root_pixmap_shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
+		*animation = true;
+	}
 	wm_stack_foreach_safe(ps->wm, cursor, next_cursor) {
 		__label__ skip_window;
 		auto w = wm_ref_deref(cursor);
@@ -712,7 +714,8 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		auto window_options = win_options(w);
 		struct shader_info *fg_shader = NULL;
 		if (window_options.shader != NULL) {
-			HASH_FIND_STR(ps->shaders, window_options.shader, fg_shader);
+			HASH_FIND(hh, ps->shaders, window_options.shader->data,
+			          window_options.shader->size, fg_shader);
 		}
 		if (fg_shader != NULL && fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED) {
 			*animation = true;
@@ -887,11 +890,14 @@ void root_damaged(session_t *ps) {
 			    r->depth == ps->c.screen_info->root_depth
 			        ? ps->c.screen_info->root_visual
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
-			free(r);
 
 			ps->root_image = ps->backend_data->ops.bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
 			ps->root_image_generation += 1;
+			ps->root_image_extent = (rect_t){
+			    .x1 = r->x, .x2 = r->x + r->width, .y1 = r->y, .y2 = r->y + r->height};
+			free(r);
+
 			if (!ps->root_image) {
 			err:
 				log_error("Failed to bind root back pixmap");
@@ -1713,13 +1719,13 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		    ps->layout_manager, ps->wm, ps->root_image_generation,
 		    (ivec2){.width = ps->root_width, .height = ps->root_height});
 		bool succeeded = renderer_render(
-		    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
-		    ps->command_builder, ps->backend_blur_context, render_start_us,
-		    ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
+		    ps->renderer, ps->backend_data, ps->root_image, &ps->root_image_extent,
+		    ps->layout_manager, ps->command_builder, ps->backend_blur_context,
+		    render_start_us, ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
 		    ps->o.force_win_blend, ps->o.blur_background_frame,
 		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->shaders,
-		    &after_damage_us);
+		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
+		    ps->root_pixmap_shader, ps->shaders, &after_damage_us);
 		if (!succeeded) {
 			log_fatal("Render failure");
 			abort();
@@ -1810,56 +1816,63 @@ static void config_file_change_cb(void *_ps) {
 	reset_enable(ps->loop, NULL, 0);
 }
 
-static bool load_shader_source(session_t *ps, const char *path) {
-	if (!path) {
-		// Using the default shader.
-		return false;
-	}
-
+static struct shader_info *
+load_shader_source(session_t *ps, const struct shader_specification *spec) {
+	const char *path = shader_spec_get_path(spec);
 	log_info("Loading shader source from %s", path);
 
 	struct shader_info *shader = NULL;
-	HASH_FIND_STR(ps->shaders, path, shader);
+	HASH_FIND(hh, ps->shaders, spec->data, spec->size, shader);
 	if (shader) {
-		log_debug("Shader already loaded, reusing");
-		return false;
+		log_debug("Shader already loaded, reusing.");
+		return shader;
+	}
+
+	struct shader_source *source = NULL;
+	HASH_FIND_STR(ps->shader_sources, path, source);
+	if (source) {
+		log_debug("Shader source already loaded, reusing");
+	} else {
+		FILE *f = fopen(path, "r");
+		if (!f) {
+			log_error("Failed to open custom shader file: %s", path);
+			return NULL;
+		}
+
+		struct stat statbuf;
+		if (fstat(fileno(f), &statbuf) < 0) {
+			log_error("Failed to access custom shader file: %s", path);
+			fclose(f);
+			return NULL;
+		}
+
+		auto num_bytes = (size_t)statbuf.st_size;
+		char *source_data = ccalloc(num_bytes + 1, char);
+		auto read_bytes = fread(source_data, sizeof(char), num_bytes, f);
+		auto error = ferror(f);
+		fclose(f);
+
+		if (read_bytes < num_bytes || error) {
+			// This is a difficult to hit error case, review thoroughly.
+			log_error("Failed to read custom shader at %s. (read %zu bytes, "
+			          "expected %zu bytes)",
+			          path, read_bytes, num_bytes);
+			free(source_data);
+			return NULL;
+		}
+
+		source = ccalloc(1, struct shader_source);
+		source->path = path;
+		source->source = source_data;
+		HASH_ADD_KEYPTR(hh, ps->shader_sources, source->path,
+		                strlen(source->path), source);
 	}
 
 	shader = ccalloc(1, struct shader_info);
-	shader->key = strdup(path);
-	HASH_ADD_KEYPTR(hh, ps->shaders, shader->key, strlen(shader->key), shader);
-
-	FILE *f = fopen(path, "r");
-	if (!f) {
-		log_error("Failed to open custom shader file: %s", path);
-		goto err;
-	}
-	struct stat statbuf;
-	if (fstat(fileno(f), &statbuf) < 0) {
-		log_error("Failed to access custom shader file: %s", path);
-		goto err;
-	}
-
-	auto num_bytes = (size_t)statbuf.st_size;
-	shader->source = ccalloc(num_bytes + 1, char);
-	auto read_bytes = fread(shader->source, sizeof(char), num_bytes, f);
-	if (read_bytes < num_bytes || ferror(f)) {
-		// This is a difficult to hit error case, review thoroughly.
-		log_error("Failed to read custom shader at %s. (read %zu bytes, expected "
-		          "%zu bytes)",
-		          path, read_bytes, num_bytes);
-		goto err;
-	}
-	return false;
-err:
-	HASH_DEL(ps->shaders, shader);
-	if (f) {
-		fclose(f);
-	}
-	free(shader->source);
-	free(shader->key);
-	free(shader);
-	return true;
+	shader->spec = spec;
+	shader->source = source->source;
+	HASH_ADD_KEYPTR(hh, ps->shaders, shader->spec->data, shader->spec->size, shader);
+	return shader;
 }
 
 static struct window_options win_options_from_config(const struct options *opts) {
@@ -1867,6 +1880,13 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .blur_background = opts->blur_method != BLUR_METHOD_NONE,
 	    .full_shadow = false,
 	    .shadow = opts->shadow_enable,
+	    .shadow_color =
+	        (struct color){
+	            .red = opts->shadow_red,
+	            .green = opts->shadow_green,
+	            .blue = opts->shadow_blue,
+	            .alpha = 1.0,
+	        },
 	    .corner_radius = (unsigned)opts->corner_radius,
 	    .transparent_clipping = opts->transparent_clipping,
 	    .dim = 0,
@@ -1877,6 +1897,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .clip_shadow_above = false,
 	    .unredir = WINDOW_UNREDIR_WHEN_POSSIBLE_ELSE_TERMINATE,
 	    .opacity = 1,
+	    .blur_opacity = 1,
 	};
 	memcpy(ret.animations, opts->animations, sizeof(ret.animations));
 	return ret;
@@ -1969,14 +1990,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .overlay = XCB_NONE,
 	    .reg_win = XCB_NONE,
 	    .redirected = false,
-	    .alpha_picts = NULL,
 	    .fade_time = 0L,
 	    .quit = false,
-
-	    .black_picture = XCB_NONE,
-	    .cshadow_picture = XCB_NONE,
-	    .white_picture = XCB_NONE,
-	    .shadow_context = NULL,
 
 	    .last_msc = 0,
 
@@ -2023,7 +2038,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Parse configuration file
 	if (!parse_config(&ps->o, config_file, &cfg)) {
 		config_destroy(&cfg);
-		return NULL;
+		goto err;
 	}
 
 	// Parse all of the rest command line options
@@ -2031,7 +2046,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		config_destroy(&cfg);
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
-		return NULL;
+		goto err;
 	}
 
 	if (ps->o.dump_config && cfg.root) {
@@ -2055,7 +2070,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->window_options_default = win_options_from_config(&ps->o);
 
 	if (ps->o.window_shader_fg) {
-		log_debug("Default window shader: \"%s\"", ps->o.window_shader_fg);
+		log_debug("Default window shader: \"%s\"",
+		          shader_spec_get_path(ps->o.window_shader_fg));
 	}
 
 	if (ps->o.logpath) {
@@ -2087,13 +2103,21 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Load shader source file specified in the shader rules
 	c2_condition_list_foreach(&ps->o.window_shader_fg_rules, i) {
-		if (!load_shader_source(ps, c2_condition_get_data(i))) {
+		const struct shader_specification *spec = c2_condition_get_data(i);
+		if (spec != NULL && load_shader_source(ps, spec) == NULL) {
 			log_error("Failed to load shader source file for some of the "
 			          "window shader rules");
 		}
 	}
-	if (load_shader_source(ps, ps->o.window_shader_fg)) {
+	if (ps->o.window_shader_fg != NULL &&
+	    load_shader_source(ps, ps->o.window_shader_fg) == NULL) {
 		log_error("Failed to load window shader source file");
+	}
+	if (ps->o.root_pixmap_shader != NULL) {
+		ps->root_pixmap_shader = load_shader_source(ps, ps->o.root_pixmap_shader);
+		if (ps->root_pixmap_shader == NULL) {
+			log_error("Failed to load root pixmap shader");
+		}
 	}
 
 	c2_condition_list_foreach(&ps->o.rules, i) {
@@ -2101,14 +2125,14 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		if (data->shader == NULL) {
 			continue;
 		}
-		if (load_shader_source(ps, data->shader)) {
+		if (load_shader_source(ps, data->shader) == NULL) {
 			log_error("Failed to load shader source file for window rules");
 		}
 	}
 
 	if (log_get_level_tls() <= LOG_LEVEL_DEBUG) {
 		HASH_ITER2(ps->shaders, shader) {
-			log_debug("Shader %s:", shader->key);
+			log_debug("Shader %s:", shader_spec_get_path(shader->spec));
 			log_debug("%s", shader->source);
 		}
 	}
@@ -2325,6 +2349,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 	return ps;
 err:
+	render_statistics_destroy(&ps->render_stats);
+	options_destroy(&ps->o);
 	free(ps);
 	return NULL;
 }
@@ -2382,14 +2408,16 @@ static void session_destroy(session_t *ps) {
 	render_statistics_destroy(&ps->render_stats);
 
 	// Release custom window shaders
-	free(ps->o.window_shader_fg);
 	struct shader_info *shader, *tmp;
 	HASH_ITER(hh, ps->shaders, shader, tmp) {
 		HASH_DEL(ps->shaders, shader);
 		assert(shader->backend_shader == NULL);
-		free(shader->source);
-		free(shader->key);
 		free(shader);
+	}
+	HASH_ITER2(ps->shader_sources, source) {
+		HASH_DEL(ps->shader_sources, source);
+		free((void *)source->source);
+		free(source);
 	}
 
 	// Release overlay window
@@ -2426,11 +2454,6 @@ static void session_destroy(session_t *ps) {
 	xcb_aux_sync(ps->c.c);
 	ev_io_stop(ps->loop, &ps->xiow);
 	destroy_atoms(ps->atoms);
-
-#ifdef DEBUG_XRC
-	// Report about resource leakage
-	xrc_report_xid();
-#endif
 
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
@@ -2554,7 +2577,8 @@ int PICOM_MAIN(int argc, char **argv) {
 		if (!ps_g) {
 			log_fatal("Failed to create new session.");
 			ret_code = 1;
-			break;
+			quit = true;
+			goto end;
 		}
 		if (need_fork) {
 			// Finishing up daemonization
@@ -2587,6 +2611,7 @@ int PICOM_MAIN(int argc, char **argv) {
 		session_destroy(ps_g);
 		free(ps_g);
 		ps_g = NULL;
+	end:
 		if (dpy) {
 			XCloseDisplay(dpy);
 		}

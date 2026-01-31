@@ -100,6 +100,12 @@ enum win_script_output {
 	WIN_SCRIPT_CROP_HEIGHT,
 	/// How much to blend in the saved window image
 	WIN_SCRIPT_SAVED_IMAGE_BLEND,
+	/// Color for this window's shadow
+	WIN_SCRIPT_SHADOW_RED,
+	/// Ditto
+	WIN_SCRIPT_SHADOW_GREEN,
+	/// Ditto
+	WIN_SCRIPT_SHADOW_BLUE,
 
 	NUM_OF_WIN_SCRIPT_OUTPUTS,
 };

@@ -74,46 +74,62 @@ const char interpolating_vert[] = GLSL(330,
 		texcoord = in_texcoord / texsize;
 	}
 );
-const char masking_glsl[] = GLSL(330,
-	layout(location = UNIFORM_MASK_TEX_LOC)
-	uniform sampler2D mask_tex;
-	layout(location = UNIFORM_MASK_OFFSET_LOC)
-	uniform vec2 mask_offset;
-	layout(location = UNIFORM_MASK_CORNER_RADIUS_LOC)
-	uniform float mask_corner_radius;
-	layout(location = UNIFORM_MASK_INVERTED_LOC)
-	uniform bool mask_inverted;
-	in vec2 texcoord;
-	vec2 mask_rectangle_sdf(vec2 point, vec2 half_size) {
-		vec2 d = max(abs(point) - half_size, 0.0);
-		float l = length(d);
-		// Add a small number to avoid 0/0.
-		return vec2(l, l / (max(d.x, d.y) + 1e-8));
-	}
-	float mask_factor() {
-		vec2 mask_size = textureSize(mask_tex, 0);
-		vec2 maskcoord = texcoord - mask_offset;
-		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
-		if (mask_corner_radius != 0) {
-			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
-			vec2 sdf = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
-			    inner_size / 2.0f);
-			float dist = sdf.x - mask_corner_radius + sdf.y / 2.0f;
-			if (dist > 0.0f) {
-				mask.r *= (1.0f - clamp(dist, 0.0f, sdf.y) / (sdf.y + 1e-8));
-			}
-		}
-		if (mask_inverted) {
-			mask.rgb = 1.0 - mask.rgb;
-		}
-		return mask.r;
-	}
-);
+
+#define MASKING_SHADER_TEMPLATE GLSL(330,                                                    \
+	layout(location = UNIFORM_MASK_TEX_LOC)                                              \
+	uniform sampler2D mask_tex;                                                          \
+	layout(location = UNIFORM_MASK_OFFSET_LOC)                                           \
+	uniform vec2 mask_offset;                                                            \
+	layout(location = UNIFORM_MASK_CORNER_RADIUS_LOC)                                    \
+	uniform float mask_corner_radius;                                                    \
+	layout(location = UNIFORM_MASK_INVERTED_LOC)                                         \
+	uniform bool mask_inverted;                                                          \
+	X(layout(location = UNIFORM_MASK_SCALE_LOC)                                          \
+	uniform vec2 mask_scale;)                                                            \
+	in vec2 texcoord;                                                                    \
+	vec2 mask_rectangle_sdf(vec2 point, vec2 half_size) {                                \
+		vec2 d = max(abs(point) - half_size, 0.0);                                   \
+		float l = length(d);                                                         \
+		/* Add a small number to avoid 0/0. */                                       \
+		return vec2(l, l / (max(d.x, d.y) + 1e-8));                                  \
+	}                                                                                    \
+	float mask_factor() {                                                                \
+		vec2 mask_size = textureSize(mask_tex, 0);                                   \
+		vec2 maskcoord = texcoord - mask_offset;                                     \
+		X(maskcoord = maskcoord / mask_scale;)                                       \
+		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);                      \
+		if (mask_corner_radius != 0) {                                               \
+			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;       \
+			vec2 sdf = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,          \
+			    inner_size / 2.0f);                                              \
+			float dist = sdf.x - mask_corner_radius + sdf.y / 2.0f;              \
+			if (dist > 0.0f) {                                                   \
+				mask.r *= (1.0f - clamp(dist, 0.0f, sdf.y) / (sdf.y + 1e-8));\
+			}                                                                    \
+		}                                                                            \
+		if (mask_inverted) {                                                         \
+			mask.rgb = 1.0 - mask.rgb;                                           \
+		}                                                                            \
+		return mask.r;                                                               \
+	}                                                                                    \
+)
+#define X(...)
+const char masking_glsl[] = MASKING_SHADER_TEMPLATE;
+#undef X
+#define X(...) __VA_ARGS__
+const char scaled_masking_glsl[] = MASKING_SHADER_TEMPLATE;
+#undef X
 const char blit_shader_glsl[] = GLSL(330,
+	// Opacity and dim is unused by the default shader. They are here for
+	// backwards compatibility with existing shaders.
+	//
+	// Opacity is set to tint.a, dim is set to (tint.r + tint.g + tint.b) / 3.0
 	layout(location = UNIFORM_OPACITY_LOC)
 	uniform float opacity;
 	layout(location = UNIFORM_DIM_LOC)
 	uniform float dim;
+	layout(location = UNIFORM_TINT_LOC)
+	uniform vec4 tint;
 	layout(location = UNIFORM_CORNER_RADIUS_LOC)
 	uniform float corner_radius;
 	layout(location = UNIFORM_BORDER_WIDTH_LOC)
@@ -148,8 +164,8 @@ const char blit_shader_glsl[] = GLSL(330,
 			c = vec4(c.aaa - c.rgb, c.a);
 			border_color = vec4(border_color.aaa - border_color.rgb, border_color.a);
 		}
-		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
-		border_color = vec4(border_color.rgb * (1.0 - dim), border_color.a) * opacity;
+		c = c * tint;
+		border_color = border_color * tint;
 
 		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
 		// Ref: https://en.wikipedia.org/wiki/Relative_luminance

@@ -9,11 +9,12 @@
 
 #include "types.h"
 
-#define PICOM_BACKEND_MAJOR (1UL)
+#define PICOM_BACKEND_MAJOR (2UL)
 #define PICOM_BACKEND_MINOR (0UL)
 #define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
 
 typedef pixman_region32_t region_t;
+struct shader_specification;
 
 struct xvisual_info {
 	/// Bit depth of the red component
@@ -76,6 +77,10 @@ typedef struct image_handle {
 	// Intentionally left blank
 } *image_handle;
 
+typedef struct shader_handle {
+	// Intentionally left blank
+} *shader_handle;
+
 /// A mask for various backend operations.
 ///
 /// The mask is composed of both a mask region and a mask image. The resulting mask
@@ -92,7 +97,7 @@ struct backend_mask_image {
 	/// rounded.
 	double corner_radius;
 	/// Origin of the mask image, in the source image's coordinate.
-	ivec2 origin;
+	vec2 origin;
 	/// Whether the mask image should be inverted.
 	bool inverted;
 };
@@ -103,6 +108,8 @@ struct backend_blur_args {
 	/// The source mask for the blur operation, may be NULL. Only parts of the source
 	/// image covered by the mask should participate in the blur operation.
 	const struct backend_mask_image *source_mask;
+	/// The scaling factor of the source mask.
+	vec2 source_mask_scale;
 	/// Region of the target image that will be covered by the blur operation, in the
 	/// source image's coordinate.
 	const region_t *target_mask;
@@ -123,11 +130,13 @@ struct backend_blit_args {
 	/// mask should be modified. This is the target's coordinate system.
 	const region_t *target_mask;
 	/// Custom shader for this blit operation.
-	void *shader;
-	/// Opacity of the source image.
-	double opacity;
-	/// Dim level of the source image.
-	double dim;
+	shader_handle shader;
+	/// Tint. Multiply each color channel by a specific factor. i.e.
+	/// out.c = in.c * tint.c, where c = r, g, b, or a.
+	///
+	/// Note since the backends operate in pre-mult alpha mode, applying
+	/// a factor to alpha requires applying the same factor to other colors too.
+	struct color tint;
 	/// Brightness limit of the source image. Source image
 	/// will be normalized so that the maximum brightness is
 	/// this value.
@@ -320,22 +329,36 @@ struct backend_operations {
 	/// Create a shader object from a shader source.
 	///
 	/// Optional
-	void *(*create_shader)(backend_t *backend_data, const char *source)
-	    __attribute__((nonnull(1, 2)));
+	void *(*create_shader)(backend_t *backend_data, const struct shader_specification *,
+	                       const char *source) __attribute__((nonnull(1, 2, 3)));
 
 	/// Free a shader object.
 	///
 	/// Required if create_shader is present.
-	void (*destroy_shader)(backend_t *backend_data, void *shader)
+	void (*destroy_shader)(backend_t *backend_data, shader_handle shader)
 	    __attribute__((nonnull(1, 2)));
 
 	/// Create a new, uninitialized image with the given format and size.
 	///
 	/// @param backend_data backend data
-	/// @param format       the format of the image
-	/// @param size         the size of the image
+	/// @param format       format of the image
+	/// @param size         size of the image
 	image_handle (*new_image)(struct backend_base *backend_data,
 	                          enum backend_image_format format, ivec2 size)
+	    __attribute__((nonnull(1)));
+
+	/// Create a new image with the given format and size, and initialize it with
+	/// data. Optional, only used if backend has quirk: BACKEND_QUIRK_SLOW_BLUR.
+	///
+	/// @param backend_data backend data
+	/// @param format       format of the image
+	/// @param size         size of the image
+	/// @param pixels       data. for BACKEND_IMAGE_FORMAT_MASK, each byte is a pixel;
+	///                     for BACKEND_IMAGE_FORMAT_PIXMAP, it's 4 bytes/pixel, each
+	///                     pixel is given in the RGBA order.
+	image_handle (*new_image_from_pixels)(struct backend_base *backend_data,
+	                                      enum backend_image_format format, ivec2 size,
+	                                      int stride, const uint8_t *pixels)
 	    __attribute__((nonnull(1)));
 
 	/// Bind a X pixmap to the backend's internal image data structure.
@@ -384,7 +407,7 @@ struct backend_operations {
 	/// Get the attributes of a shader.
 	///
 	/// Optional, Returns a bitmask of attributes, see `shader_attributes`.
-	uint64_t (*get_shader_attributes)(backend_t *backend_data, void *shader)
+	uint64_t (*get_shader_attributes)(backend_t *backend_data, shader_handle shader)
 	    __attribute__((nonnull(1, 2)));
 
 	/// Get the age of the buffer content we are currently rendering on top

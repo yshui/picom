@@ -66,7 +66,6 @@ compton.plist
 callgrind.out.*
 man/*.html
 man/*.1
-doxygen/
 .clang_complete
 .ycm_extra_conf.py
 .ycm_extra_conf.pyc
@@ -79,3 +78,4 @@ doxygen/
 
 # Subproject files
 subprojects/libconfig
+subprojects/.wraplock

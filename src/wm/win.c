@@ -130,27 +130,6 @@ static void win_get_region_local(const struct win *w, region_t *res) {
 	pixman_region32_init_rect(res, 0, 0, (uint)w->widthb, (uint)w->heightb);
 }
 
-/**
- * Get a rectangular region a window occupies, excluding frame and shadow.
- */
-void win_get_region_noframe_local(const struct win *w, region_t *res) {
-	const margin_t extents = win_calc_frame_extents(w);
-
-	int x = extents.left;
-	int y = extents.top;
-	int width = max2(w->widthb - (extents.left + extents.right), 0);
-	int height = max2(w->heightb - (extents.top + extents.bottom), 0);
-
-	pixman_region32_fini(res);
-	if (width > 0 && height > 0) {
-		pixman_region32_init_rect(res, x, y, (uint)width, (uint)height);
-	} else {
-		pixman_region32_init(res);
-	}
-}
-
-gen_without_corners(win_get_region_noframe_local);
-
 void win_get_region_frame_local(const struct win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
 	auto outer_width = w->widthb;
@@ -180,49 +159,41 @@ void win_get_region_frame_local(const struct win *w, region_t *res) {
 
 gen_by_val(win_get_region_frame_local);
 
+static inline void release_image_and_pixmap(backend_t *base, image_handle image) {
+	xcb_pixmap_t pixmap = base->ops.release_image(base, image);
+	if (pixmap != XCB_NONE) {
+		xcb_free_pixmap(base->c->c, pixmap);
+	}
+}
+
 /// Release the images attached to this window
 static inline void win_release_pixmap(backend_t *base, struct win *w) {
 	log_debug("Releasing pixmap of window %#010x (%s)", win_id(w), w->name);
 	if (w->win_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->win_image);
+		release_image_and_pixmap(base, w->win_image);
 		w->win_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
+
 static inline void win_release_shadow(backend_t *base, struct win *w) {
 	log_debug("Releasing shadow of window %#010x (%s)", win_id(w), w->name);
-	if (w->shadow_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->shadow_image);
-		w->shadow_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
+	if (w->shadow_mask) {
+		release_image_and_pixmap(base, w->shadow_mask);
+		w->shadow_mask = NULL;
 	}
 }
 
 static inline void win_release_mask(backend_t *base, struct win *w) {
 	if (w->mask_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->mask_image);
+		release_image_and_pixmap(base, w->mask_image);
 		w->mask_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
 
 void win_release_saved_win_image(backend_t *base, struct win *w) {
 	if (w->saved_win_image) {
-		xcb_pixmap_t pixmap = XCB_NONE;
-		pixmap = base->ops.release_image(base, w->saved_win_image);
+		release_image_and_pixmap(base, w->saved_win_image);
 		w->saved_win_image = NULL;
-		if (pixmap != XCB_NONE) {
-			xcb_free_pixmap(base->c->c, pixmap);
-		}
 	}
 }
 
@@ -633,7 +604,7 @@ wid_get_prop_window_types(struct x_connection *c, struct atom *atoms, xcb_window
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
 			if (get_atom_with_nul(atoms, WINTYPES[j].atom, c->c) == prop.atom[i]) {
-				ret |= (1 << j);
+				ret |= (1U << j);
 				break;
 			}
 		}
@@ -740,6 +711,11 @@ static double win_calc_opacity_target(session_t *ps, const struct win *w, bool f
 	return opacity;
 }
 
+static inline double win_get_blur_opacity(const struct win *w) {
+	auto wopts = win_options(w);
+	return w->state == WSTATE_MAPPED ? wopts.blur_opacity : 0.0;
+}
+
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
 void unmap_win_finish(session_t *ps, struct win *w) {
@@ -750,7 +726,7 @@ void unmap_win_finish(session_t *ps, struct win *w) {
 		win_release_pixmap(ps->backend_data, w);
 	} else {
 		assert(!w->win_image);
-		assert(!w->shadow_image);
+		assert(!w->shadow_mask);
 	}
 
 	// Try again at binding images when the window is mapped next time
@@ -1176,6 +1152,7 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	win_update_name(&ps->c, ps->atoms, w);
 	win_update_class(&ps->c, ps->atoms, w);
 	win_update_role(&ps->c, ps->atoms, w);
+	c2_window_state_mark_dirty_for_client_change(ps->c2_state, &w->c2_state);
 
 	// Update everything related to conditions
 	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
@@ -1620,7 +1597,8 @@ void unmap_win_start(struct win *w) {
 	w->opacity = 0.0F;
 }
 
-struct win_script_context win_script_context_prepare(struct session *ps, struct win *w) {
+static inline struct win_script_context
+win_script_context_prepare(struct session *ps, struct win *w) {
 	auto monitor_index = win_find_monitor(&ps->monitors, w);
 	auto monitor =
 	    monitor_index >= 0
@@ -1638,10 +1616,14 @@ struct win_script_context win_script_context_prepare(struct session *ps, struct 
 	    .width_before = w->previous.g.width + w->previous.g.border_width * 2,
 	    .height_before = w->previous.g.height + w->previous.g.border_width * 2,
 	    .opacity_before = w->previous.opacity,
+	    .blur_opacity = win_get_blur_opacity(w),
+	    .blur_opacity_before = w->previous.blur_opacity,
 	    .monitor_x = monitor.x1,
 	    .monitor_y = monitor.y1,
 	    .monitor_width = monitor.x2 - monitor.x1,
 	    .monitor_height = monitor.y2 - monitor.y1,
+	    .shadow_color_before = w->previous.shadow_color,
+	    .shadow_color = w->options.shadow_color,
 	};
 	return ret;
 }
@@ -1651,8 +1633,10 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 		return w->running_animation_instance
 		    ->memory[w->running_animation.output_indices[output]];
 	}
+
+	auto wopts = win_options(w);
 	switch (output) {
-	case WIN_SCRIPT_BLUR_OPACITY: return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
+	case WIN_SCRIPT_BLUR_OPACITY: return win_get_blur_opacity(w);
 	case WIN_SCRIPT_OPACITY:
 	case WIN_SCRIPT_SHADOW_OPACITY: return w->opacity;
 	case WIN_SCRIPT_CROP_X:
@@ -1668,6 +1652,9 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 	case WIN_SCRIPT_CROP_WIDTH:
 	case WIN_SCRIPT_CROP_HEIGHT: return INFINITY;
 	case WIN_SCRIPT_SAVED_IMAGE_BLEND: return 0;
+	case WIN_SCRIPT_SHADOW_RED: return wopts.shadow_color.red;
+	case WIN_SCRIPT_SHADOW_GREEN: return wopts.shadow_color.green;
+	case WIN_SCRIPT_SHADOW_BLUE: return wopts.shadow_color.blue;
 	default: unreachable();
 	}
 	unreachable();
@@ -1690,8 +1677,8 @@ static bool win_advance_animation(struct win *w, double delta_t,
 		auto elapsed_slot =
 		    script_elapsed_slot(w->running_animation_instance->script);
 		w->running_animation_instance->memory[elapsed_slot] += delta_t;
-		auto result =
-		    script_instance_evaluate(w->running_animation_instance, (void *)win_ctx);
+		auto result = script_instance_evaluate(w->running_animation_instance,
+		                                       (void *)win_ctx, false);
 		if (result != SCRIPT_EVAL_OK) {
 			log_error("Failed to run animation script: %d", result);
 			return true;
@@ -1724,6 +1711,8 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	w->previous.state = w->state;
 	w->previous.opacity = w->opacity;
 	w->previous.g = w->g;
+	w->previous.shadow_color = w->options.shadow_color;
+	w->previous.blur_opacity = win_get_blur_opacity(w);
 
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
@@ -1744,7 +1733,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	enum animation_trigger trigger = ANIMATION_TRIGGER_INVALID;
 
 	// Animation trigger priority:
-	//   state > position > size > opacity
+	//   state > position > size > opacity > color
 	if (old_state != w->state) {
 		// Send D-Bus signal
 		if (ps->o.dbus) {
@@ -1800,6 +1789,13 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		trigger = win_ctx.opacity > win_ctx.opacity_before
 		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
 		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
+	} else if (win_ctx.blur_opacity_before != win_ctx.blur_opacity) {
+		trigger = win_ctx.blur_opacity > win_ctx.blur_opacity_before
+		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
+		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
+	} else if (!color_eq(win_ctx.shadow_color_before, win_ctx.shadow_color)) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = ANIMATION_TRIGGER_COLOR;
 	}
 
 	if (trigger == ANIMATION_TRIGGER_INVALID) {
@@ -1925,7 +1921,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	}
 	w->running_animation_instance = new_animation;
 	w->running_animation = wopts.animations[trigger];
-	script_instance_evaluate(w->running_animation_instance, &win_ctx);
+	script_instance_evaluate(w->running_animation_instance, &win_ctx, true);
 	return script_instance_is_finished(w->running_animation_instance);
 }
 

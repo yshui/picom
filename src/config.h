@@ -24,6 +24,7 @@
 #include "log.h"
 #include "utils/kernel.h"
 #include "utils/list.h"
+#include "utils/misc.h"
 #include "wm/defs.h"
 
 typedef struct session session_t;
@@ -77,6 +78,9 @@ enum animation_trigger {
 	ANIMATION_TRIGGER_SIZE,
 	/// When a window's position changes
 	ANIMATION_TRIGGER_POSITION,
+	/// When one of a window's color properties changes,
+	/// This includes: shadow-color
+	ANIMATION_TRIGGER_COLOR,
 
 	ANIMATION_TRIGGER_INVALID,
 	ANIMATION_TRIGGER_COUNT = ANIMATION_TRIGGER_INVALID,
@@ -96,8 +100,59 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_CLOSE] = "close",
     [ANIMATION_TRIGGER_SIZE] = "size",
     [ANIMATION_TRIGGER_POSITION] = "position",
+    [ANIMATION_TRIGGER_COLOR] = "color",
     [ANIMATION_TRIGGER_ALIAS_GEOMETRY] = "geometry",
 };
+
+struct shader_specification {
+	size_t size;
+	char data[];
+};
+
+struct shader_defines_iter {
+	const char *name;
+	const char *value;
+};
+
+static inline struct shader_specification *shader_spec_from_path(const char *path) {
+	auto len = strlen(path) + 1;
+	struct shader_specification *ret =
+	    calloc(1, offsetof(struct shader_specification, data[len]));
+	BUG_ON(ret == NULL);
+	ret->size = len;
+	strcpy(ret->data, path);
+	return ret;
+}
+
+static inline const char *shader_spec_get_path(const struct shader_specification *spec) {
+	return spec->data;
+}
+
+static inline bool shader_spec_get_defines(const struct shader_specification *spec,
+                                           struct shader_defines_iter *iter) {
+	const char *end = &spec->data[spec->size];
+	const char *first = spec->data + strlen(spec->data) + 1;
+	if (first >= end) {
+		return false;
+	}
+	iter->name = first;
+	iter->value = first + strlen(first) + 1;
+	assert(iter->value < end);
+	return true;
+}
+
+static inline bool shader_spec_defines_iter_next(const struct shader_specification *spec,
+                                                 struct shader_defines_iter *iter) {
+	const char *end = &spec->data[spec->size];
+	const char *next = iter->value + strlen(iter->value) + 1;
+	if (next >= end) {
+		return false;
+	}
+	iter->name = next;
+	iter->value = next + strlen(next) + 1;
+	assert(iter->value < end);
+	return true;
+}
 
 struct script;
 struct win_script {
@@ -163,18 +218,27 @@ enum window_unredir_option {
 	WINDOW_UNREDIR_INVALID,
 };
 
+struct shader_specification;
+
 struct window_maybe_options {
-	/// Radius of rounded window corners, -1 means not set.
-	int corner_radius;
+	/// Shadow color
+	struct color shadow_color;
 
 	/// Window opacity, NaN means not set.
 	double opacity;
+
+	/// Opacity of the blurred background, NaN means not set, ignored if
+	/// blur_background is disabled.
+	double blur_opacity;
 
 	/// Window dim level, NaN means not set.
 	double dim;
 
 	/// The name of the custom fragment shader for this window. NULL means not set.
-	const char *shader;
+	const struct shader_specification *shader;
+
+	/// Radius of rounded window corners, -1 means not set.
+	int corner_radius;
 
 	/// Whether transparent clipping is excluded by the rules.
 	enum tristate transparent_clipping;
@@ -194,6 +258,8 @@ struct window_maybe_options {
 	enum window_unredir_option unredir;
 	/// Whether shadow should be rendered beneath this window.
 	enum tristate full_shadow;
+	/// Whether shadow color is set
+	bool is_shadow_color_set;
 
 	/// Window specific animations
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
@@ -201,9 +267,11 @@ struct window_maybe_options {
 
 /// Like `window_maybe_options`, but all fields are guaranteed to be set.
 struct window_options {
+	struct color shadow_color;
 	double opacity;
+	double blur_opacity;
 	double dim;
-	const char *shader;
+	const struct shader_specification *shader;
 	unsigned int corner_radius;
 	enum window_unredir_option unredir;
 	bool transparent_clipping;
@@ -377,8 +445,10 @@ typedef struct options {
 	struct conv **blur_kerns;
 	/// Number of convolution kernels
 	int blur_kernel_count;
+	/// Custom fragment shader for painting the root window pixmap
+	struct shader_specification *root_pixmap_shader;
 	/// Custom fragment shader for painting windows
-	char *window_shader_fg;
+	struct shader_specification *window_shader_fg;
 	/// Rules to change custom fragment shader for painting windows.
 	struct list_node window_shader_fg_rules;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.

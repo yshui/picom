@@ -11,6 +11,8 @@ struct layout;
 struct x_monitors;
 struct win_option;
 struct shader_info;
+typedef struct image_handle *image_handle;
+typedef struct pixman_box32 rect_t;
 
 struct command_builder *command_builder_new(void);
 void command_builder_free(struct command_builder *);
@@ -27,4 +29,6 @@ void command_builder_command_list_free(struct backend_command *cmds);
 void command_builder_build(struct command_builder *cb, struct layout *layout,
                            bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                            double max_brightness, const struct x_monitors *monitors,
+                           image_handle root_image, const rect_t *root_image_extent,
+                           const struct shader_info *root_pixmap_shader,
                            const struct shader_info *shaders);

@@ -66,6 +66,7 @@ jobs:
 
             printf "\n::: test config file parsing :::\n"
             xvfb-run -a -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
+            xvfb-run -a -s "-screen 0 640x480x24" build/src/picom --config tests/configs/rules_test.conf --no-vsync --diagnostics
 
             printf "\n::: test config file parsing in a different locale :::\n"
             LC_NUMERIC=de_DE.UTF-8 xvfb-run -a -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics

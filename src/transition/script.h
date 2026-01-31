@@ -51,8 +51,10 @@ typedef struct config_setting_t config_setting_t;
 struct script *
 script_compile(config_setting_t *setting, struct script_parse_config cfg, char **out_err);
 void script_free(struct script *script);
-enum script_evaluation_result
-script_instance_evaluate(struct script_instance *instance, void *context);
+/// Evaluate a script instance with context. `do_branch_once` indicates whether
+/// `BRANCH_ONCE` instructions should branch.
+enum script_evaluation_result script_instance_evaluate(struct script_instance *instance,
+                                                       void *context, bool do_branch_once);
 /// Resume the script instance from another script instance that's currently running.
 /// The script doesn't have to be the same. For resumable (explained later) transitions,
 /// if matching variables exist in the `old` script, their starting point will be

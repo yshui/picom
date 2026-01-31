@@ -12,5 +12,7 @@ jobs:
       with:
         nix_path: nixpkgs=channel:nixpkgs-unstable
     - uses: DeterminateSystems/magic-nix-cache-action@main
+      with:
+        diff-store: true
     - run: nix build '.#picom-cross.merged' -L
 

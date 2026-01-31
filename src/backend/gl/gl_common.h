@@ -2,11 +2,9 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <epoxy/gl.h>
+#include <picom/backend.h>
 #include <stdbool.h>
-#include <string.h>
 #include <xcb/xproto.h>
-
-#include "backend/backend.h"
 
 #include "log.h"
 #include "region.h"
@@ -38,7 +36,11 @@ struct gl_blur_context;
 #define UNIFORM_SCALE_LOC 18
 #define UNIFORM_PROJECTION_LOC 19
 #define UNIFORM_TEXSIZE_LOC 21
-#define NUMBER_OF_UNIFORMS (UNIFORM_TEXSIZE_LOC + 1)
+
+// Added in backend API 2.0
+#define UNIFORM_TINT_LOC 22
+#define UNIFORM_MASK_SCALE_LOC 23
+#define NUMBER_OF_UNIFORMS (UNIFORM_TINT_LOC + 1)
 
 struct gl_shader {
 	GLuint prog;
@@ -106,10 +108,6 @@ struct gl_data {
 
 	GLuint default_mask_texture;
 
-	/// Called when an gl_texture is decoupled from the texture it refers. Returns
-	/// the decoupled user_data
-	void *(*decouple_texture_user_data)(backend_t *base, void *user_data);
-
 	/// Release the user data attached to a gl_texture
 	void (*release_user_data)(backend_t *base, struct gl_texture *);
 
@@ -117,9 +115,6 @@ struct gl_data {
 };
 
 typedef struct session session_t;
-
-#define GL_PROG_MAIN_INIT                                                                \
-	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
 void gl_prepare(backend_t *base, const region_t *reg);
 /// Convert a mask formed by a collection of rectangles to OpenGL vertex and texture
@@ -144,9 +139,10 @@ GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *shaders, int nshaders);
 GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
 GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders);
-void *gl_create_window_shader(backend_t *backend_data, const char *source);
-void gl_destroy_window_shader(backend_t *backend_data, void *shader);
-uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
+void *gl_create_window_shader(backend_t *backend_data,
+                              const struct shader_specification *spec, const char *source);
+void gl_destroy_window_shader(backend_t *backend_data, shader_handle shader);
+uint64_t gl_get_shader_attributes(backend_t *backend_data, shader_handle shader);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 bool gl_blit(backend_t *base, ivec2 origin, image_handle target,
@@ -165,8 +161,6 @@ void gl_deinit(struct gl_data *gd);
 GLuint gl_new_texture(void);
 
 xcb_pixmap_t gl_release_image(backend_t *base, image_handle image);
-
-image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);
 
 bool gl_blur(struct backend_base *gd, ivec2 origin, image_handle target,
              const struct backend_blur_args *args);
@@ -268,6 +262,10 @@ static inline void gl_check_err_(const char *func, int line) {
 			log_printf(tls_logger, LOG_LEVEL_ERROR, func,
 			           "GL error at line %d: %d", line, err);
 		}
+		if (err == GL_CONTEXT_LOST) {
+			// GL_CONTEXT_LOST repeats until the context is restored.
+			break;
+		}
 	}
 }
 
@@ -311,6 +309,6 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define QUOTE(...) #__VA_ARGS__
 
 extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
-    copy_area_frag[], copy_area_with_dither_frag[], fill_frag[], fill_vert[],
-    interpolating_frag[], interpolating_vert[], blit_shader_glsl[], blit_shader_default[],
-    present_vertex_shader[], dither_glsl[];
+    scaled_masking_glsl[], copy_area_frag[], copy_area_with_dither_frag[], fill_frag[],
+    fill_vert[], interpolating_frag[], interpolating_vert[], blit_shader_glsl[],
+    blit_shader_default[], present_vertex_shader[], dither_glsl[];

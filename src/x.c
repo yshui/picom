@@ -7,6 +7,7 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/syncconst.h>
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
@@ -14,6 +15,7 @@
 #include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
+#include <xcb/shm.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
@@ -21,6 +23,7 @@
 #include <xcb/xcb_util.h>
 #include <xcb/xcbext.h>
 #include <xcb/xfixes.h>
+#include <xcb/xproto.h>
 
 #include "atom.h"
 #include "common.h"
@@ -41,18 +44,13 @@ static inline uint64_t x_widen_sequence(struct x_connection *c, uint32_t sequenc
 
 // === Error handling ===
 
-enum {
-	XSyncBadCounter = 0,
-	XSyncBadAlarm = 1,
-	XSyncBadFence = 2,
-};
-
 /// Convert a X11 error to string
 ///
 /// @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
 ///         for multiple calls to this function,
 static const char *x_error_code_to_string(struct x_connection *c, unsigned long serial,
                                           uint8_t major, uint16_t minor, uint8_t error_code) {
+	// NOLINTBEGIN(bugprone-switch-missing-default-case)
 	int o = 0;
 	const char *name = "Unknown";
 
@@ -67,6 +65,9 @@ static const char *x_error_code_to_string(struct x_connection *c, unsigned long 
 
 	o = error_code - c->e.damage_error;
 	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
+
+	o = error_code - c->e.shm_error;
+	switch (o) { CASESTRRET2(SHM_BAD_SEG); }
 
 	o = error_code - c->e.render_error;
 	switch (o) {
@@ -133,6 +134,7 @@ static const char *x_error_code_to_string(struct x_connection *c, unsigned long 
 	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
 	         error_code, name, major, minor, serial);
 	return buffer;
+	// NOLINTEND(bugprone-switch-missing-default-case)
 }
 
 void x_print_error_impl(struct x_connection *c, unsigned long serial, uint8_t major,
@@ -234,6 +236,7 @@ bool x_extensions_init(struct x_connection *c) {
 	xcb_prefetch_extension_data(c->c, &xcb_render_id);
 	xcb_prefetch_extension_data(c->c, &xcb_shape_id);
 	xcb_prefetch_extension_data(c->c, &xcb_sync_id);
+	xcb_prefetch_extension_data(c->c, &xcb_shm_id);
 
 	// Initialize the X Composite extension.
 	auto extension = xcb_get_extension_data(c->c, &xcb_composite_id);
@@ -296,6 +299,30 @@ bool x_extensions_init(struct x_connection *c) {
 	xcb_discard_reply(c->c, xcb_xfixes_query_version(c->c, XCB_XFIXES_MAJOR_VERSION,
 	                                                 XCB_XFIXES_MINOR_VERSION)
 	                            .sequence);
+
+	// MIT-SHM
+	extension = xcb_get_extension_data(c->c, &xcb_shm_id);
+	if (!extension || !extension->present) {
+		log_fatal("This X server is missing the MIT-SHM extension.");
+		return false;
+	}
+
+	c->e.shm_event = extension->first_event;
+	c->e.shm_error = extension->first_error;
+
+	auto shm_info = XCB_AWAIT(xcb_shm_query_version, c);
+	if (!shm_info) {
+		log_fatal("Failed to query version of the MIT-SHM.");
+		return false;
+	}
+	if (shm_info->major_version < 1 ||
+	    (shm_info->major_version == 1 && shm_info->minor_version < 2)) {
+		log_fatal("This X server's MIT-SHM extension is too old (expected at "
+		          "least 1.2, got %d.%d).",
+		          shm_info->major_version, shm_info->minor_version);
+		return false;
+	}
+	free(shm_info);
 
 	// Initialize the X GLX extension.
 	extension = xcb_get_extension_data(c->c, &xcb_glx_id);
@@ -883,10 +910,6 @@ const char *x_strerror(struct x_connection *c, const xcb_generic_error_t *e) {
 	                              e->error_code);
 }
 
-void x_flush(struct x_connection *c) {
-	xcb_flush(c->c);
-}
-
 /**
  * Create a pixmap and check that creation succeeded.
  */
@@ -939,39 +962,6 @@ xcb_pixmap_t x_get_root_back_pixmap(struct x_connection *c, struct atom *atoms) 
 bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
 	return atom == atoms->a_XROOTPMAP_ID || atom == atoms->aESETROOT_PMAP_ID ||
 	       atom == atoms->a_XSETROOT_ID;
-}
-
-/**
- * Synchronizes a X Render drawable to ensure all pending painting requests
- * are completed.
- */
-bool x_fence_sync(struct x_connection *c, xcb_sync_fence_t f) {
-	// TODO(richardgv): If everybody just follows the rules stated in X Sync
-	// prototype, we need only one fence per screen, but let's stay a bit
-	// cautious right now
-
-	auto e = xcb_request_check(c->c, xcb_sync_trigger_fence_checked(c->c, f));
-	if (e) {
-		log_error_x_error(c, e, "Failed to trigger the fence");
-		goto err;
-	}
-
-	e = xcb_request_check(c->c, xcb_sync_await_fence_checked(c->c, 1, &f));
-	if (e) {
-		log_error_x_error(c, e, "Failed to await on a fence");
-		goto err;
-	}
-
-	e = xcb_request_check(c->c, xcb_sync_reset_fence_checked(c->c, f));
-	if (e) {
-		log_error_x_error(c, e, "Failed to reset the fence");
-		goto err;
-	}
-	return true;
-
-err:
-	free(e);
-	return false;
 }
 
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {

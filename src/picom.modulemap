@@ -64,9 +64,6 @@ module common {
 module config {
   header "config.h"
 }
-module xrescheck {
-  header "xrescheck.h"
-}
 module cache {
   header "cache.h"
 }

@@ -141,6 +141,21 @@ static bool store_string(const struct picom_option * /*opt*/, const struct picom
 	return true;
 }
 
+static bool store_shader(const struct picom_option *opt, const struct picom_arg *arg,
+                         const char *arg_str, void *output) {
+	scoped_charp cwd = getcwd(NULL, 0);
+	scoped_charp full_path = locate_auxiliary_file("shaders", arg_str, cwd);
+	if (!full_path) {
+		log_error("Couldn't find shader file \"%s\" for %s", arg_str, opt->long_name);
+		return false;
+	}
+
+	auto dst = (struct shader_specification **)(output + arg->offset);
+	free(*dst);
+	*dst = shader_spec_from_path(full_path);
+	return true;
+}
+
 static bool
 store_fixed_string(const struct picom_option * /*opt*/, const struct picom_arg *arg,
                    const char * /*arg_str*/, void *output) {
@@ -265,6 +280,11 @@ static bool say_deprecated(const struct picom_option *opt, const struct picom_ar
 #define NAMED_STRING(member, name_)                                                      \
 	required_argument, {                                                             \
 		.offset = OFFSET(member), .handler = store_string, .name = (name_)       \
+	}
+
+#define SHADER(member)                                                                   \
+	required_argument, {                                                             \
+		.offset = OFFSET(member), .handler = store_shader, .name = "PATH",       \
 	}
 
 #define STRING(member) NAMED_STRING(member, NULL)
@@ -481,8 +501,9 @@ static const struct picom_option picom_options[] = {
     [331] = {"blur-strength"               , INTEGER(blur_strength, 0, INT_MAX)             , "The strength level of the 'dual_kawase' blur method."},
     [333] = {"corner-radius"               , INTEGER(corner_radius, 0, INT_MAX)             , "Sets the radius of rounded window corners. When > 0, the compositor will "
                                                                                               "round the corners of windows. (defaults to 0)."},
-    [336] = {"window-shader-fg"            , NAMED_STRING(window_shader_fg, "PATH")         , "Specify GLSL fragment shader path for rendering window contents. See man "
+    [336] = {"window-shader-fg"            , SHADER(window_shader_fg)                       , "Specify GLSL fragment shader path for rendering window contents. See man "
                                                                                               "page for more details."},
+    [342] = {"root-pixmap-shader"          , SHADER(root_pixmap_shader)                     , "Specify GLSL fragment shader path for rendering the root pixmap."},
     [294] = {"benchmark-wid"               , DO(store_benchmark_wid)                        , "Specify window ID to repaint in benchmark mode. If omitted or is 0, the whole"
                                                                                               " screen is repainted."},
     [301] = {"blur-kern"                   , DO(store_blur_kern)                            , "Specify the blur convolution kernel, see man page for more details"},
@@ -874,17 +895,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 	}
 
 	log_set_level_tls(opt->log_level);
-	if (opt->window_shader_fg) {
-		scoped_charp cwd = getcwd(NULL, 0);
-		scoped_charp tmp = opt->window_shader_fg;
-		opt->window_shader_fg = locate_auxiliary_file("shaders", tmp, cwd);
-		if (!opt->window_shader_fg) {
-			log_error("Couldn't find the specified window shader "
-			          "file \"%s\"",
-			          tmp);
-			return false;
-		}
-	}
 
 	if (!sanitize_options(opt)) {
 		return false;
@@ -947,8 +957,10 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 
 static void free_window_maybe_options(void *data) {
 	auto wopts = (struct window_maybe_options *)data;
-	free((void *)wopts->shader);
-	free(wopts);
+	if (wopts) {
+		free((void *)wopts->shader);
+		free(wopts);
+	}
 }
 
 void options_destroy(struct options *options) {
@@ -971,6 +983,8 @@ void options_destroy(struct options *options) {
 	free(options->config_file_path);
 	free(options->write_pid_path);
 	free(options->logpath);
+	free(options->window_shader_fg);
+	free(options->root_pixmap_shader);
 
 	for (int i = 0; i < options->blur_kernel_count; ++i) {
 		free(options->blur_kerns[i]);
