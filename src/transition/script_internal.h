@@ -46,6 +46,10 @@ enum instruction_type {
 	/// Unconditional branch
 	INST_BRANCH,
 	INST_HALT,
+	/// Stateful spring physics animation. Pops target and current values from
+	/// stack, uses velocity stored in a memory slot, computes spring physics,
+	/// stores updated velocity, and pushes new position to stack.
+	INST_SPRING,
 };
 
 /// Store metadata about where the result of a variable is stored
@@ -55,6 +59,18 @@ struct variable_allocation {
 	unsigned index;
 	/// The memory slot for variable named `name`
 	unsigned slot;
+};
+
+/// Parameters for spring physics animation
+struct spring_params {
+	double stiffness;
+	double dampening;
+	double mass;
+	bool clamping;
+	/// Memory slot for storing velocity state between evaluations
+	unsigned velocity_slot;
+	/// Context offset for reading delta_time
+	ptrdiff_t delta_time_ctx;
 };
 
 struct instruction {
@@ -70,6 +86,8 @@ struct instruction {
 		int rel;
 		/// The curve
 		struct curve curve;
+		/// Spring physics parameters
+		struct spring_params spring;
 	};
 };
 

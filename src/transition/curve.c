@@ -190,6 +190,92 @@ struct curve parse_cubic_bezier(const char *input_str, const char **out_end, cha
 	return curve_new_cubic_bezier(numbers[0], numbers[1], numbers[2], numbers[3]);
 }
 
+/// Parse spring curve: spring(stiffness, dampening, mass) or spring(stiffness, dampening, mass, clamping)
+/// Default clamping is true (prevents overshoot).
+struct curve parse_spring(const char *input_str, const char **out_end, char **err) {
+	const char *str = input_str;
+	*err = NULL;
+	if (*str != '(') {
+		casprintf(err, "Invalid spring %s.", str);
+		return CURVE_INVALID_INIT;
+	}
+	str += 1;
+
+	double stiffness, dampening, mass;
+	bool clamping = true;        // Default: clamp to prevent overshoot
+
+	// Parse stiffness
+	str = skip_space(str);
+	const char *end = NULL;
+	stiffness = strtod_simple(str, &end);
+	if (end == str || stiffness <= 0) {
+		casprintf(err, "Invalid spring stiffness at \"%s\". Must be positive.", str);
+		return CURVE_INVALID_INIT;
+	}
+	str = skip_space(end);
+	if (*str != ',') {
+		casprintf(err, "Invalid spring argument list \"%s\".", input_str);
+		return CURVE_INVALID_INIT;
+	}
+	str = skip_space(str + 1);
+
+	// Parse dampening
+	dampening = strtod_simple(str, &end);
+	if (end == str || dampening < 0) {
+		casprintf(err, "Invalid spring dampening at \"%s\". Must be non-negative.", str);
+		return CURVE_INVALID_INIT;
+	}
+	str = skip_space(end);
+	if (*str != ',') {
+		casprintf(err, "Invalid spring argument list \"%s\".", input_str);
+		return CURVE_INVALID_INIT;
+	}
+	str = skip_space(str + 1);
+
+	// Parse mass
+	mass = strtod_simple(str, &end);
+	if (end == str || mass <= 0) {
+		casprintf(err, "Invalid spring mass at \"%s\". Must be positive.", str);
+		return CURVE_INVALID_INIT;
+	}
+	str = skip_space(end);
+
+	// Optional: parse clamping boolean
+	if (*str == ',') {
+		str = skip_space(str + 1);
+		if (strncasecmp(str, "true", 4) == 0) {
+			clamping = true;
+			str += 4;
+		} else if (strncasecmp(str, "false", 5) == 0) {
+			clamping = false;
+			str += 5;
+		} else {
+			casprintf(err, "Invalid spring clamping value at \"%s\". "
+			               "Expected 'true' or 'false'.",
+			          str);
+			return CURVE_INVALID_INIT;
+		}
+		str = skip_space(str);
+	}
+
+	if (*str != ')') {
+		casprintf(err, "Invalid spring argument list \"%s\".", input_str);
+		return CURVE_INVALID_INIT;
+	}
+	*out_end = str + 1;
+
+	return (struct curve){
+	    .type = CURVE_SPRING,
+	    .spring =
+	        {
+	            .stiffness = stiffness,
+	            .dampening = dampening,
+	            .mass = mass,
+	            .clamping = clamping,
+	        },
+	};
+}
+
 typedef struct curve (*curve_parser)(const char *str, const char **end, char **err);
 
 static const struct {
@@ -199,6 +285,7 @@ static const struct {
     {parse_cubic_bezier, "cubic-bezier"},
     {parse_linear, "linear"},
     {parse_steps, "steps"},
+    {parse_spring, "spring"},
 };
 
 struct curve curve_parse(const char *str, const char **end, char **err) {
@@ -219,9 +306,22 @@ double curve_sample(const struct curve *curve, double progress) {
 	case CURVE_STEP: return curve_sample_step(&curve->step, progress);
 	case CURVE_CUBIC_BEZIER:
 		return curve_sample_cubic_bezier(&curve->bezier, progress);
+	case CURVE_SPRING:
+		// Spring curves are stateful and handled via INST_SPRING, not curve_sample
+		unreachable();
 	case CURVE_INVALID:
 	default: unreachable();
 	}
+}
+
+static char *curve_spring_to_c(const struct curve_spring *this) {
+	char *buf = NULL;
+	casprintf(&buf,
+	          "{.type = CURVE_SPRING, .spring = { .stiffness = %a, "
+	          ".dampening = %a, .mass = %a, .clamping = %s }},",
+	          this->stiffness, this->dampening, this->mass,
+	          this->clamping ? "true" : "false");
+	return buf;
 }
 
 char *curve_to_c(const struct curve *curve) {
@@ -229,6 +329,7 @@ char *curve_to_c(const struct curve *curve) {
 	case CURVE_LINEAR: return curve_linear_to_c(curve);
 	case CURVE_STEP: return curve_step_to_c(&curve->step);
 	case CURVE_CUBIC_BEZIER: return curve_cubic_bezier_to_c(&curve->bezier);
+	case CURVE_SPRING: return curve_spring_to_c(&curve->spring);
 	case CURVE_INVALID:
 	default: unreachable();
 	}

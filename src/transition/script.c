@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -94,6 +95,11 @@ static void log_instruction_(enum log_level level, const char *func, unsigned in
 	case INST_STORE: logv("store %u", inst->slot); break;
 	case INST_STORE_OVER_NAN: logv("store/nan %u", inst->slot); break;
 	case INST_LOAD_CTX: logv("load_ctx *(%td)", inst->ctx); break;
+	case INST_SPRING:
+		logv("spring stiffness=%f dampening=%f mass=%f clamping=%d vel_slot=%u",
+		     inst->spring.stiffness, inst->spring.dampening, inst->spring.mass,
+		     inst->spring.clamping, inst->spring.velocity_slot);
+		break;
 	}
 #undef logv
 }
@@ -130,6 +136,15 @@ char *instruction_to_c(struct instruction i) {
 		break;
 	case INST_LOAD_CTX:
 		casprintf(&buf, "{.type = INST_LOAD_CTX, .ctx = %td},", i.ctx);
+		break;
+	case INST_SPRING:
+		casprintf(&buf,
+		          "{.type = INST_SPRING, .spring = {.stiffness = %a, "
+		          ".dampening = %a, .mass = %a, .clamping = %s, "
+		          ".velocity_slot = %u, .delta_time_ctx = %td}},",
+		          i.spring.stiffness, i.spring.dampening, i.spring.mass,
+		          i.spring.clamping ? "true" : "false", i.spring.velocity_slot,
+		          i.spring.delta_time_ctx);
 		break;
 	}
 	return buf;
@@ -427,6 +442,195 @@ static void compilation_stack_cleanup(struct compilation_stack **stack_entry) {
 	*stack_entry = NULL;
 }
 
+/// Compile a spring-based transition. Springs are stateful and use INST_SPRING.
+static bool
+transition_compile_spring(struct compilation_stack **stack_entry, config_setting_t *setting,
+                          struct script_compile_context *ctx, unsigned slot,
+                          const struct curve *curve, bool reset, char **out_err) {
+	char *err = NULL;
+	const char *str = NULL;
+	double number = 0;
+
+	BUG_ON(ctx->allocated_slots > UINT_MAX - 2);
+
+	// Allocate slots for start value and velocity state
+	auto start_slot = ctx->allocated_slots;
+	auto velocity_slot = ctx->allocated_slots + 1;
+	ctx->allocated_slots += 2;
+
+	if (!reset) {
+		auto override = ccalloc(1, struct overridable_slot);
+		override->name = strdup(ctx->current_variable_name);
+		override->slot = start_slot;
+		HASH_ADD_STR(ctx->overrides, name, override);
+	}
+
+	cleanup(compilation_stack_cleanup) struct compilation_stack *start = NULL, *end = NULL;
+	if (config_setting_lookup_float(setting, "start", &number)) {
+		start = make_imm_stack_entry(ctx, number, start_slot, true);
+	} else if (!config_setting_lookup_string(setting, "start", &str)) {
+		casprintf(out_err,
+		          "Transition definition does not contain a start value or "
+		          "expression. Line %d.",
+		          config_setting_source_line(setting));
+		return false;
+	} else if (!expression_compile(&start, str, ctx, start_slot, !reset, &err)) {
+		casprintf(out_err, "transition has an invalid start expression: %s Line %d.",
+		          err, config_setting_source_line(setting));
+		free(err);
+		return false;
+	}
+
+	// Parse end value (target for spring)
+	struct instruction load_end;
+	if (config_setting_lookup_float(setting, "end", &number)) {
+		load_end = (struct instruction){
+		    .type = INST_IMM,
+		    .imm = number,
+		};
+	} else if (!config_setting_lookup_string(setting, "end", &str)) {
+		casprintf(out_err,
+		          "Transition definition does not contain a end value or "
+		          "expression. Line %d.",
+		          config_setting_source_line(setting));
+		return false;
+	} else {
+		BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
+		auto end_slot = ctx->allocated_slots++;
+		if (!expression_compile(&end, str, ctx, end_slot, false, &err)) {
+			casprintf(out_err,
+			          "Transition has an invalid end expression: %s. Line %d",
+			          err, config_setting_source_line(setting));
+			free(err);
+			return false;
+		}
+		load_end = (struct instruction){
+		    .type = INST_LOAD,
+		    .slot = end_slot,
+		};
+	}
+
+	// Look up delta-time context offset
+	struct script_context_info_internal *delta_time_ctx = NULL;
+	HASH_FIND(hh, ctx->context_info, "delta-time", 10, delta_time_ctx);
+	if (delta_time_ctx == NULL) {
+		casprintf(out_err,
+		          "Spring curves require delta-time in context, but it was not "
+		          "provided. Line %d.",
+		          config_setting_source_line(setting));
+		return false;
+	}
+
+	// clang-format off
+	// Spring instructions:
+	// Load current position (from slot), load target, apply spring, store result
+	struct instruction spring_instrs[] = {
+	    {.type = INST_LOAD, .slot = slot},         // Load current position
+	    load_end,                                   // Load target
+	    {.type = INST_SPRING, .spring = {
+	        .stiffness = curve->spring.stiffness,
+	        .dampening = curve->spring.dampening,
+	        .mass = curve->spring.mass,
+	        .clamping = curve->spring.clamping,
+	        .velocity_slot = velocity_slot,
+	        .delta_time_ctx = delta_time_ctx->info.offset,
+	    }},
+	    {.type = INST_STORE, .slot = slot},        // Store new position
+	};
+	// clang-format on
+
+	if (ctx->max_stack < 2) {
+		ctx->max_stack = 2;
+	}
+
+	struct fragment *fragment = fragment_new(ctx, ARR_SIZE(spring_instrs));
+	memcpy(fragment->instrs, spring_instrs, sizeof(spring_instrs));
+	fragment->ninstrs = ARR_SIZE(spring_instrs);
+
+	*stack_entry = calloc(
+	    1, sizeof(struct compilation_stack) + sizeof(unsigned[max2(1, start->ndeps)]));
+	allocchk(*stack_entry);
+	struct fragment **next = &(*stack_entry)->entry_point;
+
+	(*stack_entry)->ndeps = start->ndeps;
+	if (start->ndeps > 0) {
+		memcpy((*stack_entry)->deps, start->deps, sizeof(unsigned[start->ndeps]));
+
+		auto branch = fragment_new(ctx, 0);
+		*next = branch;
+		branch->once_next = start->entry_point;
+
+		auto phi = fragment_new(ctx, 0);
+		*start->exit = phi;
+		branch->next = phi;
+		next = &phi->next;
+	} else {
+		*ctx->once_tail = start->entry_point;
+		ctx->once_tail = start->exit;
+	}
+
+	// Handle end expression if it has dependencies
+	if (end != NULL && end->ndeps > 0) {
+		*ctx->once_end_tail = end->entry_point;
+		ctx->once_end_tail = end->exit;
+	} else if (end != NULL) {
+		*ctx->once_tail = end->entry_point;
+		ctx->once_tail = end->exit;
+	}
+
+	// For springs, we ALWAYS need to initialize the output slot on first evaluation.
+	// On first eval: copy start value to output slot
+	// On subsequent evals: run spring physics
+	const struct instruction init_instrs[] = {
+	    {.type = INST_LOAD, .slot = start_slot},
+	    {.type = INST_STORE, .slot = slot},
+	};
+	auto init_fragment = fragment_new(ctx, ARR_SIZE(init_instrs));
+	init_fragment->ninstrs = ARR_SIZE(init_instrs);
+	memcpy(init_fragment->instrs, init_instrs, sizeof(init_instrs));
+
+	auto branch = fragment_new(ctx, 0);
+	*next = branch;
+	branch->once_next = init_fragment;        // First eval: initialize
+	branch->next = fragment;                  // Subsequent evals: spring physics
+
+	auto phi = fragment_new(ctx, 0);
+	init_fragment->next = phi;
+	fragment->next = phi;
+	(*stack_entry)->exit = &phi->next;
+
+	// Estimate spring settling time for total duration
+	// Settling time ~= 6 * dampening / sqrt(stiffness / mass)
+	// This is an approximation for when velocity drops to near zero
+	double omega = sqrt(curve->spring.stiffness / curve->spring.mass);
+	double settling_time = (omega > 0) ? (6.0 * curve->spring.dampening / omega) : 10.0;
+	if (settling_time < 0.1) {
+		settling_time = 0.1;        // Minimum settling time
+	}
+	if (settling_time > 30.0) {
+		settling_time = 30.0;        // Cap at 30 seconds
+	}
+
+	// clang-format off
+	struct instruction total_duration_instrs[] = {
+	    {.type = INST_IMM, .imm = settling_time},
+	    {.type = INST_LOAD, .slot = ctx->elapsed_slot + 1},
+	    {.type = INST_OP, .op = OP_MAX},
+	    {.type = INST_STORE, .slot = ctx->elapsed_slot + 1},
+	};
+	// clang-format on
+
+	struct fragment *total_duration_fragment =
+	    fragment_new(ctx, ARR_SIZE(total_duration_instrs));
+	memcpy(total_duration_fragment->instrs, total_duration_instrs,
+	       sizeof(total_duration_instrs));
+	total_duration_fragment->ninstrs = ARR_SIZE(total_duration_instrs);
+	*ctx->once_end_tail = total_duration_fragment;
+	ctx->once_end_tail = &total_duration_fragment->next;
+
+	return true;
+}
+
 static bool
 transition_compile(struct compilation_stack **stack_entry, config_setting_t *setting,
                    struct script_compile_context *ctx, unsigned slot, char **out_err) {
@@ -454,6 +658,12 @@ transition_compile(struct compilation_stack **stack_entry, config_setting_t *set
 
 	if (config_setting_lookup_bool(setting, "reset", &boolean)) {
 		reset = boolean;
+	}
+
+	// Handle spring curves separately - they are stateful and use different bytecode
+	if (curve_is_spring(&curve)) {
+		return transition_compile_spring(stack_entry, setting, ctx, slot, &curve,
+		                                 reset, out_err);
 	}
 
 	BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
@@ -1226,6 +1436,48 @@ enum script_evaluation_result script_instance_evaluate(struct script_instance *i
 			l = min2(max2(0, l), 1);
 			stack[top - 1] = curve_sample(&i->curve, l);
 			break;
+		case INST_SPRING: {
+			// Spring physics: pops target and current from stack
+			// Stack: [..., current, target] -> [..., new_position]
+			BUG_ON(top < 2);
+			double target = stack[top - 1];
+			double current = stack[top - 2];
+			top -= 2;
+
+			// Get delta_time from context
+			double delta_t = *(double *)(context + i->spring.delta_time_ctx);
+
+			// Get velocity from memory (initialize to 0 if NaN)
+			double velocity = instance->memory[i->spring.velocity_slot];
+			if (safe_isnan(velocity)) {
+				velocity = 0.0;
+			}
+
+			// Spring physics calculation:
+			// acceleration = (stiffness * displacement - dampening * velocity) / mass
+			double displacement = target - current;
+			double acceleration =
+			    (i->spring.stiffness * displacement -
+			     i->spring.dampening * velocity) /
+			    i->spring.mass;
+			velocity += acceleration * delta_t;
+			double new_value = current + velocity * delta_t;
+
+			// Clamping: prevent overshoot past target
+			if (i->spring.clamping) {
+				if ((displacement > 0 && new_value > target) ||
+				    (displacement < 0 && new_value < target)) {
+					new_value = target;
+					velocity = 0.0;
+				}
+			}
+
+			// Store updated velocity
+			instance->memory[i->spring.velocity_slot] = velocity;
+			// Push new position to stack
+			stack[top++] = new_value;
+			break;
+		}
 		}
 		if (top && safe_isnan(stack[top - 1])) {
 			return SCRIPT_EVAL_ERROR_NAN;
@@ -1372,6 +1624,242 @@ TEST_CASE(script_errors) {
 		TEST_STREQUAL(err, cases[i][1]);
 		free(err);
 		err = NULL;
+	}
+}
+
+// Context struct for spring tests - must have delta_time at a known offset
+struct spring_test_context {
+	double delta_time;
+};
+
+static const struct script_context_info spring_test_context_info[] = {
+    {"delta-time", offsetof(struct spring_test_context, delta_time)},
+    {NULL, 0},
+};
+
+static inline void
+script_compile_str_with_ctx(struct test_case_metadata *metadata, const char *str,
+                            struct script_output_info *outputs,
+                            const struct script_context_info *ctx_info, char **err,
+                            struct script **out) {
+	config_t cfg;
+	config_init(&cfg);
+	config_set_auto_convert(&cfg, 1);
+	int ret = config_read_string(&cfg, str);
+	TEST_EQUAL(ret, CONFIG_TRUE);
+
+	config_setting_t *setting = config_root_setting(&cfg);
+	TEST_NOTEQUAL(setting, NULL);
+	*out = script_compile(setting,
+	                      (struct script_parse_config){
+	                          .output_info = outputs,
+	                          .context_info = ctx_info,
+	                      },
+	                      err);
+	config_destroy(&cfg);
+}
+
+TEST_CASE(spring_curve_parsing) {
+	// Test valid spring curve parsing
+	const char *end = NULL;
+	char *err = NULL;
+
+	// Basic spring(stiffness, dampening, mass)
+	struct curve c1 = curve_parse("spring(200, 25, 1)", &end, &err);
+	TEST_EQUAL(c1.type, CURVE_SPRING);
+	TEST_EQUAL(err, NULL);
+	TEST_EQUAL(c1.spring.stiffness, 200.0);
+	TEST_EQUAL(c1.spring.dampening, 25.0);
+	TEST_EQUAL(c1.spring.mass, 1.0);
+	TEST_EQUAL(c1.spring.clamping, true);        // Default
+
+	// Spring with explicit clamping=true
+	struct curve c2 = curve_parse("spring(100, 10, 0.5, true)", &end, &err);
+	TEST_EQUAL(c2.type, CURVE_SPRING);
+	TEST_EQUAL(err, NULL);
+	TEST_EQUAL(c2.spring.stiffness, 100.0);
+	TEST_EQUAL(c2.spring.dampening, 10.0);
+	TEST_EQUAL(c2.spring.mass, 0.5);
+	TEST_EQUAL(c2.spring.clamping, true);
+
+	// Spring with clamping=false for bounce effect
+	struct curve c3 = curve_parse("spring(250, 20, 1, false)", &end, &err);
+	TEST_EQUAL(c3.type, CURVE_SPRING);
+	TEST_EQUAL(err, NULL);
+	TEST_EQUAL(c3.spring.stiffness, 250.0);
+	TEST_EQUAL(c3.spring.dampening, 20.0);
+	TEST_EQUAL(c3.spring.mass, 1.0);
+	TEST_EQUAL(c3.spring.clamping, false);
+}
+
+TEST_CASE(spring_curve_parsing_errors) {
+	const char *end = NULL;
+	char *err = NULL;
+
+	// Invalid: negative stiffness
+	struct curve c1 = curve_parse("spring(-1, 25, 1)", &end, &err);
+	TEST_EQUAL(c1.type, CURVE_INVALID);
+	TEST_NOTEQUAL(err, NULL);
+	free(err);
+	err = NULL;
+
+	// Invalid: zero stiffness
+	struct curve c2 = curve_parse("spring(0, 25, 1)", &end, &err);
+	TEST_EQUAL(c2.type, CURVE_INVALID);
+	TEST_NOTEQUAL(err, NULL);
+	free(err);
+	err = NULL;
+
+	// Invalid: negative dampening
+	struct curve c3 = curve_parse("spring(200, -5, 1)", &end, &err);
+	TEST_EQUAL(c3.type, CURVE_INVALID);
+	TEST_NOTEQUAL(err, NULL);
+	free(err);
+	err = NULL;
+
+	// Invalid: zero mass
+	struct curve c4 = curve_parse("spring(200, 25, 0)", &end, &err);
+	TEST_EQUAL(c4.type, CURVE_INVALID);
+	TEST_NOTEQUAL(err, NULL);
+	free(err);
+	err = NULL;
+
+	// Invalid: missing arguments
+	struct curve c5 = curve_parse("spring(200, 25)", &end, &err);
+	TEST_EQUAL(c5.type, CURVE_INVALID);
+	TEST_NOTEQUAL(err, NULL);
+	free(err);
+	err = NULL;
+
+	// Invalid: bad clamping value
+	struct curve c6 = curve_parse("spring(200, 25, 1, maybe)", &end, &err);
+	TEST_EQUAL(c6.type, CURVE_INVALID);
+	TEST_NOTEQUAL(err, NULL);
+	free(err);
+	err = NULL;
+}
+
+TEST_CASE(spring_transition_compile) {
+	// Test spring transition compilation
+	static const char *str =
+	    "pos : { \
+		curve = \"spring(200, 25, 1)\"; \
+		start = 100; \
+		end = 0; \
+	};";
+	struct script_output_info outputs[] = {{"pos"}, {NULL}};
+	char *err = NULL;
+	struct script *script = NULL;
+	script_compile_str_with_ctx(metadata, str, outputs, spring_test_context_info,
+	                            &err, &script);
+	if (err) {
+		log_error("Spring compile error: %s\n", err);
+		free(err);
+	}
+	TEST_NOTEQUAL(script, NULL);
+	TEST_EQUAL(err, NULL);
+
+	if (script) {
+		struct script_instance *instance = script_instance_new(script);
+		struct spring_test_context ctx = {.delta_time = 0.016};        // ~60fps
+
+		// First evaluation - should initialize
+		auto result = script_instance_evaluate(instance, &ctx, true);
+		TEST_EQUAL(result, SCRIPT_EVAL_OK);
+		double initial_pos = instance->memory[outputs[0].slot];
+		TEST_EQUAL(initial_pos, 100.0);        // Should start at start value
+
+		// Simulate several frames
+		for (int i = 0; i < 10; i++) {
+			instance->memory[instance->script->elapsed_slot] += 0.016;
+			result = script_instance_evaluate(instance, &ctx, false);
+			TEST_EQUAL(result, SCRIPT_EVAL_OK);
+		}
+
+		// Position should have moved toward target (0)
+		double after_frames = instance->memory[outputs[0].slot];
+		TEST_TRUE(after_frames < initial_pos);
+		TEST_TRUE(after_frames >= 0);        // Should not overshoot with clamping
+
+		free(instance);
+		script_free(script);
+	}
+}
+
+TEST_CASE(spring_transition_no_clamping) {
+	// Test spring with clamping disabled (allows overshoot)
+	static const char *str =
+	    "pos : { \
+		curve = \"spring(500, 10, 1, false)\"; \
+		start = 100; \
+		end = 0; \
+	};";
+	struct script_output_info outputs[] = {{"pos"}, {NULL}};
+	char *err = NULL;
+	struct script *script = NULL;
+	script_compile_str_with_ctx(metadata, str, outputs, spring_test_context_info,
+	                            &err, &script);
+	TEST_NOTEQUAL(script, NULL);
+	TEST_EQUAL(err, NULL);
+
+	if (script) {
+		struct script_instance *instance = script_instance_new(script);
+		struct spring_test_context ctx = {.delta_time = 0.016};
+
+		// First evaluation
+		script_instance_evaluate(instance, &ctx, true);
+
+		// With high stiffness and low dampening, it may overshoot
+		// Run many frames to let it oscillate
+		bool found_negative = false;
+		for (int i = 0; i < 100; i++) {
+			instance->memory[instance->script->elapsed_slot] += 0.016;
+			script_instance_evaluate(instance, &ctx, false);
+			if (instance->memory[outputs[0].slot] < 0) {
+				found_negative = true;
+			}
+		}
+		// With no clamping and these parameters, it should overshoot past 0
+		TEST_TRUE(found_negative);
+
+		free(instance);
+		script_free(script);
+	}
+}
+
+TEST_CASE(spring_physics_convergence) {
+	// Test that spring eventually converges to target
+	static const char *str =
+	    "pos : { \
+		curve = \"spring(200, 30, 1)\"; \
+		start = 100; \
+		end = 0; \
+	};";
+	struct script_output_info outputs[] = {{"pos"}, {NULL}};
+	char *err = NULL;
+	struct script *script = NULL;
+	script_compile_str_with_ctx(metadata, str, outputs, spring_test_context_info,
+	                            &err, &script);
+	TEST_NOTEQUAL(script, NULL);
+
+	if (script) {
+		struct script_instance *instance = script_instance_new(script);
+		struct spring_test_context ctx = {.delta_time = 0.016};
+
+		script_instance_evaluate(instance, &ctx, true);
+
+		// Run for simulated ~5 seconds
+		for (int i = 0; i < 300; i++) {
+			instance->memory[instance->script->elapsed_slot] += 0.016;
+			script_instance_evaluate(instance, &ctx, false);
+		}
+
+		// Should be very close to target (0)
+		double final_pos = instance->memory[outputs[0].slot];
+		TEST_TRUE(fabs(final_pos) < 1.0);        // Within 1 unit of target
+
+		free(instance);
+		script_free(script);
 	}
 }
 #endif

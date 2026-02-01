@@ -1702,6 +1702,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	bool will_never_render =
 	    (!w->ever_damaged || w->win_image == NULL) && w->state != WSTATE_MAPPED;
 	auto win_ctx = win_script_context_prepare(ps, w);
+	win_ctx.delta_time = delta_t;
 
 	bool size_changed = win_size_changed(w->previous.g, w->g);
 	bool position_changed = win_position_changed(w->previous.g, w->g);

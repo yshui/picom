@@ -239,6 +239,7 @@ struct win_script_context {
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
 	struct color shadow_color, shadow_color_before;
+	double delta_time;        /// Time since last frame in seconds
 };
 // NOLINTNEXTLINE(bugprone-sizeof-expression)
 static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
@@ -268,6 +269,7 @@ static const struct script_context_info win_script_context_info[] = {
     {"window-shadow-red-before", X(shadow_color_before.red)},
     {"window-shadow-green-before", X(shadow_color_before.green)},
     {"window-shadow-blue-before", X(shadow_color_before.blue)},
+    {"delta-time", X(delta_time)},
     {NULL, 0}        //
 };
 #undef X

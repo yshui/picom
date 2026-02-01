@@ -9,6 +9,7 @@ enum curve_type {
 	CURVE_LINEAR,
 	CURVE_CUBIC_BEZIER,
 	CURVE_STEP,
+	CURVE_SPRING,
 	CURVE_INVALID,
 };
 
@@ -23,6 +24,12 @@ struct curve {
 			int steps;
 			bool jump_start, jump_end;
 		} step;
+		struct curve_spring {
+			double stiffness;
+			double dampening;
+			double mass;
+			bool clamping;
+		} spring;
 	};
 };
 
@@ -50,3 +57,7 @@ struct curve curve_parse(const char *str, const char **end, char **err);
 /// Calculate the value of the curve at `progress`.
 double curve_sample(const struct curve *curve, double progress);
 char *curve_to_c(const struct curve *curve);
+/// Check if a curve is a spring (stateful, requires special handling).
+static inline bool curve_is_spring(const struct curve *curve) {
+	return curve->type == CURVE_SPRING;
+}
