@@ -79,3 +79,6 @@ man/*.1
 # Subproject files
 subprojects/libconfig
 subprojects/.wraplock
+
+# Worktrees
+.worktrees/
