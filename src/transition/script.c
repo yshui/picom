@@ -1456,6 +1456,20 @@ enum script_evaluation_result script_instance_evaluate(struct script_instance *i
 			// Spring physics calculation:
 			// acceleration = (stiffness * displacement - dampening * velocity) / mass
 			double displacement = target - current;
+
+			// Settling threshold: when displacement and velocity are both
+			// very small, snap to target to avoid sub-pixel jitter.
+			// 1.0 pixel threshold stops animation when visually settled,
+			// preventing rounding-induced oscillation at the tail end.
+			const double settle_displacement_threshold = 1.0;
+			const double settle_velocity_threshold = 1.0;
+			if (fabs(displacement) < settle_displacement_threshold &&
+			    fabs(velocity) < settle_velocity_threshold) {
+				instance->memory[i->spring.velocity_slot] = 0.0;
+				stack[top++] = target;
+				break;
+			}
+
 			double acceleration =
 			    (i->spring.stiffness * displacement -
 			     i->spring.dampening * velocity) /
