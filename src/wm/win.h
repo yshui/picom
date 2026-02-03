@@ -394,10 +394,6 @@ static inline bool win_size_changed(struct win_geometry a, struct win_geometry b
 
 /// Check if the window position has changed.
 static inline bool win_position_changed(struct win_geometry a, struct win_geometry b) {
-	if (win_size_changed(a, b)) {
-		return false;
-	}
-
 	return a.x != b.x || a.y != b.y;
 }
 
