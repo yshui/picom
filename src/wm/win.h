@@ -229,6 +229,12 @@ struct win {
 
 	/// Number of times each animation trigger is blocked
 	unsigned int animation_block[ANIMATION_TRIGGER_COUNT];
+
+	/// Residual animation values - preserved when animations change
+	/// Used to prevent "jumps" when an animation is interrupted by
+	/// one that doesn't control the same outputs
+	double animation_residual[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	bool has_animation_residual[NUM_OF_WIN_SCRIPT_OUTPUTS];
 };
 
 struct win_script_context {

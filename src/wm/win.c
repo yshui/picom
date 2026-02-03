@@ -1628,10 +1628,48 @@ win_script_context_prepare(struct session *ps, struct win *w) {
 	return ret;
 }
 
+/// Get the default value for an animation output (the value when no animation is running)
+static double win_animation_output_default(enum win_script_output output) {
+	switch (output) {
+	case WIN_SCRIPT_SCALE_X:
+	case WIN_SCRIPT_SCALE_Y:
+	case WIN_SCRIPT_SHADOW_SCALE_X:
+	case WIN_SCRIPT_SHADOW_SCALE_Y:
+		return 1.0;
+	default:
+		return 0.0;
+	}
+}
+
+/// Decay residual animation values towards their defaults over time.
+/// This provides a smooth transition when an animation is interrupted.
+static void win_decay_residuals(struct win *w, double delta_t) {
+	const double decay_rate = 10.0;        // Decay to ~5% in 0.3 seconds
+	const double threshold = 0.5;          // Clear when within 0.5 of default
+	for (int i = 0; i < NUM_OF_WIN_SCRIPT_OUTPUTS; i++) {
+		if (!w->has_animation_residual[i]) {
+			continue;
+		}
+		double target = win_animation_output_default(i);
+		double diff = w->animation_residual[i] - target;
+		if (fabs(diff) < threshold) {
+			w->has_animation_residual[i] = false;
+			w->animation_residual[i] = 0;
+		} else {
+			w->animation_residual[i] = target + diff * exp(-decay_rate * delta_t);
+		}
+	}
+}
+
 double win_animatable_get(const struct win *w, enum win_script_output output) {
 	if (w->running_animation_instance && w->running_animation.output_indices[output] >= 0) {
 		return w->running_animation_instance
 		    ->memory[w->running_animation.output_indices[output]];
+	}
+
+	// Check for residual animation values from interrupted animations
+	if (w->has_animation_residual[output]) {
+		return w->animation_residual[output];
 	}
 
 	auto wopts = win_options(w);
@@ -1670,6 +1708,8 @@ static bool win_advance_animation(struct win *w, double delta_t,
                                   const struct win_script_context *win_ctx) {
 	// No state changes, if there's a animation running, we just continue it.
 	if (w->running_animation_instance == NULL) {
+		// Decay any residual animation values when no animation is running
+		win_decay_residuals(w, delta_t);
 		return false;
 	}
 	log_verbose("Advance animation for %#010x (%s) %f seconds", win_id(w), w->name, delta_t);
@@ -1869,6 +1909,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	}
 
 	auto new_animation = script_instance_new(wopts.animations[trigger].script);
+	auto new_output_indices = wopts.animations[trigger].output_indices;
 	if (w->running_animation_instance) {
 		// Interrupt the old animation and start the new animation from where the
 		// old has left off. Note we still need to advance the old animation for
@@ -1876,9 +1917,28 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		win_advance_animation(w, delta_t, &win_ctx);
 		auto memory = w->running_animation_instance->memory;
 		auto output_indices = w->running_animation.output_indices;
+
+		// Save animation output values. If the new animation controls this output,
+		// transfer it there; otherwise save to residual storage for smooth decay.
+		for (int i = 0; i < NUM_OF_WIN_SCRIPT_OUTPUTS; i++) {
+			if (output_indices[i] >= 0) {
+				double value = memory[output_indices[i]];
+				if (new_output_indices[i] >= 0) {
+					// Transfer to new animation
+					new_animation->memory[new_output_indices[i]] = value;
+				} else {
+					// Save to residual storage
+					w->animation_residual[i] = value;
+					w->has_animation_residual[i] = true;
+				}
+			}
+		}
+
 		if (output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND] >= 0) {
-			memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]] =
-			    1 - memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]];
+			if (new_output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND] >= 0) {
+				new_animation->memory[new_output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]] =
+				    1 - memory[output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND]];
+			}
 		}
 		if (size_changed || position_changed) {
 			// If the window has moved, we need to adjust scripts
@@ -1895,8 +1955,8 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			    {WIN_SCRIPT_SHADOW_OFFSET_Y, win_ctx.y_before - win_ctx.y},
 			};
 			for (size_t i = 0; i < ARR_SIZE(adjustments); i++) {
-				if (output_indices[adjustments[i].output] >= 0) {
-					memory[output_indices[adjustments[i].output]] +=
+				if (new_output_indices[adjustments[i].output] >= 0) {
+					new_animation->memory[new_output_indices[adjustments[i].output]] +=
 					    adjustments[i].delta;
 				}
 			}
@@ -1911,8 +1971,8 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			    {WIN_SCRIPT_SHADOW_SCALE_Y, win_ctx.height_before / win_ctx.height},
 			};
 			for (size_t i = 0; i < ARR_SIZE(factors); i++) {
-				if (output_indices[factors[i].output] >= 0) {
-					memory[output_indices[factors[i].output]] *=
+				if (new_output_indices[factors[i].output] >= 0) {
+					new_animation->memory[new_output_indices[factors[i].output]] *=
 					    factors[i].factor;
 				}
 			}
