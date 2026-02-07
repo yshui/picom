@@ -1778,12 +1778,12 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			assert(false);
 			return true;
 		}
-	} else if (position_changed) {
-		assert(w->state == WSTATE_MAPPED);
-		trigger = ANIMATION_TRIGGER_POSITION;
 	} else if (size_changed) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = ANIMATION_TRIGGER_SIZE;
+	} else if (position_changed) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = ANIMATION_TRIGGER_POSITION;
 	} else if (win_ctx.opacity_before != win_ctx.opacity) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = win_ctx.opacity > win_ctx.opacity_before

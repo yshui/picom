@@ -532,7 +532,7 @@ animations = ({
 
 	  _decrease-opacity_:: When the opacity or the blur opacity of a window is decreased. If the opacity and the blur opacity changed in different directions, the opacity change takes precedence.
 
-	  _size_, _position_:: When the size or position of a window is changed. If both changed, the position trigger has priority. (EXPERIMENTAL)
+	  _size_, _position_:: When the size or position of a window is changed. If both changed, the size trigger has priority. (EXPERIMENTAL)
 
 	  _color_:: When some color property of a window is changed. Right now this only includes _shadow-color_.
 
