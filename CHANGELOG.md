@@ -1,3 +1,9 @@
+# v13 (2026-Feb-07)
+
+## Bug fixes
+
+* Crash if blur-opacity goes negative. (#1493)
+
 # v13-rc1 (2025-Dec-09)
 
 ## New features
