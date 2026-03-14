@@ -862,6 +862,8 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method,
 	// Note: OpenGL matrices are column major
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	viewport_dimensions[0] = min2(viewport_dimensions[0], 16384);
+	viewport_dimensions[1] = min2(viewport_dimensions[1], 16384);
 	GLfloat projection_matrix[4][4] = {{2.0F / (GLfloat)viewport_dimensions[0], 0, 0, 0},
 	                                   {0, 2.0F / (GLfloat)viewport_dimensions[1], 0, 0},
 	                                   {0, 0, 0, 0},

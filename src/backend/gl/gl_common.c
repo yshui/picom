@@ -778,6 +778,8 @@ void gl_root_change(backend_t *base, session_t *ps) {
 void gl_resize(struct gl_data *gd, int width, int height) {
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	viewport_dimensions[0] = min2(viewport_dimensions[0], 16384);
+	viewport_dimensions[1] = min2(viewport_dimensions[1], 16384);
 
 	gd->back_image.height = height;
 	gd->back_image.width = width;
@@ -1006,6 +1008,8 @@ gl_create_window_shader_inner(struct gl_shader *out_shader,
 
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	viewport_dimensions[0] = min2(viewport_dimensions[0], 16384);
+	viewport_dimensions[1] = min2(viewport_dimensions[1], 16384);
 
 	// Set projection matrix to gl viewport dimensions so we can use screen
 	// coordinates for all vertices
@@ -1084,6 +1088,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	// buffer are skipped anyways, this should have no impact on performance.
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	viewport_dimensions[0] = min2(viewport_dimensions[0], 16384);
+	viewport_dimensions[1] = min2(viewport_dimensions[1], 16384);
 	glViewport(0, 0, viewport_dimensions[0], viewport_dimensions[1]);
 
 	// Clear screen
