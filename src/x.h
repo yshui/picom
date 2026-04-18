@@ -219,6 +219,7 @@ void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_
 
 struct x_async_request_base {
 	struct list_node siblings;
+	const char *name;
 	/// The callback function to call when the reply is received. If `reply_or_error`
 	/// is NULL, it means the X connection is closed while waiting for the reply.
 	void (*callback)(struct x_connection *, struct x_async_request_base *,

@@ -3,6 +3,7 @@
 
 #include <stdalign.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <X11/Xlib-xcb.h>
@@ -197,6 +198,7 @@ void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_
 	req->base.sequence = sequence;
 	req->base.callback = x_generic_async_callback;
 	req->base.no_reply = true;
+	req->base.name = "error_action";
 	x_await_request(c, &req->base);
 }
 
@@ -1118,6 +1120,18 @@ static inline void x_ingest_event(struct x_connection *c, xcb_generic_event_t *e
 
 static const xcb_raw_generic_event_t no_reply_success = {.response_type = 1};
 
+static inline void report_has_reply_assertion_failure(struct x_async_request_base *base,
+                                                      uint64_t seq, uint64_t head_seq) {
+	log_fatal("Already received reply/error for seq %lu", seq);
+	log_fatal("Reply to seq %lu should have come before, but we don't have it", head_seq);
+	log_fatal("seq %lu is a \"%s\"", head_seq, base->name);
+	if (strcmp(base->name, "error_action") == 0) {
+		auto req = (struct x_generic_async_request *)base;
+		log_fatal("error_action previous set at %s:%d, %s", req->file, req->line,
+		          req->func);
+	}
+}
+
 /// Complete all pending async requests that "come before" the given event.
 static void x_complete_async_requests(struct x_connection *c, xcb_generic_event_t *e) {
 	auto seq = x_widen_sequence(c, e->full_sequence);
@@ -1139,6 +1153,9 @@ static void x_complete_async_requests(struct x_connection *c, xcb_generic_event_
 			xcb_generic_error_t *err = NULL;
 			auto has_reply = xcb_poll_for_reply(
 			    c->c, i->sequence, (void **)&reply_or_error, &err);
+			if (!has_reply) {
+				report_has_reply_assertion_failure(i, seq, head_seq);
+			}
 			BUG_ON(has_reply == 0);
 			if (reply_or_error == NULL) {
 				reply_or_error = (xcb_raw_generic_event_t *)err;

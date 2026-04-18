@@ -302,6 +302,7 @@ void ev_update_focused(struct session *ps) {
 		                     ps->atoms->a_NET_ACTIVE_WINDOW, XCB_ATOM_WINDOW, 0, 1)
 		        .sequence;
 		req->base.callback = update_ewmh_active_win;
+		req->base.name = "get_property";
 		req->ps = ps;
 		x_await_request(&ps->c, &req->base);
 		log_debug("Started async request to get _NET_ACTIVE_WINDOW");
@@ -309,6 +310,7 @@ void ev_update_focused(struct session *ps) {
 		auto req = ccalloc(1, struct ev_recheck_focus_request);
 		req->base.sequence = xcb_get_input_focus(ps->c.c).sequence;
 		req->base.callback = recheck_focus;
+		req->base.name = "get_input_focus";
 		req->ps = ps;
 		x_await_request(&ps->c, &req->base);
 		log_debug("Started async request to recheck focus");

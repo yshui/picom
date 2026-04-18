@@ -675,6 +675,7 @@ wm_handle_set_event_mask_reply(struct x_connection *c, struct x_async_request_ba
 	{
 		auto req2 = ccalloc(1, struct wm_query_tree_request);
 		req2->base.callback = wm_handle_query_tree_reply;
+		req2->base.name = "query_tree";
 		req2->wid = node->id.x;
 		req2->wm = wm;
 		req2->atoms = atoms;
@@ -686,6 +687,7 @@ wm_handle_set_event_mask_reply(struct x_connection *c, struct x_async_request_ba
 	{
 		auto req2 = ccalloc(1, struct wm_get_property_request);
 		req2->base.callback = wm_handle_get_wm_state_reply;
+		req2->base.name = "get_property (wm)";
 		req2->wm = wm;
 		req2->wid = node->id.x;
 		x_async_get_property(c, node->id.x, atoms->aWM_STATE, XCB_ATOM_ANY, 0, 2,
@@ -713,6 +715,7 @@ static void wm_import_start_inner(struct wm *wm, struct x_connection *c, struct 
 
 	auto req = ccalloc(1, struct wm_set_event_mask_request);
 	req->base.callback = wm_handle_set_event_mask_reply;
+	req->base.name = "change_window_attributes";
 	req->wid = wid;
 	req->atoms = atoms;
 	req->wm = wm;

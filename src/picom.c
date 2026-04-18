@@ -1440,6 +1440,7 @@ static void handle_new_windows(session_t *ps) {
 			req->base.callback = handle_new_window_attributes_reply,
 			req->base.sequence =
 			    xcb_get_window_attributes(ps->c.c, req->id.x).sequence;
+			req->base.name = "get_window_attributes";
 			x_await_request(&ps->c, &req->base);
 			break;
 		case WM_TREE_CHANGE_TOPLEVEL_KILLED:

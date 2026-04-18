@@ -2067,6 +2067,7 @@ void win_map_start(struct session *ps, struct win *w) {
 	req->base = (struct x_async_request_base){
 	    .callback = win_handle_get_geometry_reply,
 	    .sequence = xcb_get_geometry(ps->c.c, win_id(w)).sequence,
+	    .name = "get_geometry",
 	};
 	req->wid = win_id(w);
 	req->ps = ps;
