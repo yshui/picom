@@ -534,7 +534,6 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 
 	// clang-format off
 	static const char *FRAG_SHADER_BLUR = GLSL(330,
-		%s\n // other extension pragmas
 		layout(location = UNIFORM_TEX_SRC_LOC)
 		uniform sampler2D tex_src;
 		layout(location = UNIFORM_PIXEL_NORM_LOC)
@@ -557,7 +556,6 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 	// clang-format on
 
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
-	char *extension = strdup("");
 
 	for (int i = 0; i < nkernels; i++) {
 		auto kern = kernels[i];
@@ -628,12 +626,11 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		}
 
 		auto pass = ctx->blur_shader + i;
-		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(extension) +
-		                    strlen(shader_body) + 10 /* sum */ +
-		                    1 /* null terminator */;
+		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(shader_body) +
+		                    10 /* sum */ + 1 /* null terminator */;
 		char *shader_str = ccalloc(shader_len, char);
-		auto real_shader_len = snprintf(shader_str, shader_len, FRAG_SHADER_BLUR,
-		                                extension, shader_body, sum);
+		auto real_shader_len =
+		    snprintf(shader_str, shader_len, FRAG_SHADER_BLUR, shader_body, sum);
 		CHECK(real_shader_len >= 0);
 		CHECK((size_t)real_shader_len < shader_len);
 		free(shader_body);
@@ -688,7 +685,6 @@ out:
 		free(kernels);
 	}
 
-	free(extension);
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
