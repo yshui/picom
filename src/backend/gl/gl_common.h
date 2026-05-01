@@ -40,7 +40,9 @@ struct gl_blur_context;
 // Added in backend API 2.0
 #define UNIFORM_TINT_LOC 22
 #define UNIFORM_MASK_SCALE_LOC 23
-#define NUMBER_OF_UNIFORMS (UNIFORM_TINT_LOC + 1)
+#define UNIFORM_BLUR_NOISE_RADIUS_LOC 24
+#define UNIFORM_BLUR_NOISE_SCALE_LOC 25
+#define NUMBER_OF_UNIFORMS (UNIFORM_BLUR_NOISE_SCALE_LOC + 1)
 
 struct gl_shader {
 	GLuint prog;
