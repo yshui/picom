@@ -834,10 +834,6 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 out:
 	free(blur_params);
 
-	if (!success) {
-		ctx = NULL;
-	}
-
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
