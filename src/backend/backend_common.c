@@ -252,11 +252,14 @@ generate_gaussian_blur_kernel(struct gaussian_blur_args *args, int *kernel_count
 
 /// Generate blur kernels for gaussian and box blur methods. Generated kernel is not
 /// normalized, and the center element will always be 1.
-struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count) {
+struct conv **
+generate_blur_kernel(enum blur_method method, struct blur_args *args, int *kernel_count) {
 	switch (method) {
-	case BLUR_METHOD_BOX: return generate_box_blur_kernel(args, kernel_count);
+	case BLUR_METHOD_BOX:
+		return generate_box_blur_kernel((struct box_blur_args *)args, kernel_count);
 	case BLUR_METHOD_GAUSSIAN:
-		return generate_gaussian_blur_kernel(args, kernel_count);
+		return generate_gaussian_blur_kernel((struct gaussian_blur_args *)args,
+		                                     kernel_count);
 	default: break;
 	}
 	return NULL;
@@ -264,8 +267,8 @@ struct conv **generate_blur_kernel(enum blur_method method, void *args, int *ker
 
 /// Generate kernel parameters for dual-kawase blur method. Falls back on approximating
 /// standard gauss radius if strength is zero or below.
-struct dual_kawase_params *generate_dual_kawase_params(void *args) {
-	struct dual_kawase_blur_args *blur_args = args;
+struct dual_kawase_params *generate_dual_kawase_params(struct blur_args *args) {
+	auto blur_args = (struct dual_kawase_blur_args *)args;
 	static const struct {
 		int iterations;        /// Number of down- and upsample iterations
 		float offset;          /// Sample offset in half-pixels

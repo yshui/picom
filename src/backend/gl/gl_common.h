@@ -173,7 +173,7 @@ image_handle gl_back_buffer(struct backend_base *base);
 uint32_t gl_image_capabilities(backend_t *base, image_handle img);
 bool gl_is_format_supported(backend_t *base, enum backend_image_format format);
 void *gl_create_blur_context(backend_t *base, enum blur_method,
-                             enum backend_image_format format, void *args);
+                             enum backend_image_format format, struct blur_args *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 

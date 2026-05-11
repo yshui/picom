@@ -846,7 +846,7 @@ out:
 }
 
 void *gl_create_blur_context(backend_t *base, enum blur_method method,
-                             enum backend_image_format format, void *args) {
+                             enum backend_image_format format, struct blur_args *args) {
 	bool success;
 	auto gd = (struct gl_data *)base;
 

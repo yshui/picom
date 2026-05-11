@@ -106,7 +106,8 @@ static bool renderer_init(struct renderer *renderer, struct backend_base *backen
 		    .deviation = gaussian_kernel_std_for_size(shadow_radius, 0.5 / 256.0),
 		};
 		renderer->shadow_blur_context = backend->ops.create_blur_context(
-		    backend, BLUR_METHOD_GAUSSIAN, BACKEND_IMAGE_FORMAT_MASK, &args);
+		    backend, BLUR_METHOD_GAUSSIAN, BACKEND_IMAGE_FORMAT_MASK,
+		    (struct blur_args *)&args);
 		if (!renderer->shadow_blur_context) {
 			log_error("Failed to create shadow blur context");
 			return false;

@@ -15,6 +15,7 @@ struct conv;
 struct backend_base;
 struct backend_operations;
 struct x_connection;
+struct blur_args;
 
 struct dual_kawase_params {
 	/// Number of downsample passes
@@ -33,7 +34,8 @@ solid_picture(struct x_connection *, bool argb, double a, double r, double g, do
 
 void init_backend_base(struct backend_base *base, session_t *ps);
 
-struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count);
-struct dual_kawase_params *generate_dual_kawase_params(void *args);
+struct conv **
+generate_blur_kernel(enum blur_method method, struct blur_args *args, int *kernel_count);
+struct dual_kawase_params *generate_dual_kawase_params(struct blur_args *args);
 
 uint32_t backend_no_quirks(struct backend_base *base attr_unused);

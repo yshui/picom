@@ -179,7 +179,7 @@ image_handle dummy_back_buffer(struct backend_base *base) {
 void *dummy_create_blur_context(struct backend_base *base attr_unused,
                                 enum blur_method method attr_unused,
                                 enum backend_image_format format attr_unused,
-                                void *args attr_unused) {
+                                struct blur_args *args attr_unused) {
 	static int dummy_context;
 	return &dummy_context;
 }
