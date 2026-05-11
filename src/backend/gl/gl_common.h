@@ -313,4 +313,4 @@ static const GLuint vert_in_texcoord_loc = 1;
 extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
     scaled_masking_glsl[], copy_area_frag[], copy_area_with_dither_frag[], fill_frag[],
     fill_vert[], interpolating_frag[], interpolating_vert[], blit_shader_glsl[],
-    blit_shader_default[], present_vertex_shader[], dither_glsl[];
+    blit_shader_default[], present_vertex_shader[], dither_glsl[], perturb_glsl[];

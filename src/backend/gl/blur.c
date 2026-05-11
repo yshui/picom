@@ -37,6 +37,9 @@ struct gl_blur_context {
 	/// How much do we need to resize the damaged region for blurring.
 	int resize_width, resize_height;
 
+	int noise_radius;
+	float noise_scale;
+
 	int npasses;
 
 	enum backend_image_format format;
@@ -114,6 +117,8 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 			}
 
 			glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
+			glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, 0);
+			glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, 0.0F);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions. And apply mask if requested
@@ -135,6 +140,8 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(UNIFORM_OPACITY_LOC, (float)opacity);
+			glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, bctx->noise_radius);
+			glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, bctx->noise_scale);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
@@ -220,6 +227,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 	glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0.0F);
 	glUniform2f(UNIFORM_MASK_SCALE_LOC, 1.0F, 1.0F);
 	glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
+	glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, 0);
+	glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, 0.0F);
 
 	for (int i = iterations - 1; i >= 0; --i) {
 		// Scale output width / height back by two in each iteration
@@ -263,6 +272,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(UNIFORM_OPACITY_LOC, (GLfloat)opacity);
+			glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, bctx->noise_radius);
+			glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, bctx->noise_scale);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
@@ -536,11 +547,16 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		uniform vec2 pixel_norm;
 		layout(location = UNIFORM_OPACITY_LOC)
 		uniform float opacity;
+		layout(location = UNIFORM_BLUR_NOISE_RADIUS_LOC)
+		uniform int noise_radius;
+		layout(location = UNIFORM_BLUR_NOISE_SCALE_LOC)
+		uniform float noise_scale;
 		in vec2 texcoord;
 		out vec4 out_color;
 		float mask_factor();
+		vec2 perturb(vec2, float, float);
 		void main() {
-			vec2 uv = texcoord * pixel_norm;
+			vec2 uv = perturb(texcoord, noise_radius, noise_scale) * pixel_norm;
 			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
 			%s //body of the convolution
 			out_color = sum / float(%.7g) * opacity * mask_factor();
@@ -634,7 +650,7 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		// Build program
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){shader_str, scaled_masking_glsl, NULL});
+		    (const char *[]){shader_str, scaled_masking_glsl, perturb_glsl, NULL});
 		free(shader_str);
 		if (!pass->prog) {
 			log_error("Failed to create GLSL program.");
@@ -658,7 +674,8 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){blend_with_mask_frag, scaled_masking_glsl, NULL});
+		    (const char *[]){blend_with_mask_frag, scaled_masking_glsl,
+		                     perturb_glsl, NULL});
 
 		// Setup projection matrix
 		glUseProgram(pass->prog);
@@ -775,12 +792,17 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 			uniform vec2 pixel_norm;
 			layout(location = UNIFORM_OPACITY_LOC)
 			uniform float opacity;
+			layout(location = UNIFORM_BLUR_NOISE_RADIUS_LOC)
+			uniform int noise_radius;
+			layout(location = UNIFORM_BLUR_NOISE_SCALE_LOC)
+			uniform float noise_scale;
 			in vec2 texcoord;
 			out vec4 out_color;
 			float mask_factor();
+			vec2 perturb(vec2, float, float);
 			void main() {
 				vec2 offset = %.7g * pixel_norm;
-				vec2 uv = texcoord * pixel_norm / (2 * scale);
+				vec2 uv = perturb(texcoord, noise_radius, noise_scale) * pixel_norm / (2 * scale);
 				vec4 sum = texture2D(tex_src, uv + vec2(-1.0, 0.0) * offset);
 				sum += texture2D(tex_src, uv + vec2(-0.5, 0.5) * offset) * 2.0;
 				sum += texture2D(tex_src, uv + vec2(0.0, 1.0) * offset);
@@ -806,7 +828,7 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		// Build program
 		up_pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){shader_str, scaled_masking_glsl, NULL});
+		    (const char *[]){shader_str, scaled_masking_glsl, perturb_glsl, NULL});
 		free(shader_str);
 		if (!up_pass->prog) {
 			log_error("Failed to create GLSL program.");
@@ -864,6 +886,12 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method,
 	if (!success || ctx->method == BLUR_METHOD_NONE) {
 		goto out;
 	}
+
+	ctx->noise_radius = args->noise_radius;
+	ctx->noise_scale = (float)args->noise_scale;
+	// Expand the blur region to account for noise samples
+	ctx->resize_width = max2(ctx->resize_width, ctx->noise_radius);
+	ctx->resize_height = max2(ctx->resize_height, ctx->noise_radius);
 
 	// Texture size will be defined by gl_blur
 	ctx->blur_textures = ccalloc(ctx->blur_texture_count, GLuint);
