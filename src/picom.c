@@ -515,6 +515,9 @@ static bool initialize_blur(session_t *ps) {
 	default: return true;
 	}
 
+	args->noise_radius = ps->o.blur_noise_radius;
+	args->noise_scale = ps->o.blur_noise_scale;
+
 	enum backend_image_format format = ps->o.dithered_present
 	                                       ? BACKEND_IMAGE_FORMAT_PIXMAP_HIGH
 	                                       : BACKEND_IMAGE_FORMAT_PIXMAP;

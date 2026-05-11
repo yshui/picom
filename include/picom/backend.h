@@ -54,7 +54,10 @@ enum shader_attributes {
 	SHADER_ATTRIBUTE_ANIMATED = 1,
 };
 
-struct blur_args {};
+struct blur_args {
+	int noise_radius;
+	double noise_scale;
+};
 
 struct gaussian_blur_args {
 	struct blur_args base;

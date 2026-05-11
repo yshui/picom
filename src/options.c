@@ -499,6 +499,8 @@ static const struct picom_option picom_options[] = {
     [329] = {"blur-size"                   , INTEGER(blur_radius, 0, INT_MAX)               , "The radius of the blur kernel for 'box' and 'gaussian' blur method."},
     [330] = {"blur-deviation"              , FLOAT(blur_deviation, 0, INFINITY)             , "The standard deviation for the 'gaussian' blur method."},
     [331] = {"blur-strength"               , INTEGER(blur_strength, 0, INT_MAX)             , "The strength level of the 'dual_kawase' blur method."},
+    [343] = {"blur-noise-radius"           , INTEGER(blur_noise_radius, 0, INT_MAX)         , "Maximum displacement for noise."},
+    [344] = {"blur-noise-scale"            , FLOAT(blur_noise_scale, 0, INFINITY)           , "Size of noise features."},
     [333] = {"corner-radius"               , INTEGER(corner_radius, 0, INT_MAX)             , "Sets the radius of rounded window corners. When > 0, the compositor will "
                                                                                               "round the corners of windows. (defaults to 0)."},
     [336] = {"window-shader-fg"            , SHADER(window_shader_fg)                       , "Specify GLSL fragment shader path for rendering window contents. See man "

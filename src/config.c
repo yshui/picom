@@ -696,6 +696,8 @@ bool parse_config(options_t *opt, const char *config_file) {
 	    .blur_radius = 3,
 	    .blur_deviation = 0.84089642,
 	    .blur_strength = 5,
+	    .blur_noise_radius = 0,
+	    .blur_noise_scale = 0.005,
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,

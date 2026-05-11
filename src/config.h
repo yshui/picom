@@ -431,6 +431,10 @@ typedef struct options {
 	double blur_deviation;
 	// Strength of the dual_kawase blur
 	int blur_strength;
+	// Maximum displacement for noise
+	int blur_noise_radius;
+	// Size of noise features
+	double blur_noise_scale;
 	/// Whether to blur background when the window frame is not opaque.
 	/// Implies blur_background.
 	bool blur_background_frame;
