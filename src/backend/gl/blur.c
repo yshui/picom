@@ -82,12 +82,8 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glBindSampler(0, blur_sampler);
 		glUseProgram(p->prog);
-		if (p->uniform_bitmask & (1 << UNIFORM_PIXEL_NORM_LOC)) {
-			// If the last pass is a trivial blend pass, it will not have
-			// pixel_norm.
-			glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
-			            1.0F / (GLfloat)tex_height);
-		}
+		glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
+		            1.0F / (GLfloat)tex_height);
 
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, default_mask);
@@ -645,7 +641,6 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 			success = false;
 			goto out;
 		}
-		pass->uniform_bitmask = 1 << UNIFORM_PIXEL_NORM_LOC;
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Setup projection matrix

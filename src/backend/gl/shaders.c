@@ -26,12 +26,15 @@ const char copy_area_with_dither_frag[] = GLSL(330,
 const char blend_with_mask_frag[] = GLSL(330,
 	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
+	layout(location = UNIFORM_PIXEL_NORM_LOC)
+	uniform vec2 pixel_norm;
 	layout(location = UNIFORM_OPACITY_LOC)
 	uniform float opacity;
 	in vec2 texcoord;
 	float mask_factor();
 	void main() {
-		gl_FragColor = texelFetch(tex, ivec2(texcoord.xy), 0) * opacity * mask_factor();
+		vec2 uv = texcoord * pixel_norm;
+		gl_FragColor = texture2D(tex, uv) * opacity * mask_factor();
 	}
 );
 
