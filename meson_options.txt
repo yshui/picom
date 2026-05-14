@@ -10,6 +10,8 @@ option('with_docs', type: 'boolean', value: false, description: 'Build documenta
 
 option('unittest', type: 'boolean', value: false, description: 'Enable unittests in the code')
 
+option('git', type: 'boolean', value: true, description: 'Use git describe if that\'s available')
+
 # Experimental options
 
 option('modularize', type: 'boolean', value: false, description: 'Build with clang\'s module system (experimental)')
