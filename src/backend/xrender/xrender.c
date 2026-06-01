@@ -852,9 +852,9 @@ static bool xrender_apply_alpha(struct backend_base *base, image_handle image,
 	return true;
 }
 
-static void *
-xrender_create_blur_context(backend_t *base attr_unused, enum blur_method method,
-                            enum backend_image_format format attr_unused, void *args) {
+static void *xrender_create_blur_context(backend_t *base attr_unused, enum blur_method method,
+                                         enum backend_image_format format attr_unused,
+                                         struct blur_args *args) {
 	auto ret = ccalloc(1, struct xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;

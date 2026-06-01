@@ -40,7 +40,9 @@ struct gl_blur_context;
 // Added in backend API 2.0
 #define UNIFORM_TINT_LOC 22
 #define UNIFORM_MASK_SCALE_LOC 23
-#define NUMBER_OF_UNIFORMS (UNIFORM_TINT_LOC + 1)
+#define UNIFORM_BLUR_NOISE_RADIUS_LOC 24
+#define UNIFORM_BLUR_NOISE_SCALE_LOC 25
+#define NUMBER_OF_UNIFORMS (UNIFORM_BLUR_NOISE_SCALE_LOC + 1)
 
 struct gl_shader {
 	GLuint prog;
@@ -173,7 +175,7 @@ image_handle gl_back_buffer(struct backend_base *base);
 uint32_t gl_image_capabilities(backend_t *base, image_handle img);
 bool gl_is_format_supported(backend_t *base, enum backend_image_format format);
 void *gl_create_blur_context(backend_t *base, enum blur_method,
-                             enum backend_image_format format, void *args);
+                             enum backend_image_format format, struct blur_args *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 
@@ -311,4 +313,4 @@ static const GLuint vert_in_texcoord_loc = 1;
 extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
     scaled_masking_glsl[], copy_area_frag[], copy_area_with_dither_frag[], fill_frag[],
     fill_vert[], interpolating_frag[], interpolating_vert[], blit_shader_glsl[],
-    blit_shader_default[], present_vertex_shader[], dither_glsl[];
+    blit_shader_default[], present_vertex_shader[], dither_glsl[], perturb_glsl[];

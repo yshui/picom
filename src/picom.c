@@ -491,29 +491,32 @@ static bool initialize_blur(session_t *ps) {
 	struct box_blur_args bargs;
 	struct dual_kawase_blur_args dkargs;
 
-	void *args = NULL;
+	struct blur_args *args = NULL;
 	switch (ps->o.blur_method) {
 	case BLUR_METHOD_BOX:
 		bargs.size = ps->o.blur_radius;
-		args = (void *)&bargs;
+		args = (struct blur_args *)&bargs;
 		break;
 	case BLUR_METHOD_KERNEL:
 		kargs.kernel_count = ps->o.blur_kernel_count;
 		kargs.kernels = ps->o.blur_kerns;
-		args = (void *)&kargs;
+		args = (struct blur_args *)&kargs;
 		break;
 	case BLUR_METHOD_GAUSSIAN:
 		gargs.size = ps->o.blur_radius;
 		gargs.deviation = ps->o.blur_deviation;
-		args = (void *)&gargs;
+		args = (struct blur_args *)&gargs;
 		break;
 	case BLUR_METHOD_DUAL_KAWASE:
 		dkargs.size = ps->o.blur_radius;
 		dkargs.strength = ps->o.blur_strength;
-		args = (void *)&dkargs;
+		args = (struct blur_args *)&dkargs;
 		break;
 	default: return true;
 	}
+
+	args->noise_radius = ps->o.blur_noise_radius;
+	args->noise_scale = ps->o.blur_noise_scale;
 
 	enum backend_image_format format = ps->o.dithered_present
 	                                       ? BACKEND_IMAGE_FORMAT_PIXMAP_HIGH

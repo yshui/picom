@@ -1267,6 +1267,9 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 
 		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
 		config_setting_lookup_int(blur_cfg, "strength", &opt->blur_strength);
+
+		config_setting_lookup_int(blur_cfg, "noise-radius", &opt->blur_noise_radius);
+		config_setting_lookup_float(blur_cfg, "noise-scale", &opt->blur_noise_scale);
 	}
 
 	// --write-pid-path

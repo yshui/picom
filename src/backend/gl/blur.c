@@ -37,6 +37,9 @@ struct gl_blur_context {
 	/// How much do we need to resize the damaged region for blurring.
 	int resize_width, resize_height;
 
+	int noise_radius;
+	float noise_scale;
+
 	int npasses;
 
 	enum backend_image_format format;
@@ -82,12 +85,8 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glBindSampler(0, blur_sampler);
 		glUseProgram(p->prog);
-		if (p->uniform_bitmask & (1 << UNIFORM_PIXEL_NORM_LOC)) {
-			// If the last pass is a trivial blend pass, it will not have
-			// pixel_norm.
-			glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
-			            1.0F / (GLfloat)tex_height);
-		}
+		glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
+		            1.0F / (GLfloat)tex_height);
 
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, default_mask);
@@ -118,6 +117,8 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 			}
 
 			glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
+			glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, 0);
+			glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, 0.0F);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions. And apply mask if requested
@@ -139,6 +140,8 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(UNIFORM_OPACITY_LOC, (float)opacity);
+			glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, bctx->noise_radius);
+			glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, bctx->noise_scale);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
@@ -224,6 +227,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 	glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0.0F);
 	glUniform2f(UNIFORM_MASK_SCALE_LOC, 1.0F, 1.0F);
 	glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
+	glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, 0);
+	glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, 0.0F);
 
 	for (int i = iterations - 1; i >= 0; --i) {
 		// Scale output width / height back by two in each iteration
@@ -267,6 +272,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(UNIFORM_OPACITY_LOC, (GLfloat)opacity);
+			glUniform1i(UNIFORM_BLUR_NOISE_RADIUS_LOC, bctx->noise_radius);
+			glUniform1f(UNIFORM_BLUR_NOISE_SCALE_LOC, bctx->noise_scale);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
@@ -534,18 +541,22 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 
 	// clang-format off
 	static const char *FRAG_SHADER_BLUR = GLSL(330,
-		%s\n // other extension pragmas
 		layout(location = UNIFORM_TEX_SRC_LOC)
 		uniform sampler2D tex_src;
 		layout(location = UNIFORM_PIXEL_NORM_LOC)
 		uniform vec2 pixel_norm;
 		layout(location = UNIFORM_OPACITY_LOC)
 		uniform float opacity;
+		layout(location = UNIFORM_BLUR_NOISE_RADIUS_LOC)
+		uniform int noise_radius;
+		layout(location = UNIFORM_BLUR_NOISE_SCALE_LOC)
+		uniform float noise_scale;
 		in vec2 texcoord;
 		out vec4 out_color;
 		float mask_factor();
+		vec2 perturb(vec2, float, float);
 		void main() {
-			vec2 uv = texcoord * pixel_norm;
+			vec2 uv = perturb(texcoord, noise_radius, noise_scale) * pixel_norm;
 			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
 			%s //body of the convolution
 			out_color = sum / float(%.7g) * opacity * mask_factor();
@@ -557,7 +568,6 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 	// clang-format on
 
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
-	char *extension = strdup("");
 
 	for (int i = 0; i < nkernels; i++) {
 		auto kern = kernels[i];
@@ -628,12 +638,11 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		}
 
 		auto pass = ctx->blur_shader + i;
-		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(extension) +
-		                    strlen(shader_body) + 10 /* sum */ +
-		                    1 /* null terminator */;
+		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(shader_body) +
+		                    10 /* sum */ + 1 /* null terminator */;
 		char *shader_str = ccalloc(shader_len, char);
-		auto real_shader_len = snprintf(shader_str, shader_len, FRAG_SHADER_BLUR,
-		                                extension, shader_body, sum);
+		auto real_shader_len =
+		    snprintf(shader_str, shader_len, FRAG_SHADER_BLUR, shader_body, sum);
 		CHECK(real_shader_len >= 0);
 		CHECK((size_t)real_shader_len < shader_len);
 		free(shader_body);
@@ -641,14 +650,13 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		// Build program
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){shader_str, scaled_masking_glsl, NULL});
+		    (const char *[]){shader_str, scaled_masking_glsl, perturb_glsl, NULL});
 		free(shader_str);
 		if (!pass->prog) {
 			log_error("Failed to create GLSL program.");
 			success = false;
 			goto out;
 		}
-		pass->uniform_bitmask = 1 << UNIFORM_PIXEL_NORM_LOC;
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Setup projection matrix
@@ -666,7 +674,8 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){blend_with_mask_frag, scaled_masking_glsl, NULL});
+		    (const char *[]){blend_with_mask_frag, scaled_masking_glsl,
+		                     perturb_glsl, NULL});
 
 		// Setup projection matrix
 		glUseProgram(pass->prog);
@@ -688,7 +697,6 @@ out:
 		free(kernels);
 	}
 
-	free(extension);
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
@@ -784,12 +792,17 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 			uniform vec2 pixel_norm;
 			layout(location = UNIFORM_OPACITY_LOC)
 			uniform float opacity;
+			layout(location = UNIFORM_BLUR_NOISE_RADIUS_LOC)
+			uniform int noise_radius;
+			layout(location = UNIFORM_BLUR_NOISE_SCALE_LOC)
+			uniform float noise_scale;
 			in vec2 texcoord;
 			out vec4 out_color;
 			float mask_factor();
+			vec2 perturb(vec2, float, float);
 			void main() {
 				vec2 offset = %.7g * pixel_norm;
-				vec2 uv = texcoord * pixel_norm / (2 * scale);
+				vec2 uv = perturb(texcoord, noise_radius, noise_scale) * pixel_norm / (2 * scale);
 				vec4 sum = texture2D(tex_src, uv + vec2(-1.0, 0.0) * offset);
 				sum += texture2D(tex_src, uv + vec2(-0.5, 0.5) * offset) * 2.0;
 				sum += texture2D(tex_src, uv + vec2(0.0, 1.0) * offset);
@@ -815,7 +828,7 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		// Build program
 		up_pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){shader_str, scaled_masking_glsl, NULL});
+		    (const char *[]){shader_str, scaled_masking_glsl, perturb_glsl, NULL});
 		free(shader_str);
 		if (!up_pass->prog) {
 			log_error("Failed to create GLSL program.");
@@ -834,10 +847,6 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 out:
 	free(blur_params);
 
-	if (!success) {
-		ctx = NULL;
-	}
-
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
@@ -846,7 +855,7 @@ out:
 }
 
 void *gl_create_blur_context(backend_t *base, enum blur_method method,
-                             enum backend_image_format format, void *args) {
+                             enum backend_image_format format, struct blur_args *args) {
 	bool success;
 	auto gd = (struct gl_data *)base;
 
@@ -877,6 +886,12 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method,
 	if (!success || ctx->method == BLUR_METHOD_NONE) {
 		goto out;
 	}
+
+	ctx->noise_radius = args->noise_radius;
+	ctx->noise_scale = (float)args->noise_scale;
+	// Expand the blur region to account for noise samples
+	ctx->resize_width = max2(ctx->resize_width, ctx->noise_radius);
+	ctx->resize_height = max2(ctx->resize_height, ctx->noise_radius);
 
 	// Texture size will be defined by gl_blur
 	ctx->blur_textures = ccalloc(ctx->blur_texture_count, GLuint);

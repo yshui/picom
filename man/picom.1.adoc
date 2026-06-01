@@ -178,6 +178,9 @@ OPTIONS
 *--blur-method*, *--blur-size*, *--blur-deviation*, *--blur-strength*::
 	Parameters for background blurring, see the xref:_blur[*BLUR*] section for more information.
 
+*--blur-noise-radius*, *--blur-noise-scale*::
+	Parameters for blur noise. See the xref:_blur[*BLUR*] section for more information.
+
 *--blur-background*::
 	Blur background of semi-transparent / ARGB windows. Bad in performance, with driver-dependent behavior. The name of the switch may change without prior notifications.
 
@@ -916,6 +919,14 @@ Available options of the _blur_ section are: ::
 
   *kernel*:::
     A string. The kernel to use for the _kernel_ blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.
+
+If blur is enabled, noise can be configured with the following options: ::
+
+  *noise-radius*:::
+  An integer. The maximum displacement of background pixels when applying noise. Corresponds to the *--blur-noise-radius* command line option. If set to zero, noise is disabled (default: 0).
+
+  *noise-scale*:::
+  A floating point number. The size of noise features. Corresponds to the *--blur-noise-scale* command line option. If negative or zero, noise is disabled (default: 0.005).
 
 SIGNALS
 -------

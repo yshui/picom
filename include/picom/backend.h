@@ -54,21 +54,30 @@ enum shader_attributes {
 	SHADER_ATTRIBUTE_ANIMATED = 1,
 };
 
+struct blur_args {
+	int noise_radius;
+	double noise_scale;
+};
+
 struct gaussian_blur_args {
+	struct blur_args base;
 	int size;
 	double deviation;
 };
 
 struct box_blur_args {
+	struct blur_args base;
 	int size;
 };
 
 struct kernel_blur_args {
+	struct blur_args base;
 	struct conv **kernels;
 	int kernel_count;
 };
 
 struct dual_kawase_blur_args {
+	struct blur_args base;
 	int size;
 	int strength;
 };
@@ -433,7 +442,7 @@ struct backend_operations {
 	/// Create a blur context that can be used to call `blur` for images with a
 	/// specific format.
 	void *(*create_blur_context)(backend_t *base, enum blur_method,
-	                             enum backend_image_format format, void *args);
+	                             enum backend_image_format format, struct blur_args *args);
 	/// Destroy a blur context
 	void (*destroy_blur_context)(backend_t *base, void *ctx);
 	/// Get how many pixels outside of the blur area is needed for blur
