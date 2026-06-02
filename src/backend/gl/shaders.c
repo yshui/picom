@@ -341,7 +341,7 @@ const char perturb_glsl[] = GLSL(330,
 		if (radius > 0.0 && scale > 0.0) {
 			vec2 p = uv * scale;
 			float r = snoise(p);
-			float a = snoise(-p) * radians(90);
+			float a = snoise(-p) * radians(90.0f);
 			uv += radius * r * vec2(cos(a), sin(a));
 		}
 		return uv;
