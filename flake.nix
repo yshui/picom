@@ -1,7 +1,7 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:nixos/nixpkgs/release-25.11";
+    nixpkgs.url = "github:nixos/nixpkgs/release-26.05";
     git-ignore-nix = {
       url = "github:hercules-ci/gitignore.nix/master";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -19,7 +19,7 @@
       system:
       let
         # like lib.lists.remove, but takes a list of elements to remove
-        llvmVersion = "20";
+        llvmVersion = "22";
         removeFromList = toRemove: list: pkgs.lib.foldl (l: e: pkgs.lib.remove e l) list toRemove;
         picomOverlay = final: prev: {
           picom = prev.callPackage ./package.nix {

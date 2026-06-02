@@ -50,7 +50,7 @@ stdenv.mkDerivation (finalAttrs: {
     ninja
     pkg-config
   ]
-  ++ (lib.optional devShell [
+  ++ (lib.optionals devShell [
     llvmPackages.clang-tools
     llvmPackages.clang-unwrapped.python
     llvmPackages.libllvm
@@ -63,7 +63,7 @@ stdenv.mkDerivation (finalAttrs: {
       ]
     ))
   ])
-  ++ (lib.optional withDocs [
+  ++ (lib.optionals withDocs [
     asciidoctor
     docbook_xml_dtd_45
     docbook_xsl
