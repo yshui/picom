@@ -2034,18 +2034,29 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		goto err;
 	}
 
+	// The value to which the config will be written after loading
+	config_t cfg;
+	memset(&cfg, 0, sizeof(config_t));
+
 	// Parse configuration file
-	if (!parse_config(&ps->o, config_file)) {
+	if (!parse_config(&ps->o, config_file, &cfg)) {
+		config_destroy(&cfg);
 		goto err;
 	}
 
 	// Parse all of the rest command line options
 	if (!get_cfg(&ps->o, argc, argv)) {
+		config_destroy(&cfg);
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
 		goto err;
 	}
 
+	if (ps->o.dump_config && cfg.root) {
+		config_write(&cfg, stdout);
+	}
+
+	config_destroy(&cfg);
 	show_config_warning_message_box(&ps->o);
 
 	const char *basename = strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
