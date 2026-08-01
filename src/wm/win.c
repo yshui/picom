@@ -299,6 +299,14 @@ static void win_update_properties(session_t *ps, struct win *w) {
 		}
 	}
 
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR)) {
+		bool bypass = win_fetch_bypassing_compositor(ps, w);
+		if (bypass != w->is_bypassing_compositor) {
+			w->is_bypassing_compositor = bypass;
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
+	}
+
 	if (ps->o.track_leader &&
 	    (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
 	     win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR) ||
@@ -1448,7 +1456,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	    ps->atoms->a_NET_WM_NAME,        ps->atoms->aWM_CLASS,
 	    ps->atoms->aWM_WINDOW_ROLE,      ps->atoms->a_COMPTON_SHADOW,
 	    ps->atoms->aWM_CLIENT_LEADER,    ps->atoms->aWM_TRANSIENT_FOR,
-	    ps->atoms->a_NET_WM_STATE,
+	    ps->atoms->a_NET_WM_STATE,       ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 	c2_window_state_init(ps->c2_state, &new->c2_state);
@@ -2387,11 +2395,12 @@ void win_update_is_fullscreen(const session_t *ps, struct win *w) {
 }
 
 /**
- * Check if a window has BYPASS_COMPOSITOR property set
+ * Fetch the BYPASS_COMPOSITOR property from the X server.
  *
- * TODO(yshui) cache this property
+ * Synchronous; used only when the cached value is (re)established — see
+ * `win_is_bypassing_compositor` for the cached read used in the frame path.
  */
-bool win_is_bypassing_compositor(const session_t *ps, const struct win *w) {
+bool win_fetch_bypassing_compositor(const session_t *ps, const struct win *w) {
 	bool ret = false;
 	auto wid = win_client_id(w, /*fallback_to_self=*/true);
 
@@ -2404,4 +2413,12 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct win *w) {
 
 	free_winprop(&prop);
 	return ret;
+}
+
+/**
+ * Check if a window has BYPASS_COMPOSITOR property set, from the cache
+ * maintained by the PropertyNotify stale machinery. No X round trip.
+ */
+bool win_is_bypassing_compositor(const session_t *ps attr_unused, const struct win *w) {
+	return w->is_bypassing_compositor;
 }

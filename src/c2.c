@@ -2231,6 +2231,29 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
 	c2_window_state_update_from_replies(state, window_state, c, client_win, frame_win);
 }
 
+void c2_window_state_update_from_async_reply(struct c2_state *state,
+                                             struct c2_window_state *window_state,
+                                             xcb_atom_t property, bool is_on_client,
+                                             xcb_get_property_reply_t *reply,
+                                             xcb_connection_t *c) {
+	struct c2_tracked_property *p;
+	struct c2_tracked_property_key key = {
+	    .property = property,
+	    .is_on_client = is_on_client,
+	};
+	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
+	if (!p) {
+		return;
+	}
+	auto value = &window_state->values[p->id];
+	if (reply == NULL) {
+		value->valid = false;
+		value->needs_update = false;
+		return;
+	}
+	c2_window_state_update_one_from_reply(state, value, property, reply, c);
+}
+
 bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
 	struct c2_tracked_property *p;
 	struct c2_tracked_property_key key = {

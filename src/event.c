@@ -527,6 +527,132 @@ static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 	}
 }
 
+struct ev_name_fetch_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+	/// The atom this request fetched; on an empty _NET_WM_NAME reply the
+	/// callback falls back to fetching WM_NAME.
+	xcb_atom_t property;
+};
+
+static void
+handle_name_fetch_reply(struct x_connection *c, struct x_async_request_base *req_base,
+                        const xcb_raw_generic_event_t *reply_or_error);
+
+/// Fetch the window title asynchronously: _NET_WM_NAME first, WM_NAME as
+/// fallback (same priority as the synchronous `win_update_name`).
+static void ev_name_fetch_start_atom(session_t *ps, xcb_window_t client_wid,
+                                     xcb_window_t toplevel_wid, xcb_atom_t atom) {
+	auto req = ccalloc(1, struct ev_name_fetch_request);
+	req->base.sequence = xcb_get_property(ps->c.c, 0, client_wid, atom,
+	                                      XCB_GET_PROPERTY_TYPE_ANY, 0, UINT_MAX)
+	                         .sequence;
+	req->base.callback = handle_name_fetch_reply;
+	req->ps = ps;
+	req->wid = toplevel_wid;
+	req->property = atom;
+	x_await_request(&ps->c, &req->base);
+}
+
+static void ev_name_fetch_start(session_t *ps, struct wm_ref *toplevel_cursor) {
+	auto client_cursor = wm_ref_client_of(toplevel_cursor) ?: toplevel_cursor;
+	ev_name_fetch_start_atom(ps, wm_ref_win_id(client_cursor),
+	                         wm_ref_win_id(toplevel_cursor), ps->atoms->a_NET_WM_NAME);
+}
+
+static void handle_name_fetch_reply(struct x_connection *c attr_unused,
+                                    struct x_async_request_base *req_base,
+                                    const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct ev_name_fetch_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	auto property = req->property;
+	free(req);
+
+	if (reply_or_error == NULL || reply_or_error->response_type == 0) {
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	auto w = cursor != NULL ? wm_ref_deref(cursor) : NULL;
+	if (w == NULL) {
+		return;
+	}
+
+	auto reply = (xcb_get_property_reply_t *)reply_or_error;
+	if ((reply->type == XCB_ATOM_NONE || reply->format != 8 ||
+	     xcb_get_property_value_length(reply) == 0) &&
+	    property == ps->atoms->a_NET_WM_NAME) {
+		// _NET_WM_NAME unset; fall back to WM_NAME.
+		auto client_cursor = wm_ref_client_of(cursor) ?: cursor;
+		ev_name_fetch_start_atom(ps, wm_ref_win_id(client_cursor), wid,
+		                         ps->atoms->aWM_NAME);
+		return;
+	}
+	if (reply->type == XCB_ATOM_NONE || reply->format != 8 ||
+	    !x_is_type_string(ps->atoms, reply->type)) {
+		return;
+	}
+
+	int len = xcb_get_property_value_length(reply);
+	const char *data = xcb_get_property_value(reply);
+	// The name is the first (possibly not null-terminated) string.
+	int name_len = (int)strnlen(data, (size_t)len);
+	if (w->name != NULL && strncmp(w->name, data, (size_t)name_len) == 0 &&
+	    w->name[name_len] == '\0') {
+		return;        // unchanged
+	}
+	free(w->name);
+	w->name = strndup(data, (size_t)name_len);
+	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+	ps->pending_updates = true;
+	queue_redraw(ps);
+}
+
+struct ev_c2_property_fetch_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+	xcb_atom_t property;
+	bool is_on_client;
+};
+
+/// Reply handler for the async GetProperty issued when a c2-tracked property
+/// changes. Updates the cached value and re-evaluates rules.
+static void handle_c2_property_fetch_reply(struct x_connection *c,
+                                           struct x_async_request_base *req_base,
+                                           const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct ev_c2_property_fetch_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	auto property = req->property;
+	auto is_on_client = req->is_on_client;
+	free(req);
+
+	if (reply_or_error == NULL) {
+		// Shutting down
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	auto w = cursor != NULL ? wm_ref_deref(cursor) : NULL;
+	if (w == NULL) {
+		return;
+	}
+
+	xcb_get_property_reply_t *reply = NULL;
+	if (reply_or_error->response_type != 0) {
+		reply = (xcb_get_property_reply_t *)reply_or_error;
+	}
+	c2_window_state_update_from_async_reply(ps->c2_state, &w->c2_state, property,
+	                                        is_on_client, reply, c->c);
+	// Rules based on this property must be re-evaluated.
+	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+	ps->pending_updates = true;
+	queue_redraw(ps);
+}
+
 static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
 	log_debug("{ atom = %#010x, window = %#010x, state = %d }", ev->atom, ev->window,
 	          ev->state);
@@ -597,7 +723,15 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	auto toplevel = wm_ref_deref(toplevel_cursor);
-	if (toplevel) {
+	if (toplevel != NULL &&
+	    (ev->atom == ps->atoms->aWM_NAME || ev->atom == ps->atoms->a_NET_WM_NAME)) {
+		// Terminals stamp the window title with the size on every resize
+		// step; the synchronous name refetch in win_update_properties (2
+		// blocking round trips) then stalls the next frame against a
+		// maximally busy X server. Fetch the name asynchronously instead;
+		// _NET_WM_NAME keeps priority via a chained WM_NAME fallback.
+		ev_name_fetch_start(ps, toplevel_cursor);
+	} else if (toplevel) {
 		win_set_property_stale(toplevel, ev->atom);
 	}
 
@@ -612,13 +746,22 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
 		bool change_is_on_client = cursor == client_cursor;
 		if (toplevel) {
-			c2_window_state_mark_dirty(ps->c2_state, &toplevel->c2_state,
-			                           ev->atom, change_is_on_client);
-			// Set FACTOR_CHANGED so rules based on properties will be
-			// re-evaluated.
-			// Don't need to set property stale here, since that only
-			// concerns properties we explicitly check.
-			win_set_flags(toplevel, WIN_FLAGS_FACTOR_CHANGED);
+			// Fetch the new value asynchronously right away instead of
+			// marking it dirty for a synchronous fetch at the next frame:
+			// the blocking GetProperty round trip in the draw callback
+			// stalled resize frames for tens of milliseconds (GTK clients
+			// stamp properties continuously while resizing).
+			auto req = ccalloc(1, struct ev_c2_property_fetch_request);
+			req->base.sequence =
+			    xcb_get_property(ps->c.c, 0, wm_ref_win_id(cursor), ev->atom,
+			                     XCB_GET_PROPERTY_TYPE_ANY, 0, UINT32_MAX)
+			        .sequence;
+			req->base.callback = handle_c2_property_fetch_reply;
+			req->ps = ps;
+			req->wid = win_id(toplevel);
+			req->property = ev->atom;
+			req->is_on_client = change_is_on_client;
+			x_await_request(&ps->c, &req->base);
 		}
 	}
 }

@@ -237,6 +237,10 @@ struct win {
 
 	/// Number of times each animation trigger is blocked
 	unsigned int animation_block[ANIMATION_TRIGGER_COUNT];
+	/// Cached _NET_WM_BYPASS_COMPOSITOR == 1, maintained by the
+	/// PropertyNotify stale machinery. Read per frame; fetching it
+	/// synchronously would cost an X round trip per rules re-evaluation.
+	bool is_bypassing_compositor;
 	/// Whether `bounding_shaped` reflects an actual ShapeQueryExtents
 	/// answer. Reset by ShapeNotify; lets pure size changes of never-shaped
 	/// windows skip the shape queries (an X round trip per resize frame).
@@ -462,6 +466,7 @@ void win_update_is_fullscreen(const session_t *ps, struct win *w);
  * Check if a window has BYPASS_COMPOSITOR property set
  */
 bool win_is_bypassing_compositor(const session_t *ps, const struct win *w);
+bool win_fetch_bypassing_compositor(const session_t *ps, const struct win *w);
 /**
  * Get a rectangular region in global coordinates a window (and possibly
  * its shadow) occupies.
