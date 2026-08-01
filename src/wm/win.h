@@ -229,6 +229,10 @@ struct win {
 
 	/// Number of times each animation trigger is blocked
 	unsigned int animation_block[ANIMATION_TRIGGER_COUNT];
+	/// Whether `bounding_shaped` reflects an actual ShapeQueryExtents
+	/// answer. Reset by ShapeNotify; lets pure size changes of never-shaped
+	/// windows skip the shape queries (an X round trip per resize frame).
+	bool shape_known;
 };
 
 struct win_script_context {
@@ -541,8 +545,7 @@ int win_update_role(struct x_connection *c, struct atom *atoms, struct win *w);
 int win_update_name(struct x_connection *c, struct atom *atoms, struct win *w);
 void win_on_win_size_change(struct win *w, int shadow_offset_x, int shadow_offset_y,
                             int shadow_radius);
-void win_update_bounding_shape(struct x_connection *c, struct win *w,
-                               bool detect_rounded_corners);
+void win_update_bounding_shape(session_t *ps, struct win *w, bool detect_rounded_corners);
 bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
                                 struct win *w);
 

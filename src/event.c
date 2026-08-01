@@ -702,7 +702,26 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 		return;
 	}
 
-	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
+	log_debug("Shape notify for %#010x (%s): kind %d, shaped %d, %dx%d", win_id(w),
+	          w->name, ev->shape_kind, ev->shaped, ev->extents_width, ev->extents_height);
+
+	if (ev->shape_kind == XCB_SHAPE_SK_INPUT) {
+		// Input shape doesn't affect rendering at all; rebinding the
+		// pixmap and re-rendering for it is pure waste.
+		return;
+	}
+
+	// A shape change only affects which region of the pixmap is drawn; the
+	// pixmap itself is still valid. SIZE_STALE would needlessly rebind it.
+	//
+	// The event itself carries whether the window is (still) shaped —
+	// recording it here means the update path never needs a synchronous
+	// ShapeQueryExtents round trip. i3 stamps ShapeNotify on every frame
+	// window on every resize step, so querying instead of trusting the
+	// event cost ~2-4ms × windows × frames (measured 29-44ms/frame).
+	w->bounding_shaped = ev->shaped;
+	w->shape_known = true;
+	win_set_flags(w, WIN_FLAGS_SHAPE_STALE);
 	ps->pending_updates = true;
 }
 

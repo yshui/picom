@@ -362,8 +362,9 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
-			win_update_bounding_shape(&ps->c, w, ps->o.detect_rounded_corners);
-			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+			win_update_bounding_shape(ps, w, ps->o.detect_rounded_corners);
+			// Size change subsumes a pending shape change.
+			win_clear_flags(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_SHAPE_STALE);
 
 			// Window shape/size changed, invalidate the images we built
 			// log_trace("free out dated pict");
@@ -377,6 +378,31 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
 			win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
 		}
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_SHAPE_STALE)) {
+		// Shape changed but size didn't: recompute the bounding shape, and
+		// only if it actually differs invalidate derived images (mask,
+		// shadow). The window pixmap is kept either way — its contents are
+		// unaffected by shape changes. i3 and friends re-stamp identical
+		// shapes on every move/resize, so the equality check is what keeps
+		// this storm off the render budget.
+		win_clear_flags(w, WIN_FLAGS_SHAPE_STALE);
+
+		region_t old_shape;
+		pixman_region32_init(&old_shape);
+		pixman_region32_copy(&old_shape, &w->bounding_shape);
+		win_update_bounding_shape(ps, w, ps->o.detect_rounded_corners);
+
+		if (!pixman_region32_equal(&old_shape, &w->bounding_shape)) {
+			win_on_win_size_change(w, ps->o.shadow_offset_x,
+			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+			win_release_mask(ps->backend_data, w);
+			win_release_shadow(ps->backend_data, w);
+			ps->pending_updates = true;
+		}
+		pixman_region32_fini(&old_shape);
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
@@ -1422,8 +1448,78 @@ gen_by_val(win_extents);
  *
  * Mark the window shape as updated
  */
-void win_update_bounding_shape(struct x_connection *c, struct win *w,
-                               bool detect_rounded_corners) {
+struct win_shape_rects_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+	/// Window-body size (widthb/heightb) at request time; a reply for a
+	/// stale size is dropped (a newer request is in flight or coming).
+	ivec2 size;
+};
+
+/// Reply handler for the async ShapeGetRectangles issued by
+/// `win_update_bounding_shape`. Refines the (currently rectangular) bounding
+/// shape with the server's answer.
+static void win_handle_shape_rects_reply(struct x_connection *c attr_unused,
+                                         struct x_async_request_base *req_base,
+                                         const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct win_shape_rects_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	auto req_size = req->size;
+	free(req);
+
+	if (reply_or_error == NULL || reply_or_error->response_type == 0) {
+		// Shutting down, or window gone.
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	auto w = cursor != NULL ? wm_ref_deref(cursor) : NULL;
+	if (w == NULL || w->state != WSTATE_MAPPED || w->widthb != req_size.width ||
+	    w->heightb != req_size.height) {
+		// Window gone/unmapped, or it was resized again while the request
+		// was in flight — the rectangles describe a stale size.
+		return;
+	}
+
+	auto r = (const xcb_shape_get_rectangles_reply_t *)reply_or_error;
+	xcb_rectangle_t *xrects =
+	    xcb_shape_get_rectangles_rectangles((xcb_shape_get_rectangles_reply_t *)r);
+	int nrects =
+	    xcb_shape_get_rectangles_rectangles_length((xcb_shape_get_rectangles_reply_t *)r);
+	rect_t *rects = from_x_rects(nrects, xrects);
+
+	region_t br;
+	pixman_region32_init_rects(&br, rects, nrects);
+	free(rects);
+	// Origin correction, see win_update_bounding_shape.
+	pixman_region32_translate(&br, w->g.border_width, w->g.border_width);
+
+	region_t new_shape;
+	pixman_region32_init(&new_shape);
+	win_get_region_local(w, &new_shape);
+	pixman_region32_intersect(&new_shape, &new_shape, &br);
+	pixman_region32_fini(&br);
+
+	if (!pixman_region32_equal(&new_shape, &w->bounding_shape)) {
+		pixman_region32_copy(&w->bounding_shape, &new_shape);
+		if (ps->o.detect_rounded_corners) {
+			w->rounded_corners = win_has_rounded_corners(w);
+		}
+		// Derived images (mask, shadow) were built from the rectangular
+		// interim shape.
+		win_release_mask(ps->backend_data, w);
+		win_release_shadow(ps->backend_data, w);
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		ps->pending_updates = true;
+		queue_redraw(ps);
+	}
+	pixman_region32_fini(&new_shape);
+}
+
+void win_update_bounding_shape(session_t *ps, struct win *w, bool detect_rounded_corners) {
+	auto c = &ps->c;
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
 	assert(w->state == WSTATE_MAPPED);
@@ -1432,49 +1528,35 @@ void win_update_bounding_shape(struct x_connection *c, struct win *w,
 	// Start with the window rectangular region
 	win_get_region_local(w, &w->bounding_shape);
 
-	if (c->e.has_shape) {
+	if (c->e.has_shape && !w->shape_known) {
+		// Shapedness only changes via ShapeNotify (which resets
+		// shape_known), never as a side effect of a resize — so the
+		// synchronous ShapeQueryExtents round trip is only needed when we
+		// genuinely don't know. For known-shaped windows the async
+		// rectangles fetch below carries the real shape; re-querying
+		// extents every resize frame cost ~4-6ms against a busy server
+		// (i3 frame windows are shaped, so every i3 resize paid it).
 		w->bounding_shaped = win_bounding_shaped(c, win_id(w));
+		w->shape_known = true;
 	}
 
-	// Only request for a bounding region if the window is shaped
-	// (while loop is used to avoid goto, not an actual loop)
-	while (w->bounding_shaped) {
-		/*
-		 * if window doesn't exist anymore,  this will generate an error
-		 * as well as not generate a region.
-		 */
-
-		xcb_shape_get_rectangles_reply_t *r = xcb_shape_get_rectangles_reply(
-		    c->c, xcb_shape_get_rectangles(c->c, win_id(w), XCB_SHAPE_SK_BOUNDING),
-		    NULL);
-
-		if (!r) {
-			break;
-		}
-
-		xcb_rectangle_t *xrects = xcb_shape_get_rectangles_rectangles(r);
-		int nrects = xcb_shape_get_rectangles_rectangles_length(r);
-		rect_t *rects = from_x_rects(nrects, xrects);
-		free(r);
-
-		region_t br;
-		pixman_region32_init_rects(&br, rects, nrects);
-		free(rects);
-
-		// Add border width because we are using a different origin.
-		// X thinks the top left of the inner window is the origin
-		// (for the bounding shape, although xcb_get_geometry thinks
-		//  the outer top left (outer means outside of the window
-		//  border) is the origin),
-		// We think the top left of the border is the origin
-		pixman_region32_translate(&br, w->g.border_width, w->g.border_width);
-
-		// Intersect the bounding region we got with the window rectangle,
-		// to make sure the bounding region is not bigger than the window
-		// rectangle
-		pixman_region32_intersect(&w->bounding_shape, &w->bounding_shape, &br);
-		pixman_region32_fini(&br);
-		break;
+	if (w->bounding_shaped) {
+		// Fetch the shape rectangles ASYNCHRONOUSLY. The old synchronous
+		// fetch was one X round trip per resize frame per shaped window —
+		// i3 stamps bounding shapes on its frame windows, so this cost
+		// ~5.7ms per hit against a resize-storm-busy server. Until the
+		// reply lands we use the plain window rectangle; for WM frames
+		// (whose shape is the rectangle minus invisible corner slivers)
+		// one interim frame is imperceptible, and the reply path releases
+		// derived images only when the shape actually differs.
+		auto req = ccalloc(1, struct win_shape_rects_request);
+		req->base.sequence =
+		    xcb_shape_get_rectangles(c->c, win_id(w), XCB_SHAPE_SK_BOUNDING).sequence;
+		req->base.callback = win_handle_shape_rects_reply;
+		req->ps = ps;
+		req->wid = win_id(w);
+		req->size = (ivec2){.width = w->widthb, .height = w->heightb};
+		x_await_request(c, &req->base);
 	}
 
 	if (w->bounding_shaped && detect_rounded_corners) {
