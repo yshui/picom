@@ -159,6 +159,11 @@ struct backend_blit_args {
 	/// Effective size of the source image BEFORE scaling, set where the corners
 	/// of the image are.
 	ivec2 effective_size;
+	/// Sampling beyond the source image extent replicates the edge pixels
+	/// instead of tiling. Set for window content: during an interactive grow
+	/// the bound pixmap can briefly be smaller than the window, and tiling
+	/// would mosaic stale content across it.
+	bool edge_clamp;
 	/// Border width of the source image BEFORE scaling. This is used with
 	/// `corner_radius` to create a border for the rounded corners.
 	/// Setting this has no effect if `corner_radius` is 0.
@@ -375,10 +380,14 @@ struct backend_operations {
 	/// @param backend_data backend data
 	/// @param pixmap       X pixmap to bind
 	/// @param fmt          information of the pixmap's visual
+	/// @param size_hint    the pixmap's size, if the caller knows it; {0, 0}
+	///                     makes the backend query the X server (a synchronous
+	///                     round trip — avoid in the frame path).
 	/// @return             backend specific image handle for the pixmap. May be
 	///                     NULL.
 	image_handle (*bind_pixmap)(struct backend_base *backend_data, xcb_pixmap_t pixmap,
-	                            struct xvisual_info fmt) __attribute__((nonnull(1)));
+	                            struct xvisual_info fmt, ivec2 size_hint)
+	    __attribute__((nonnull(1)));
 
 	/// Acquire the image handle of the back buffer.
 	///

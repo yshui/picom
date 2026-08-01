@@ -91,12 +91,20 @@ struct win {
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	image_handle win_image;
+	/// Pixel size of `win_image`. With asynchronous pixmap binding the
+	/// window geometry can run ahead of the bound image (the new pixmap is
+	/// still in flight); the renderer must not paint the old image beyond
+	/// its actual extent (the window sampler repeats, which would tile it).
+	ivec2 win_image_size;
 	/// The old window image before the window image is refreshed. This is used for
 	/// animation, and is only kept alive for the duration of the animation.
 	image_handle saved_win_image;
 	/// How much to scale the saved_win_image, so that it is the same size as the
 	/// current window image.
 	vec2 saved_win_image_scale;
+	/// Pixel size of saved_win_image at capture time. Used to recompute the
+	/// scale on animation restarts without re-capturing.
+	ivec2 saved_win_image_size;
 	/// A mask image for the shadow. This is usually a blurred `mask_image`, though
 	/// for some backends this can be generated on the CPU.
 	image_handle shadow_mask;
@@ -229,6 +237,26 @@ struct win {
 
 	/// Number of times each animation trigger is blocked
 	unsigned int animation_block[ANIMATION_TRIGGER_COUNT];
+	/// Cached _NET_WM_BYPASS_COMPOSITOR == 1, maintained by the
+	/// PropertyNotify stale machinery. Read per frame; fetching it
+	/// synchronously would cost an X round trip per rules re-evaluation.
+	bool is_bypassing_compositor;
+	/// Whether `bounding_shaped` reflects an actual ShapeQueryExtents
+	/// answer. Reset by ShapeNotify; lets pure size changes of never-shaped
+	/// windows skip the shape queries (an X round trip per resize frame).
+	bool shape_known;
+	/// The named pixmap we have requested asynchronously but not yet bound.
+	/// A newer request supersedes an in-flight one (the reply handler frees
+	/// the orphaned pixmap when the recorded id doesn't match).
+	xcb_pixmap_t pending_pixmap;
+	/// True when `pending_pixmap` has been named successfully. Kept only for
+	/// win_bind_pending_pixmap's precondition; NOTE: deferring the bind
+	/// until the client paints was tried (twice) and does not work —
+	/// continuous resizes supersede the request before any paint-proof can
+	/// complete, pinning a stale image. Bind immediately.
+	bool pending_pixmap_ready;
+	/// Pixel size of the ready `pending_pixmap`.
+	ivec2 pending_pixmap_size;
 };
 
 struct win_script_context {
@@ -404,6 +432,9 @@ double win_animatable_get(const struct win *w, enum win_script_output output);
 void win_process_primary_flags(session_t *ps, struct win *w);
 void win_process_secondary_flags(session_t *ps, struct win *w);
 void win_process_image_flags(session_t *ps, struct win *w);
+/// Bind the named `pending_pixmap` as the window image (see
+/// `pending_pixmap_ready`).
+void win_bind_pending_pixmap(session_t *ps, struct win *w);
 
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
 /// the window out.
@@ -435,6 +466,7 @@ void win_update_is_fullscreen(const session_t *ps, struct win *w);
  * Check if a window has BYPASS_COMPOSITOR property set
  */
 bool win_is_bypassing_compositor(const session_t *ps, const struct win *w);
+bool win_fetch_bypassing_compositor(const session_t *ps, const struct win *w);
 /**
  * Get a rectangular region in global coordinates a window (and possibly
  * its shadow) occupies.
@@ -541,8 +573,7 @@ int win_update_role(struct x_connection *c, struct atom *atoms, struct win *w);
 int win_update_name(struct x_connection *c, struct atom *atoms, struct win *w);
 void win_on_win_size_change(struct win *w, int shadow_offset_x, int shadow_offset_y,
                             int shadow_radius);
-void win_update_bounding_shape(struct x_connection *c, struct win *w,
-                               bool detect_rounded_corners);
+void win_update_bounding_shape(session_t *ps, struct win *w, bool detect_rounded_corners);
 bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
                                 struct win *w);
 

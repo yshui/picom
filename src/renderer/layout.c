@@ -59,6 +59,27 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
 	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
 	out_layer->window.size = vec2_as((vec2){.width = w->widthb, .height = w->heightb});
+	// During a grow, the bound image briefly lags the geometry (async rebind
+	// + the client's own repaint latency); its grown strip would render as
+	// transparent zeroes or a stretched edge. Deferring the content bind
+	// until the client painted was proven unworkable (see win.h,
+	// pending_pixmap_ready) — instead the DECORATION follows the content:
+	// clamp the rendered window box (and, below, the shadow) to the bound
+	// image, so border/shadow/corners hug real pixels and snap out with the
+	// next bind. Shrinks are unaffected (image ≥ geometry).
+	ivec2 deco_shrink = {};
+	if (w->win_image_size.width > 0 && w->win_image_size.height > 0) {
+		if (w->win_image_size.width < out_layer->window.size.width) {
+			deco_shrink.width =
+			    out_layer->window.size.width - w->win_image_size.width;
+			out_layer->window.size.width = w->win_image_size.width;
+		}
+		if (w->win_image_size.height < out_layer->window.size.height) {
+			deco_shrink.height =
+			    out_layer->window.size.height - w->win_image_size.height;
+			out_layer->window.size.height = w->win_image_size.height;
+		}
+	}
 	out_layer->crop.origin = vec2_as((vec2){
 	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_X),
 	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_Y),
@@ -84,7 +105,8 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 		                   .y = w->g.y + w->shadow_dy * scale.y +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
 		out_layer->shadow.size =
-		    vec2_as((vec2){.width = w->shadow_width, .height = w->shadow_height});
+		    vec2_as((vec2){.width = w->shadow_width - deco_shrink.width,
+		                   .height = w->shadow_height - deco_shrink.height});
 	} else {
 		out_layer->shadow.origin = (ivec2){};
 		out_layer->shadow.size = (ivec2){};

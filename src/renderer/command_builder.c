@@ -39,6 +39,13 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
 	pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
 	                          layer->window.origin.y);
+	// The bounding shape spans the window geometry; the layer box may be
+	// clamped to the (smaller) bound image during a grow so decoration
+	// follows content — clip the body to it as well.
+	pixman_region32_intersect_rect(&cmd->target_mask, &cmd->target_mask,
+	                               layer->window.origin.x, layer->window.origin.y,
+	                               (uint)layer->window.size.width,
+	                               (uint)layer->window.size.height);
 	if (w->frame_opacity < 1) {
 		pixman_region32_subtract(&cmd->target_mask, &cmd->target_mask, frame_region);
 	}
@@ -84,6 +91,10 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
+	    // During an interactive grow the bound pixmap can briefly be smaller
+	    // than the window (asynchronous rebind); clamp instead of tiling so
+	    // the gap shows stretched edge pixels, not a mosaic of stale content.
+	    .edge_clamp = true,
 	};
 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
 	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
@@ -229,7 +240,19 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		    vec2_reciprocal(layer->shadow_scale));
 	}
 
-	scoped_region_t crop = region_from_box(layer->crop);
+	// Outset the crop by the shadow's margins around the window, so a crop
+	// that tracks the window rect (e.g. crop-reveal geometry animations)
+	// keeps the shadow visible instead of clipping it away entirely.
+	struct ibox shadow_crop = layer->crop;
+	if (shadow_crop.size.width != INT_MAX) {
+		ivec2 margin_tl = ivec2_sub(layer->window.origin, layer->shadow.origin);
+		ivec2 margin_br = ivec2_sub(
+		    ivec2_add(layer->shadow.origin, layer->shadow.size),
+		    ivec2_add(layer->window.origin, layer->window.size));
+		shadow_crop.origin = ivec2_sub(shadow_crop.origin, margin_tl);
+		shadow_crop.size = ivec2_add(shadow_crop.size, ivec2_add(margin_tl, margin_br));
+	}
+	scoped_region_t crop = region_from_box(shadow_crop);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 
 	cmd->blit = (struct backend_blit_args){
@@ -256,6 +279,13 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 		pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
 		pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
 		                          layer->window.origin.y);
+		// Match the body: the layer box may be clamped to the bound image
+		// during a grow (decoration follows content); blur past the drawn
+		// body would show a blurred halo band.
+		pixman_region32_intersect_rect(
+		    &cmd->target_mask, &cmd->target_mask, layer->window.origin.x,
+		    layer->window.origin.y, (uint)layer->window.size.width,
+		    (uint)layer->window.size.height);
 	} else if (blur_frame && mode == WMODE_FRAME_TRANS) {
 		pixman_region32_copy(&cmd->target_mask, frame_region);
 	} else {

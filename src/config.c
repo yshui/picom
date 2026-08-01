@@ -525,6 +525,7 @@ static const struct debug_options_entry debug_options_entries[] = {
     {"smart_frame_pacing"   , NULL                , offsetof(struct debug_options, smart_frame_pacing)},
     {"force_vblank_sched"   , vblank_scheduler_str, offsetof(struct debug_options, force_vblank_scheduler)},
     {"consistent_buffer_age", NULL                , offsetof(struct debug_options, consistent_buffer_age)},
+    {"blocking_swap"        , NULL                , offsetof(struct debug_options, blocking_swap)},
 };
 // clang-format on
 

@@ -685,25 +685,27 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	return true;
 }
 
-static image_handle
-xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
-	xcb_generic_error_t *e;
-	auto r = xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), &e);
-	if (!r) {
-		log_error("Invalid pixmap: %#010x", pixmap);
-		x_print_error(base->c, e->full_sequence, e->major_code, e->minor_code,
-		              e->error_code);
-		free(e);
-		return NULL;
+static image_handle xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
+                                        struct xvisual_info fmt, ivec2 size_hint) {
+	if (size_hint.width <= 0 || size_hint.height <= 0) {
+		xcb_generic_error_t *e;
+		auto r = xcb_get_geometry_reply(base->c->c,
+		                                xcb_get_geometry(base->c->c, pixmap), &e);
+		if (!r) {
+			log_error("Invalid pixmap: %#010x", pixmap);
+			x_print_error(base->c, e->full_sequence, e->major_code,
+			              e->minor_code, e->error_code);
+			free(e);
+			return NULL;
+		}
+		size_hint = (ivec2){.width = r->width, .height = r->height};
+		free(r);
 	}
 
 	auto img = ccalloc(1, struct xrender_image_data_inner);
 	img->depth = (uint8_t)fmt.visual_depth;
 	img->has_alpha = fmt.alpha_size > 0;
-	img->size = (ivec2){
-	    .width = r->width,
-	    .height = r->height,
-	};
+	img->size = size_hint;
 	img->format = BACKEND_IMAGE_FORMAT_PIXMAP;
 	img->pixmap = pixmap;
 	xcb_render_create_picture_value_list_t pic_attrs = {.repeat = XCB_RENDER_REPEAT_NORMAL};
@@ -713,7 +715,6 @@ xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fm
 	img->pictfmt = pictfmt_info->id;
 	assert(pictfmt_info->depth == img->depth);
 	img->is_pixmap_internal = false;
-	free(r);
 
 	if (img->pict == XCB_NONE) {
 		free(img);

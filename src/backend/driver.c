@@ -20,13 +20,12 @@ void apply_driver_workarounds(struct session *ps, enum driver driver) {
 }
 
 enum vblank_scheduler_type choose_vblank_scheduler(enum driver driver attr_unused) {
-	enum vblank_scheduler_type type = VBLANK_SCHEDULER_PRESENT;
-#ifdef CONFIG_OPENGL
-	if (driver & DRIVER_NVIDIA) {
-		type = VBLANK_SCHEDULER_SGI_VIDEO_SYNC;
-	}
-#endif
-	return type;
+	// Present is used on all drivers, including NVIDIA. The sgi_video_sync
+	// scheduler syncs to a single driver-chosen head, which caps multi-head
+	// setups at that monitor's refresh rate, while Present NotifyMSC events
+	// follow the primary monitor's full rate. Revert per-run with
+	// PICOM_DEBUG=force_vblank_sched=sgi_video_sync.
+	return VBLANK_SCHEDULER_PRESENT;
 }
 
 enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_window_t window) {

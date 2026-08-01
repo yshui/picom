@@ -166,6 +166,15 @@ const char blit_shader_glsl[] = GLSL(330,
 		return vec2(l, l / (max(d.x, d.y) + 1e-8));
 	}
 
+	float rect_sdf_corner_only(vec2 point, vec2 half_size){
+		vec2 d = abs(point) - half_size + vec2(corner_radius);
+		if(d.x>0.0 && d.y>0.0){
+			return length(d)-corner_radius;
+		}
+
+		return -1.0;
+	}
+
 	vec4 default_post_processing(vec4 c) {
 		vec4 border_color = texture(tex, vec2(0.0, 0.5));
 		if (invert_color) {
@@ -205,7 +214,7 @@ const char blit_shader_glsl[] = GLSL(330,
 			// Add a small number to sdf.y to avoid 0/0
 			if (rect_distance > 0.0f) {
 				c = (1.0f - clamp(rect_distance, 0.0f, sdf.y) / (sdf.y + 1e-8)) * rim_color;
-			} else {
+			} else if(rect_sdf_corner_only(texcoord-outer_size/2.0f,inner_size/2.0f) > 0.0f) {
 				float factor = clamp(rect_distance + border_width, 0.0f, sdf.y) / (sdf.y + 1e-8);
 				c = (1.0f - factor) * c + factor * border_color;
 			}

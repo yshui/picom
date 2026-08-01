@@ -58,13 +58,16 @@ enum win_flags {
 	WIN_FLAGS_MAPPED = 64,
 	/// this window has properties which needs to be updated
 	WIN_FLAGS_PROPERTY_STALE = 128,
-	// TODO(yshui) _maybe_ split SIZE_STALE into SIZE_STALE and SHAPE_STALE
 	/// this window has an unhandled size/shape change
 	WIN_FLAGS_SIZE_STALE = 256,
 	/// this window has an unhandled position (i.e. x and y) change
 	WIN_FLAGS_POSITION_STALE = 512,
 	/// need better name for this, is set when some aspects of the window changed
 	WIN_FLAGS_FACTOR_CHANGED = 1024,
+	/// this window has an unhandled bounding shape change. Unlike
+	/// WIN_FLAGS_SIZE_STALE this does not invalidate the window pixmap:
+	/// shape only changes which region of the pixmap is drawn.
+	WIN_FLAGS_SHAPE_STALE = 2048,
 };
 
 enum win_script_output {

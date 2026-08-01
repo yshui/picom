@@ -104,8 +104,9 @@ bool dummy_blur(struct backend_base *base, ivec2 origin attr_unused, image_handl
 	return true;
 }
 
-image_handle dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
-                               struct xvisual_info fmt attr_unused) {
+image_handle
+dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
+                  struct xvisual_info fmt attr_unused, ivec2 size_hint attr_unused) {
 	auto dummy = (struct dummy_data *)base;
 	struct dummy_image *img = NULL;
 	HASH_FIND_INT(dummy->pixmap_images, &pixmap, img);

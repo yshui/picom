@@ -45,6 +45,13 @@ struct c2_state *c2_state_new(struct atom *atoms);
 void c2_state_free(struct c2_state *state);
 /// Returns true if value of the property is used in any condition.
 bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property);
+/// Consume an asynchronously fetched GetProperty reply for a tracked property.
+/// `reply` may be NULL to mark the value invalid (fetch failed).
+void c2_window_state_update_from_async_reply(struct c2_state *state,
+                                             struct c2_window_state *window_state,
+                                             xcb_atom_t property, bool is_on_client,
+                                             xcb_get_property_reply_t *reply,
+                                             xcb_connection_t *c);
 void c2_window_state_init(const struct c2_state *state, struct c2_window_state *window_state);
 void c2_window_state_destroy(const struct c2_state *state, struct c2_window_state *window_state);
 void c2_window_state_mark_dirty(const struct c2_state *state,

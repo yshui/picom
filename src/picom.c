@@ -895,7 +895,8 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 
 			ps->root_image = ps->backend_data->ops.bind_pixmap(
-			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
+			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual),
+			    (ivec2){.width = r->width, .height = r->height});
 			ps->root_image_generation += 1;
 			ps->root_image_extent = (rect_t){
 			    .x1 = r->x, .x2 = r->x + r->width, .y1 = r->y, .y2 = r->y + r->height};
@@ -2150,6 +2151,17 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_error("XSync extension not found. No XSync fence sync is "
 		          "possible. (xrender-sync-fence can't be enabled)");
 		ps->o.xrender_sync_fence = false;
+	}
+	if (ps->o.xrender_sync_fence && !ps->o.use_legacy_backends &&
+	    ps->o.backend != backend_find("glx")) {
+		// The fence await is a blocking X round trip per frame, and the X
+		// server answers slowest exactly when it's busiest (e.g. relaying an
+		// interactive resize). The workaround it implements is only known to
+		// be needed on NVIDIA GLX.
+		log_warn("xrender-sync-fence is enabled but the backend is not glx. "
+		         "This costs a blocking X round trip every frame (tens of ms "
+		         "under load) and is likely unnecessary on this backend; "
+		         "consider disabling it.");
 	}
 
 	if (ps->o.crop_shadow_to_monitor && !ps->c.e.has_randr) {
