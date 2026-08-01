@@ -494,6 +494,15 @@ void win_bind_pending_pixmap(struct session *ps, struct win *w) {
 
 	log_debug("Binding named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
 
+	if (!ivec2_eq(size, w->win_image_size)) {
+		// The effective decoration size follows the bound content (see
+		// layer_from_window); shadow and shape mask were composed for the
+		// previous size and must be recomposed, or the shadow falloff gets
+		// cropped / corners round at the wrong edges.
+		win_release_shadow(ps->backend_data, w);
+		win_release_mask(ps->backend_data, w);
+	}
+
 	// Must release images first, otherwise breaks NVIDIA driver
 	win_release_pixmap(ps->backend_data, w);
 	w->win_image = ps->backend_data->ops.bind_pixmap(

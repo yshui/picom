@@ -159,6 +159,11 @@ struct backend_blit_args {
 	/// Effective size of the source image BEFORE scaling, set where the corners
 	/// of the image are.
 	ivec2 effective_size;
+	/// Sampling beyond the source image extent replicates the edge pixels
+	/// instead of tiling. Set for window content: during an interactive grow
+	/// the bound pixmap can briefly be smaller than the window, and tiling
+	/// would mosaic stale content across it.
+	bool edge_clamp;
 	/// Border width of the source image BEFORE scaling. This is used with
 	/// `corner_radius` to create a border for the rounded corners.
 	/// Setting this has no effect if `corner_radius` is 0.

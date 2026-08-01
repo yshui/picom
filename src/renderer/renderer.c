@@ -168,9 +168,23 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 	return false;
 }
 
+/// The size of the window's rendered content box: its geometry, clamped to
+/// the bound image while a grow's rebind is in flight. Must match the layer
+/// clamp in `layer_from_window` — decoration (shadow, shape mask) is composed
+/// at this size, and win_bind_pending_pixmap releases both when the bound
+/// size changes.
+static inline ivec2 win_effective_content_size(const struct win *w) {
+	ivec2 size = {.width = w->widthb, .height = w->heightb};
+	if (w->win_image_size.width > 0 && w->win_image_size.height > 0) {
+		size.width = min2(size.width, w->win_image_size.width);
+		size.height = min2(size.height, w->win_image_size.height);
+	}
+	return size;
+}
+
 static bool
 renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct win *w) {
-	ivec2 size = {.width = w->widthb, .height = w->heightb};
+	ivec2 size = win_effective_content_size(w);
 	bool succeeded = false;
 	auto image = backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_MASK, size);
 	if (!image || !backend->ops.clear(backend, image, (struct color){0, 0, 0, 0})) {
@@ -180,6 +194,8 @@ renderer_bind_mask(struct renderer *r, struct backend_base *backend, struct win 
 
 	auto bound_region_local = win_get_bounding_shape_global_by_val(w);
 	pixman_region32_translate(&bound_region_local, -w->g.x, -w->g.y);
+	pixman_region32_intersect_rect(&bound_region_local, &bound_region_local, 0, 0,
+	                               (uint)size.width, (uint)size.height);
 	succeeded = backend->ops.copy_area(backend, (ivec2){0, 0}, (image_handle)image,
 	                                   r->white_image, &bound_region_local);
 	pixman_region32_fini(&bound_region_local);
