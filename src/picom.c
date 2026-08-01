@@ -2152,6 +2152,17 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		          "possible. (xrender-sync-fence can't be enabled)");
 		ps->o.xrender_sync_fence = false;
 	}
+	if (ps->o.xrender_sync_fence && !ps->o.use_legacy_backends &&
+	    ps->o.backend != backend_find("glx")) {
+		// The fence await is a blocking X round trip per frame, and the X
+		// server answers slowest exactly when it's busiest (e.g. relaying an
+		// interactive resize). The workaround it implements is only known to
+		// be needed on NVIDIA GLX.
+		log_warn("xrender-sync-fence is enabled but the backend is not glx. "
+		         "This costs a blocking X round trip every frame (tens of ms "
+		         "under load) and is likely unnecessary on this backend; "
+		         "consider disabling it.");
+	}
 
 	if (ps->o.crop_shadow_to_monitor && !ps->c.e.has_randr) {
 		log_fatal("No X RandR extension. crop-shadow-to-monitor cannot be "

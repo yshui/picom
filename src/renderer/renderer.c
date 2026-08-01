@@ -747,7 +747,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		backend->ops.prepare(backend, &layout->commands[0].target_mask);
 	}
 
-	if (monitor_repaint && buffer_age <= r->max_buffer_age) {
+	if (monitor_repaint && buffer_age > 0 && buffer_age <= r->max_buffer_age) {
 		// Restore the area of back buffer that was tainted by monitor repaint
 		int past_frame =
 		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;

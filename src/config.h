@@ -186,6 +186,12 @@ struct debug_options {
 	/// ensuring no matter what buffer age apitrace gets during replay, the result
 	/// will be the same.
 	int consistent_buffer_age;
+	/// Use a blocking buffer swap (swap interval 1) even when frame pacing is
+	/// active. By default frame pacing implies a non-blocking swap, because the
+	/// vblank scheduler already aligns renders to vblank, and a blocking swap
+	/// serializes the compositor on the driver's chosen sync display — capping
+	/// multi-head setups at one monitor's refresh rate on NVIDIA.
+	int blocking_swap;
 };
 
 extern struct debug_options global_debug_options;

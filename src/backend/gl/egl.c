@@ -213,7 +213,13 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 
 	gd->gl.release_user_data = egl_release_image;
 
-	if (ps->o.vsync) {
+	// Same reasoning as the glx backend: when frame pacing will engage, the
+	// vblank scheduler already aligns renders to vblank and a blocking swap
+	// would serialize us on the driver's chosen sync display, capping
+	// multi-head setups at one monitor's rate.
+	bool will_frame_pace =
+	    ps->o.frame_pacing && ps->o.vsync && !ps->o.benchmark && ps->c.e.has_present;
+	if (ps->o.vsync && !(will_frame_pace && !global_debug_options.blocking_swap)) {
 		if (!egl_set_swap_interval(1, gd->display)) {
 			log_error("Failed to enable vsync. %#x", eglGetError());
 		}
@@ -301,8 +307,11 @@ static int egl_buffer_age(backend_t *base) {
 	}
 
 	struct egl_data *gd = (void *)base;
-	EGLint val;
-	eglQuerySurface(gd->display, (EGLSurface)gd->target_win, EGL_BUFFER_AGE_EXT, &val);
+	EGLint val = 0;
+	if (!eglQuerySurface(gd->display, (EGLSurface)gd->target_win, EGL_BUFFER_AGE_EXT, &val)) {
+		// Query failed, buffer contents must be assumed undefined.
+		return -1;
+	}
 	return (int)val ?: -1;
 }
 

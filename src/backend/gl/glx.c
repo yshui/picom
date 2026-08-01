@@ -325,11 +325,23 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 
 	gd->gl.release_user_data = glx_release_image;
 
-	if (ps->o.vsync) {
+	// Whether frame pacing will actually engage. This must mirror the
+	// conditions checked in `initialize_backend` (which runs after backend
+	// init): frame pacing additionally requires vsync, no benchmark mode,
+	// and the Present extension. This backend always provides
+	// last_render_time, so that condition is vacuous here.
+	bool will_frame_pace =
+	    ps->o.frame_pacing && ps->o.vsync && !ps->o.benchmark && ps->c.e.has_present;
+	if (ps->o.vsync && !(will_frame_pace && !global_debug_options.blocking_swap)) {
 		if (!glx_set_swap_interval(1, ps->c.dpy, tgt)) {
 			log_error("Failed to enable vsync.");
 		}
 	} else {
+		// With frame pacing, the vblank scheduler already aligns renders
+		// to vblank; a blocking swap would additionally serialize us on
+		// the driver's chosen sync display (the slowest monitor, on
+		// NVIDIA multi-head), capping every monitor at that rate. Use
+		// PICOM_DEBUG=blocking_swap to get the old behavior.
 		glx_set_swap_interval(0, ps->c.dpy, tgt);
 	}
 
@@ -456,7 +468,11 @@ static int glx_buffer_age(backend_t *base) {
 	}
 
 	struct _glx_data *gd = (void *)base;
-	unsigned int val;
+	// glXQueryDrawable reports failure asynchronously via the X error
+	// handler and leaves the out-param untouched. Pre-set it to 0 (the
+	// spec value for "undefined contents") so a failed query degrades to
+	// a full repaint instead of reading uninitialized stack.
+	unsigned int val = 0;
 	glXQueryDrawable(base->c->dpy, gd->target_win, GLX_BACK_BUFFER_AGE_EXT, &val);
 	return (int)val ?: -1;
 }
