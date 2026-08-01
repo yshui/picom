@@ -8,6 +8,7 @@
 #include <xcb/damage.h>
 #include <xcb/randr.h>
 #include <xcb/xcb_event.h>
+#include <xcb/xfixes.h>
 #include <xcb/xproto.h>
 
 #include <picom/types.h>
@@ -622,57 +623,94 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 }
 
+struct ev_damage_fetch_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+};
+
+/// Reply handler for the async XFixesFetchRegion issued by `repair_win`.
+static void handle_damage_fetch_reply(struct x_connection *c attr_unused,
+                                      struct x_async_request_base *req_base,
+                                      const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct ev_damage_fetch_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	free(req);
+
+	if (reply_or_error == NULL || reply_or_error->response_type == 0) {
+		// Shutting down, or the window vanished mid-flight.
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	auto w = cursor != NULL ? wm_ref_deref(cursor) : NULL;
+	if (w == NULL || !ps->redirected) {
+		// Why care about damage when screen is unredirected?
+		// We will force full-screen repaint on redirection.
+		return;
+	}
+
+	auto reply = (xcb_xfixes_fetch_region_reply_t *)reply_or_error;
+	int nrect = xcb_xfixes_fetch_region_rectangles_length(reply);
+	xcb_rectangle_t *xrect = xcb_xfixes_fetch_region_rectangles(reply);
+	region_t parts;
+	pixman_region32_init(&parts);
+	for (int i = 0; i < nrect; i++) {
+		pixman_region32_union_rect(&parts, &parts, xrect[i].x + w->g.border_width,
+		                           xrect[i].y + w->g.border_width, xrect[i].width,
+		                           xrect[i].height);
+	}
+	pixman_region32_union(&w->damaged, &w->damaged, &parts);
+	pixman_region32_fini(&parts);
+	queue_redraw(ps);
+}
+
 static inline void repair_win(session_t *ps, struct win *w) {
 	// Only mapped window can receive damages
 	assert(w->state == WSTATE_MAPPED || win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
-	region_t parts;
-	pixman_region32_init(&parts);
-
 	// If this is the first time this window is damaged, we would redraw the
-	// whole window, so we don't need to fetch the damage region. But we still need
-	// to make sure the X server receives the DamageSubtract request, hence the
-	// `xcb_request_check` here.
-	// Otherwise, we fetch the damage regions. That means we will receive a reply
-	// from the X server, which implies it has received our DamageSubtract request.
+	// whole window, so we don't need to fetch the damage region, just clear
+	// the damage object.
+	// Otherwise, move the accumulated damage into the scratch region and
+	// fetch it ASYNCHRONOUSLY. The old synchronous fetch here was one full X
+	// round trip per DamageNotify — during an interactive resize the client
+	// redraws continuously and the X server is at its busiest, so each event
+	// stalled the event loop for tens of milliseconds. The server executes
+	// the DamageSubtract/FetchRegion pair in submission order, so the shared
+	// scratch region stays correct even with multiple fetches in flight.
 	if (!w->ever_damaged) {
-		auto e = xcb_request_check(
-		    ps->c.c,
-		    xcb_damage_subtract_checked(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
-		if (e) {
-			if (ps->o.show_all_xerrors) {
-				x_print_error(&ps->c, e->sequence, e->major_code,
-				              e->minor_code, e->error_code);
-			}
-			free(e);
+		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, XCB_NONE);
+		if (!ps->o.show_all_xerrors) {
+			x_set_error_action_ignore(&ps->c, cookie);
 		}
-		win_extents(w, &parts);
 		log_debug("Window %#010x (%s) has been damaged the first time", win_id(w),
 		          w->name);
+		if (ps->redirected) {
+			region_t parts;
+			pixman_region32_init(&parts);
+			win_extents(w, &parts);
+			pixman_region32_translate(&parts, -w->g.x, -w->g.y);
+			pixman_region32_union(&w->damaged, &w->damaged, &parts);
+			pixman_region32_fini(&parts);
+		}
 	} else {
 		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, ps->x_region);
 		if (!ps->o.show_all_xerrors) {
 			x_set_error_action_ignore(&ps->c, cookie);
 		}
-		x_fetch_region(&ps->c, ps->x_region, &parts);
-		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
-		                          w->g.y + w->g.border_width);
+		auto req = ccalloc(1, struct ev_damage_fetch_request);
+		req->base.sequence = xcb_xfixes_fetch_region(ps->c.c, ps->x_region).sequence;
+		req->base.callback = handle_damage_fetch_reply;
+		req->ps = ps;
+		req->wid = win_id(w);
+		x_await_request(&ps->c, &req->base);
 	}
 
 	log_trace("Mark window %#010x (%s) as having received damage", win_id(w), w->name);
 	w->ever_damaged = true;
 	w->pixmap_damaged = true;
-
-	// Why care about damage when screen is unredirected?
-	// We will force full-screen repaint on redirection.
-	if (!ps->redirected) {
-		pixman_region32_fini(&parts);
-		return;
-	}
-
-	pixman_region32_translate(&parts, -w->g.x, -w->g.y);
-	pixman_region32_union(&w->damaged, &w->damaged, &parts);
-	pixman_region32_fini(&parts);
 }
 
 static inline void ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de) {
