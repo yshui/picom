@@ -348,8 +348,8 @@ end:
 	return &gd->gl.base;
 }
 
-static image_handle
-glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
+static image_handle glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
+                                    struct xvisual_info fmt, ivec2 size_hint) {
 	GLXPixmap *glxpixmap = NULL;
 	auto gd = (struct _glx_data *)base;
 
@@ -358,19 +358,22 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 		return NULL;
 	}
 
-	auto r =
-	    xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), NULL);
-	if (!r) {
-		log_error("Invalid pixmap %#010x", pixmap);
-		return NULL;
+	if (size_hint.width <= 0 || size_hint.height <= 0) {
+		auto r = xcb_get_geometry_reply(
+		    base->c->c, xcb_get_geometry(base->c->c, pixmap), NULL);
+		if (!r) {
+			log_error("Invalid pixmap %#010x", pixmap);
+			return NULL;
+		}
+		size_hint = (ivec2){.width = r->width, .height = r->height};
+		free(r);
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
 	auto inner = ccalloc(1, struct gl_texture);
-	inner->width = r->width;
-	inner->height = r->height;
+	inner->width = size_hint.width;
+	inner->height = size_hint.height;
 	inner->format = BACKEND_IMAGE_FORMAT_PIXMAP;
-	free(r);
 
 	struct glx_fbconfig_cache *cached_fbconfig = NULL;
 	HASH_FIND(hh, gd->cached_fbconfigs, &fmt, sizeof(fmt), cached_fbconfig);

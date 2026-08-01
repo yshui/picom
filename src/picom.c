@@ -895,7 +895,8 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 
 			ps->root_image = ps->backend_data->ops.bind_pixmap(
-			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
+			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual),
+			    (ivec2){.width = r->width, .height = r->height});
 			ps->root_image_generation += 1;
 			ps->root_image_extent = (rect_t){
 			    .x1 = r->x, .x2 = r->x + r->width, .y1 = r->y, .y2 = r->y + r->height};

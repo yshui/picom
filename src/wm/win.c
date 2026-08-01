@@ -508,7 +508,8 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 	// Must release images first, otherwise breaks NVIDIA driver
 	win_release_pixmap(ps->backend_data, w);
 	w->win_image = ps->backend_data->ops.bind_pixmap(
-	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual));
+	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual),
+	    (ivec2){.width = w->widthb, .height = w->heightb});
 	if (!w->win_image) {
 		log_error("Failed to bind pixmap");
 		xcb_free_pixmap(ps->c.c, pixmap);

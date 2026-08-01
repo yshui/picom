@@ -375,10 +375,14 @@ struct backend_operations {
 	/// @param backend_data backend data
 	/// @param pixmap       X pixmap to bind
 	/// @param fmt          information of the pixmap's visual
+	/// @param size_hint    the pixmap's size, if the caller knows it; {0, 0}
+	///                     makes the backend query the X server (a synchronous
+	///                     round trip — avoid in the frame path).
 	/// @return             backend specific image handle for the pixmap. May be
 	///                     NULL.
 	image_handle (*bind_pixmap)(struct backend_base *backend_data, xcb_pixmap_t pixmap,
-	                            struct xvisual_info fmt) __attribute__((nonnull(1)));
+	                            struct xvisual_info fmt, ivec2 size_hint)
+	    __attribute__((nonnull(1)));
 
 	/// Acquire the image handle of the back buffer.
 	///
