@@ -67,6 +67,109 @@ static inline void region_union_render_layer(region_t *region, const struct laye
 	}
 }
 
+/// Check if two mismatching layers differ ONLY in window/shadow size (same
+/// origin, scale, blend, and command structure). This is the interactive
+/// resize case (with the content pinned, e.g. a crop-reveal animation), for
+/// which we can damage much less than both layers' full extents.
+static bool layer_compare_size_only(const struct layer *past_layer,
+                                    const struct backend_command *past_layer_cmd,
+                                    const struct layer *curr_layer,
+                                    const struct backend_command *curr_layer_cmd) {
+	if (!ivec2_eq(past_layer->window.origin, curr_layer->window.origin) ||
+	    !ivec2_eq(past_layer->shadow.origin, curr_layer->shadow.origin)) {
+		return false;
+	}
+	if (!vec2_eq(past_layer->scale, SCALE_IDENTITY) ||
+	    !vec2_eq(curr_layer->scale, SCALE_IDENTITY) ||
+	    !vec2_eq(past_layer->shadow_scale, SCALE_IDENTITY) ||
+	    !vec2_eq(curr_layer->shadow_scale, SCALE_IDENTITY)) {
+		return false;
+	}
+	if (past_layer->saved_image_blend != curr_layer->saved_image_blend ||
+	    past_layer->opacity != curr_layer->opacity ||
+	    past_layer->blur_opacity != curr_layer->blur_opacity ||
+	    past_layer->number_of_commands != curr_layer->number_of_commands) {
+		return false;
+	}
+	for (unsigned i = 0; i < past_layer->number_of_commands; i++) {
+		auto cmd1 = &past_layer_cmd[i];
+		auto cmd2 = &curr_layer_cmd[i];
+		if (cmd1->op != cmd2->op || !ivec2_eq(cmd1->origin, cmd2->origin) ||
+		    cmd1->source != cmd2->source) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/// Damage for a size-only layer change: instead of both layers' full extents
+/// (which makes every resize frame repaint — and re-blur — the entire window),
+/// damage only what can actually differ:
+///  - the symmetric difference of each command pair's masks (the grown/shrunk
+///    parts),
+///  - the window's own content damage (the client's redraws),
+///  - a band along each moved edge wide enough to cover rounded corners and
+///    the shadow gradient (their pixels change in the overlap when the edge
+///    they hug moves),
+/// all expanded by the blur size, since blur diffuses changes outward.
+static void
+layer_size_change_damage(region_t *damage, region_t *scratch_region,
+                         const struct layer *past_layer, struct backend_command *past_layer_cmd,
+                         const struct layer *curr_layer, struct backend_command *curr_layer_cmd,
+                         const struct layout_manager *lm, unsigned curr_layer_rank,
+                         unsigned buffer_age, ivec2 blur_size) {
+	region_t added;
+	pixman_region32_init(&added);
+
+	int pad = 0;
+	for (unsigned i = 0; i < past_layer->number_of_commands; i++) {
+		auto cmd1 = &past_layer_cmd[i];
+		auto cmd2 = &curr_layer_cmd[i];
+		// Symmetric difference of the pair's masks.
+		region_symmetric_difference_local(&added, scratch_region,
+		                                  &cmd1->target_mask, &cmd2->target_mask);
+		if (cmd1->op == BACKEND_COMMAND_BLIT) {
+			pad = max2(pad, (int)cmd1->blit.corner_radius);
+		}
+	}
+	// The shadow gradient hugs the window border; when an edge moves, pixels
+	// within the shadow margin of that edge change even inside the overlap.
+	pad = max2(
+	    pad, (past_layer->shadow.size.width - past_layer->window.size.width + 1) / 2);
+	pad = max2(
+	    pad, (past_layer->shadow.size.height - past_layer->window.size.height + 1) / 2);
+
+	// Bands along moved edges (right/bottom; origin is pinned in this path so
+	// left/top cannot move), covering both old and new edge positions.
+	auto po = past_layer->shadow.origin;
+	auto ps_sz = past_layer->shadow.size;
+	auto cs_sz = curr_layer->shadow.size;
+	int max_h = max2(ps_sz.height, cs_sz.height);
+	int max_w = max2(ps_sz.width, cs_sz.width);
+	if (ps_sz.width != cs_sz.width) {
+		int edge = min2(po.x + ps_sz.width, po.x + cs_sz.width);
+		pixman_region32_union_rect(&added, &added, edge - pad, po.y,
+		                           (unsigned)(2 * pad), (unsigned)max_h);
+	}
+	if (ps_sz.height != cs_sz.height) {
+		int edge = min2(po.y + ps_sz.height, po.y + cs_sz.height);
+		pixman_region32_union_rect(&added, &added, po.x, edge - pad,
+		                           (unsigned)max_w, (unsigned)(2 * pad));
+	}
+
+	// Content the client redrew. `layer->damaged` is already in screen
+	// coordinates (see layout.c), no translation needed.
+	pixman_region32_clear(scratch_region);
+	layout_manager_collect_window_damage(lm, curr_layer_rank, buffer_age, scratch_region);
+	pixman_region32_union(&added, &added, scratch_region);
+
+	// Blur diffuses changes outward; pad everything by the blur size.
+	resize_region_in_place(&added, blur_size.width, blur_size.height);
+
+	pixman_region32_union(damage, damage, &added);
+	pixman_region32_fini(&added);
+}
+
 static inline void
 command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_command *cmd1,
                     struct backend_command *cmd2, const struct layout_manager *lm,
@@ -302,8 +405,19 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 		          curr_layer->win->name);
 
 		if (!layer_compare(past_layer, past_layer_cmd, curr_layer, curr_layer_cmd)) {
-			region_union_render_layer(damage, curr_layer, curr_layer_cmd);
-			region_union_render_layer(damage, past_layer, past_layer_cmd);
+			if (layer_compare_size_only(past_layer, past_layer_cmd,
+			                            curr_layer, curr_layer_cmd)) {
+				// Interactive resize with pinned content: damage the
+				// changed bands, not the whole window (which would
+				// re-blur the entire window area every frame).
+				layer_size_change_damage(
+				    damage, &scratch_region, past_layer, past_layer_cmd,
+				    curr_layer, curr_layer_cmd, lm, curr_layer_rank,
+				    buffer_age, blur_size);
+			} else {
+				region_union_render_layer(damage, curr_layer, curr_layer_cmd);
+				region_union_render_layer(damage, past_layer, past_layer_cmd);
+			}
 			continue;
 		}
 
