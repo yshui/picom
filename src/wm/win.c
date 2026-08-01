@@ -468,6 +468,103 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 	}
 }
 
+struct win_name_pixmap_request {
+	struct x_async_request_base base;
+	struct session *ps;
+	xcb_window_t wid;
+	xcb_pixmap_t pixmap;
+	/// Window geometry at the time the pixmap was named; that is the size
+	/// of the pixmap regardless of later geometry changes.
+	ivec2 size;
+};
+
+/// Bind `w->pending_pixmap` (already named, size in `w->pending_pixmap_size`)
+/// as the window image, replacing the current one.
+void win_bind_pending_pixmap(struct session *ps, struct win *w) {
+	assert(w->pending_pixmap_ready);
+	auto pixmap = w->pending_pixmap;
+	auto size = w->pending_pixmap_size;
+	w->pending_pixmap = XCB_NONE;
+	w->pending_pixmap_ready = false;
+
+	if (w->state != WSTATE_MAPPED || ps->backend_data == NULL) {
+		xcb_free_pixmap(ps->c.c, pixmap);
+		return;
+	}
+
+	log_debug("Binding named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
+
+	// Must release images first, otherwise breaks NVIDIA driver
+	win_release_pixmap(ps->backend_data, w);
+	w->win_image = ps->backend_data->ops.bind_pixmap(
+	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual), size);
+	if (!w->win_image) {
+		log_error("Failed to bind pixmap");
+		xcb_free_pixmap(ps->c.c, pixmap);
+		win_set_flags(w, WIN_FLAGS_PIXMAP_ERROR);
+		return;
+	}
+	w->win_image_size = size;
+	queue_redraw(ps);
+}
+
+/// Reply handler for the async NameWindowPixmap issued by
+/// `win_process_image_flags`. Binds the new pixmap, or retains the current
+/// window image on failure (same semantics as the old synchronous path).
+static void
+win_handle_name_pixmap_reply(struct x_connection *c, struct x_async_request_base *req_base,
+                             const xcb_raw_generic_event_t *reply_or_error) {
+	auto req = (struct win_name_pixmap_request *)req_base;
+	auto ps = req->ps;
+	auto wid = req->wid;
+	auto pixmap = req->pixmap;
+	auto req_size = req->size;
+	free(req);
+
+	if (reply_or_error == NULL) {
+		// Shutting down
+		return;
+	}
+
+	if (reply_or_error->response_type == 0) {
+		log_debug("Failed to get named pixmap for window %#010x: %s. "
+		          "Retaining its current window image",
+		          wid, x_strerror(c, (xcb_generic_error_t *)reply_or_error));
+		return;
+	}
+
+	auto cursor = wm_find(ps->wm, wid);
+	auto w = cursor != NULL ? wm_ref_deref(cursor) : NULL;
+	if (w == NULL || w->pending_pixmap != pixmap) {
+		// Window gone, or this request was superseded by a newer one
+		// (another size change happened while this was in flight). Free
+		// the orphaned pixmap.
+		xcb_free_pixmap(c->c, pixmap);
+		return;
+	}
+
+	if (w->state != WSTATE_MAPPED || ps->backend_data == NULL) {
+		// Unmapped (or backend reset) while the request was in flight;
+		// the pixmap is no longer interesting.
+		w->pending_pixmap = XCB_NONE;
+		xcb_free_pixmap(c->c, pixmap);
+		return;
+	}
+
+	// Bind immediately. Deferring the bind until the client provably painted
+	// the (possibly grown) pixmap was tried twice and is structurally wrong
+	// for continuous resizes: every new resize step supersedes the request
+	// and resets the proof, so the deferral never converges and the OLD
+	// image stays pinned (frozen content, and a *bigger* transparent gap
+	// because the geometry runs further ahead of the content). Trace
+	// evidence: 800+ request/reset cycles, binds only every ~77ms during a
+	// drag. Fresh content with a briefly-unpainted strip loses to that every
+	// time; the strip is bounded by the client's own paint latency.
+	w->pending_pixmap_size = req_size;
+	w->pending_pixmap_ready = true;
+	win_bind_pending_pixmap(ps, w);
+}
+
 void win_process_image_flags(session_t *ps, struct win *w) {
 	// Assert that the MAPPED flag is already handled.
 	assert(!win_check_flags_all(w, WIN_FLAGS_MAPPED));
@@ -489,32 +586,35 @@ void win_process_image_flags(session_t *ps, struct win *w) {
 	// Image needs to be updated, update it.
 	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 
-	// Check to make sure the window is still mapped, otherwise we won't be able to
-	// rebind pixmap after releasing it, yet we might still need the pixmap for
-	// rendering.
+	// Acquire the new named pixmap asynchronously. The old synchronous
+	// xcb_request_check here forced a full X round trip per rebind — during
+	// an interactive resize the X server is at its busiest (relaying the
+	// client's configure/damage storm) and the reply could take tens of
+	// milliseconds, stalling the render loop (measured 33-200ms resize
+	// frames). While the request is in flight we keep rendering the current
+	// image, exactly like the old failure path did; the bind happens in the
+	// reply callback.
 	auto pixmap = x_new_id(&ps->c);
-	auto e = xcb_request_check(
-	    ps->c.c, xcb_composite_name_window_pixmap_checked(ps->c.c, win_id(w), pixmap));
-	if (e != NULL) {
-		log_debug("Failed to get named pixmap for window %#010x(%s): %s. "
-		          "Retaining its current window image",
-		          win_id(w), w->name, x_strerror(&ps->c, e));
-		free(e);
-		return;
-	}
+	auto cookie = xcb_composite_name_window_pixmap(ps->c.c, win_id(w), pixmap);
 
-	log_debug("New named pixmap for %#010x (%s) : %#010x", win_id(w), w->name, pixmap);
-
-	// Must release images first, otherwise breaks NVIDIA driver
-	win_release_pixmap(ps->backend_data, w);
-	w->win_image = ps->backend_data->ops.bind_pixmap(
-	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual),
-	    (ivec2){.width = w->widthb, .height = w->heightb});
-	if (!w->win_image) {
-		log_error("Failed to bind pixmap");
-		xcb_free_pixmap(ps->c.c, pixmap);
-		win_set_flags(w, WIN_FLAGS_PIXMAP_ERROR);
+	if (w->pending_pixmap_ready) {
+		// A previously named pixmap was still waiting for client damage;
+		// this newer request supersedes it.
+		xcb_free_pixmap(ps->c.c, w->pending_pixmap);
+		w->pending_pixmap_ready = false;
 	}
+	w->pending_pixmap = pixmap;
+	auto req = ccalloc(1, struct win_name_pixmap_request);
+	req->base = (struct x_async_request_base){
+	    .callback = win_handle_name_pixmap_reply,
+	    .sequence = cookie.sequence,
+	    .no_reply = true,
+	};
+	req->wid = win_id(w);
+	req->pixmap = pixmap;
+	req->ps = ps;
+	req->size = (ivec2){.width = w->widthb, .height = w->heightb};
+	x_await_request(&ps->c, &req->base);
 }
 
 /**
@@ -747,6 +847,11 @@ static inline double win_get_blur_opacity(const struct win *w) {
 /// Doesn't free `w`
 void unmap_win_finish(session_t *ps, struct win *w) {
 	// We are in unmap_win, this window definitely was viewable
+	if (w->pending_pixmap_ready) {
+		xcb_free_pixmap(ps->c.c, w->pending_pixmap);
+		w->pending_pixmap = XCB_NONE;
+		w->pending_pixmap_ready = false;
+	}
 	if (ps->backend_data) {
 		// Only the pixmap needs to be freed and reacquired when mapping.
 		// Shadow image can be preserved.
@@ -1915,26 +2020,45 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	log_debug("Starting animation %s for window %#010x (%s)",
 	          animation_trigger_names[trigger], win_id(w), w->name);
 
-	if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE)) {
-		// Grab the old pixmap, animations might need it
+	if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) &&
+	    wopts.animations[trigger].output_indices[WIN_SCRIPT_SAVED_IMAGE_BLEND] >= 0) {
+		// Grab the old pixmap, but only if the incoming animation actually
+		// consumes it via saved-image-blend. Capturing costs an image
+		// allocation + copy on NVIDIA and fires on every frame of a
+		// continuous resize; blend-free animations (e.g. crop-reveal
+		// geometry) should not pay it.
+		if (w->saved_win_image != NULL && w->running_animation_instance != NULL &&
+		    w->running_animation.script == wopts.animations[trigger].script) {
+			// Same animation restarting (continuous resize): keep the
+			// original capture and just refresh its scale against the new
+			// geometry. Re-capturing every frame desyncs the blend factor
+			// from the scale, and thrashes allocations on NVIDIA.
+			w->saved_win_image_scale = (vec2){
+			    .x = win_ctx.width / w->saved_win_image_size.width,
+			    .y = win_ctx.height / w->saved_win_image_size.height,
+			};
+			goto captured;
+		}
 		if (w->saved_win_image) {
 			win_release_saved_win_image(ps->backend_data, w);
 		}
+		// The image we save was bound at the previous geometry; on shrink the
+		// current widthb/heightb is smaller, so copy only what exists.
+		ivec2 saved_size = {
+		    .width = (int)win_ctx.width_before,
+		    .height = (int)win_ctx.height_before,
+		};
 		if (ps->drivers & DRIVER_NVIDIA) {
 			// NVIDIA doesn't like us grabbing the new pixmap before releasing
 			// the old one. So we copy the content of the old pixmap so we can
 			// release it.
 			if (w->win_image != NULL) {
 				w->saved_win_image = ps->backend_data->ops.new_image(
-				    ps->backend_data, BACKEND_IMAGE_FORMAT_PIXMAP,
-				    (ivec2){
-				        .width = (int)win_ctx.width_before,
-				        .height = (int)win_ctx.height_before,
-				    });
+				    ps->backend_data, BACKEND_IMAGE_FORMAT_PIXMAP, saved_size);
 				region_t copy_region;
 				pixman_region32_init_rect(&copy_region, 0, 0,
-				                          (uint)win_ctx.width_before,
-				                          (uint)win_ctx.height_before);
+				                          (uint)saved_size.width,
+				                          (uint)saved_size.height);
 				ps->backend_data->ops.copy_area(
 				    ps->backend_data, (ivec2){}, w->saved_win_image,
 				    w->win_image, &copy_region);
@@ -1944,10 +2068,12 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 			w->saved_win_image = w->win_image;
 			w->win_image = NULL;
 		}
+		w->saved_win_image_size = saved_size;
 		w->saved_win_image_scale = (vec2){
-		    .x = win_ctx.width / win_ctx.width_before,
-		    .y = win_ctx.height / win_ctx.height_before,
+		    .x = win_ctx.width / saved_size.width,
+		    .y = win_ctx.height / saved_size.height,
 		};
+	captured:;
 	}
 
 	auto new_animation = script_instance_new(wopts.animations[trigger].script);
