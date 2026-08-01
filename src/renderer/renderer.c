@@ -15,6 +15,18 @@
 #include "picom.h"
 #include "utils/dynarr.h"
 
+/// Cached pre-blurred shadow atlas for one corner radius. The atlas is the
+/// shadow mask of a minimal prototype window; any larger shadow is composed
+/// exactly from it with nine blits (4 corners at 1:1, 4 edges and the center
+/// stretched from translation-invariant bands). See
+/// `renderer_compose_shadow_nine_slice`.
+struct shadow_atlas_entry {
+	unsigned corner_radius;
+	image_handle image;
+};
+
+#define SHADOW_ATLAS_CACHE_SIZE 8
+
 struct renderer {
 	/// Intermediate image to hold what will be presented to the back buffer.
 	image_handle back_image;
@@ -39,6 +51,10 @@ struct renderer {
 	int shadow_radius;
 	void *shadow_blur_context;
 	struct conv *shadow_kernel;
+	/// Shadow atlases keyed by corner radius (shadow radius is fixed per
+	/// renderer). Tiny LRU-less cache; distinct corner radii per config are
+	/// few in practice.
+	struct shadow_atlas_entry shadow_atlas[SHADOW_ATLAS_CACHE_SIZE];
 
 	/// A dynarr of region_t for storing culled masks
 	region_t *culled_masks;
@@ -62,6 +78,12 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	}
 	if (r->shadow_kernel) {
 		free_conv(r->shadow_kernel);
+	}
+	for (size_t i = 0; i < SHADOW_ATLAS_CACHE_SIZE; i++) {
+		if (r->shadow_atlas[i].image != NULL) {
+			backend->ops.release_image(backend, r->shadow_atlas[i].image);
+			r->shadow_atlas[i].image = NULL;
+		}
 	}
 	if (r->monitor_repaint_region) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
@@ -296,15 +318,172 @@ err:
 	return NULL;
 }
 
+/// Get (or build) the shadow atlas for `corner_radius`. The atlas is the full
+/// shadow mask of a prototype window of side `2 * (corner_radius + shadow
+/// radius) + 1`: at that size the four `corner_radius + 2 * shadow_radius`
+/// corner blocks are exact, and the 1px-wide bands between them along each
+/// axis are translation-invariant (a Gaussian of radius r is unaffected by
+/// geometry further than r away), so they can be stretched to any length.
+static image_handle renderer_get_shadow_atlas(struct renderer *r, struct backend_base *backend,
+                                              unsigned corner_radius) {
+	struct shadow_atlas_entry *slot = NULL;
+	for (size_t i = 0; i < SHADOW_ATLAS_CACHE_SIZE; i++) {
+		if (r->shadow_atlas[i].image != NULL &&
+		    r->shadow_atlas[i].corner_radius == corner_radius) {
+			return r->shadow_atlas[i].image;
+		}
+		if (slot == NULL && r->shadow_atlas[i].image == NULL) {
+			slot = &r->shadow_atlas[i];
+		}
+	}
+	if (slot == NULL) {
+		// Cache full; extremely unlikely (needs >8 distinct corner radii).
+		// Caller falls back to full generation.
+		return NULL;
+	}
+
+	int proto = 2 * ((int)corner_radius + r->shadow_radius) + 1;
+	ivec2 proto_size = {.width = proto, .height = proto};
+
+	// Rasterize the prototype's shape mask (rounded rect) then blur it, using
+	// the exact same pipeline as full shadow generation so results match.
+	auto proto_mask =
+	    backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_MASK, proto_size);
+	if (proto_mask == NULL ||
+	    !backend->ops.clear(backend, proto_mask, (struct color){0, 0, 0, 0})) {
+		if (proto_mask != NULL) {
+			backend->ops.release_image(backend, proto_mask);
+		}
+		return NULL;
+	}
+	{
+		region_t target;
+		pixman_region32_init_rect(&target, 0, 0, (unsigned)proto, (unsigned)proto);
+		struct backend_blit_args args = {
+		    .source_image = r->white_image,
+		    .target_mask = &target,
+		    .effective_size = proto_size,
+		    .tint = {1, 1, 1, 1},
+		    .scale = SCALE_IDENTITY,
+		    .corner_radius = (double)corner_radius,
+		    .max_brightness = 1,
+		};
+		bool ok = backend->ops.blit(backend, (ivec2){0, 0}, proto_mask, &args);
+		pixman_region32_fini(&target);
+		if (!ok) {
+			backend->ops.release_image(backend, proto_mask);
+			return NULL;
+		}
+	}
+	auto atlas =
+	    renderer_shadow_mask_from_shape_mask(r, backend, proto_mask, 0, proto_size);
+	backend->ops.release_image(backend, proto_mask);
+	if (atlas == NULL) {
+		return NULL;
+	}
+	slot->corner_radius = corner_radius;
+	slot->image = atlas;
+	return atlas;
+}
+
+/// Compose a `size`-sized shadow mask from the atlas with nine blits.
+/// `size` is the shadow image size (window size + 2 * shadow radius).
+static image_handle
+renderer_compose_shadow_nine_slice(struct renderer *r, struct backend_base *backend,
+                                   image_handle atlas, unsigned corner_radius, ivec2 size) {
+	// Fixed block: everything within `fixed` of a prototype corner is copied
+	// 1:1; the single-pixel band at offset `fixed` is stretched.
+	int fixed = (int)corner_radius + 2 * r->shadow_radius;
+	int atlas_side = 2 * ((int)corner_radius + r->shadow_radius) + 1 +
+	                 2 * r->shadow_radius;        // proto + 2 * radius
+	assert(fixed * 2 + 1 == atlas_side);
+
+	if (size.width < atlas_side || size.height < atlas_side) {
+		// Too small for slicing; caller falls back to full generation.
+		return NULL;
+	}
+
+	auto out = backend->ops.new_image(backend, BACKEND_IMAGE_FORMAT_MASK, size);
+	if (out == NULL) {
+		return NULL;
+	}
+
+	// Nine pieces: source rect in atlas -> target rect in out. The blit API
+	// expresses "source rect to target rect" as: target region = target rect,
+	// origin = target position of the source image origin, scale = target
+	// extent / source extent (applied around the origin).
+	struct piece {
+		int sx, sy, sw, sh;        // atlas rect
+		int tx, ty, tw, th;        // target rect
+	} pieces[9];
+	int n = 0;
+	int mid_t_w = size.width - 2 * fixed;         // stretched middle width
+	int mid_t_h = size.height - 2 * fixed;        // stretched middle height
+	int right_s = atlas_side - fixed;             // right/bottom fixed block start
+	int right_t_x = size.width - fixed;
+	int bottom_t_y = size.height - fixed;
+
+	// corners (1:1)
+	pieces[n++] = (struct piece){0, 0, fixed, fixed, 0, 0, fixed, fixed};
+	pieces[n++] =
+	    (struct piece){right_s, 0, fixed, fixed, right_t_x, 0, fixed, fixed};
+	pieces[n++] =
+	    (struct piece){0, right_s, fixed, fixed, 0, bottom_t_y, fixed, fixed};
+	pieces[n++] = (struct piece){right_s,   right_s,    fixed, fixed,
+	                             right_t_x, bottom_t_y, fixed, fixed};
+	// edges (stretch one axis)
+	pieces[n++] = (struct piece){fixed, 0, 1, fixed, fixed, 0, mid_t_w, fixed};
+	pieces[n++] =
+	    (struct piece){fixed, right_s, 1, fixed, fixed, bottom_t_y, mid_t_w, fixed};
+	pieces[n++] = (struct piece){0, fixed, fixed, 1, 0, fixed, fixed, mid_t_h};
+	pieces[n++] =
+	    (struct piece){right_s, fixed, fixed, 1, right_t_x, fixed, fixed, mid_t_h};
+	// center (stretch both)
+	pieces[n++] = (struct piece){fixed, fixed, 1, 1, fixed, fixed, mid_t_w, mid_t_h};
+
+	for (int i = 0; i < n; i++) {
+		auto p = &pieces[i];
+		if (p->tw <= 0 || p->th <= 0) {
+			continue;
+		}
+		region_t target;
+		pixman_region32_init_rect(&target, p->tx, p->ty, (unsigned)p->tw,
+		                          (unsigned)p->th);
+		vec2 scale = {.x = (double)p->tw / p->sw, .y = (double)p->th / p->sh};
+		// origin: target coords where the atlas's (0,0) would land, such
+		// that atlas pixel (sx, sy) maps to target (tx, ty) under `scale`
+		// (the blit derives source coords as (target - origin) / scale).
+		ivec2 origin = {
+		    .x = p->tx - (int)((double)p->sx * scale.x),
+		    .y = p->ty - (int)((double)p->sy * scale.y),
+		};
+		struct backend_blit_args args = {
+		    .source_image = atlas,
+		    .target_mask = &target,
+		    .effective_size = {.width = (int)(atlas_side * scale.x),
+		                       .height = (int)(atlas_side * scale.y)},
+		    .tint = {1, 1, 1, 1},
+		    .scale = scale,
+		    .max_brightness = 1,
+		};
+		bool ok = backend->ops.blit(backend, origin, out, &args);
+		pixman_region32_fini(&target);
+		if (!ok) {
+			backend->ops.release_image(backend, out);
+			return NULL;
+		}
+	}
+	return out;
+}
+
 static bool
 renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct win *w) {
+	auto content_size = win_effective_content_size(w);
 	if (backend->ops.quirks(backend) & BACKEND_QUIRK_SLOW_BLUR) {
 		ivec2 shadow_size;
 		int shadow_stride;
-		uint8_t *shadow_pixels =
-		    make_shadow(backend->c, r->shadow_kernel,
-		                (ivec2){.width = w->widthb, .height = w->heightb},
-		                &shadow_size, &shadow_stride);
+		uint8_t *shadow_pixels = make_shadow(
+		    backend->c, r->shadow_kernel, content_size, &shadow_size, &shadow_stride);
 		if (!shadow_pixels) {
 			log_error("Couldn't generate shadow");
 			return false;
@@ -315,12 +494,41 @@ renderer_bind_shadow(struct renderer *r, struct backend_base *backend, struct wi
 		    shadow_pixels);
 		free(shadow_pixels);
 	} else {
-		if (!w->mask_image && !renderer_bind_mask(r, backend, w)) {
-			return false;
+		auto corner_radius = (unsigned)win_options(w).corner_radius;
+		// The shadow shape only depends on the window outline. If that is a
+		// plain rectangle (note: WMs like i3 stamp rectangular bounding
+		// shapes on ordinary windows, so check the region, not the shaped
+		// flag), compose the shadow from a cached pre-blurred atlas with
+		// nine blits instead of running a full Gaussian over the window
+		// area. Exact for any window at least as large as the prototype.
+		auto shape_extents = pixman_region32_extents(&w->bounding_shape);
+		bool rectangular = pixman_region32_n_rects(&w->bounding_shape) == 1 &&
+		                   shape_extents->x1 == 0 && shape_extents->y1 == 0 &&
+		                   shape_extents->x2 >= content_size.width &&
+		                   shape_extents->y2 >= content_size.height;
+		if (rectangular) {
+			auto atlas = renderer_get_shadow_atlas(r, backend, corner_radius);
+			if (atlas != NULL) {
+				// Shadow image spans the content box + margins; use the
+				// effective content size so the falloff hugs the drawn
+				// decoration during a grow's rebind window.
+				ivec2 shadow_size = {
+				    .width = w->shadow_width - w->widthb + content_size.width,
+				    .height = w->shadow_height - w->heightb + content_size.height,
+				};
+				w->shadow_mask = renderer_compose_shadow_nine_slice(
+				    r, backend, atlas, corner_radius, shadow_size);
+			}
 		}
-		w->shadow_mask = renderer_shadow_mask_from_shape_mask(
-		    r, backend, w->mask_image, win_options(w).corner_radius,
-		    (ivec2){.width = w->widthb, .height = w->heightb});
+		if (w->shadow_mask == NULL) {
+			// Shaped window, tiny window, or atlas failure: full path.
+			if (!w->mask_image && !renderer_bind_mask(r, backend, w)) {
+				return false;
+			}
+			w->shadow_mask = renderer_shadow_mask_from_shape_mask(
+			    r, backend, w->mask_image, win_options(w).corner_radius,
+			    content_size);
+		}
 	}
 	if (!w->shadow_mask) {
 		log_error("Failed to create shadow");
