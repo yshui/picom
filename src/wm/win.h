@@ -83,6 +83,7 @@ struct win_state_change {
 	double blur_opacity;
 	struct win_geometry g;
 	struct color shadow_color;
+	double dim;
 };
 
 struct win {
@@ -239,6 +240,7 @@ struct win_script_context {
 	double monitor_x, monitor_y;
 	double monitor_width, monitor_height;
 	struct color shadow_color, shadow_color_before;
+	double dim, dim_before;
 };
 // NOLINTNEXTLINE(bugprone-sizeof-expression)
 static_assert(SCRIPT_CTX_PLACEHOLDER_BASE > sizeof(struct win_script_context),
@@ -268,6 +270,8 @@ static const struct script_context_info win_script_context_info[] = {
     {"window-shadow-red-before", X(shadow_color_before.red)},
     {"window-shadow-green-before", X(shadow_color_before.green)},
     {"window-shadow-blue-before", X(shadow_color_before.blue)},
+    {"window-dim", X(dim)},
+    {"window-dim-before", X(dim_before)},
     {NULL, 0}        //
 };
 #undef X
@@ -292,6 +296,7 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_SHADOW_RED] = {"shadow-red"},
     [WIN_SCRIPT_SHADOW_GREEN] = {"shadow-green"},
     [WIN_SCRIPT_SHADOW_BLUE] = {"shadow-blue"},
+    [WIN_SCRIPT_DIM] = {"dim"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
