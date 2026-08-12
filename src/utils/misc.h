@@ -373,10 +373,12 @@ void set_rr_scheduling(void);
 #define TIME_UTC 1
 #endif
 
+#if __ANDROID_API__<29
 static inline int timespec_get(struct timespec *ts, int base) {
 	assert(base == TIME_UTC);
 	return clock_gettime(CLOCK_REALTIME, ts);
 }
+#endif
 #endif
 
 static inline int long_cmp(const long a, const long b) {
