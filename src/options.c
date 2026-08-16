@@ -116,7 +116,8 @@ static bool store_workspace_layout(const struct picom_option *opt,
 	auto opts = (struct options *)output;
 	if (!parse_workspace_layout(arg_str, &opts->workspace_layout_columns,
 	                            &opts->workspace_layout_rows)) {
-		log_error("Argument for option `--%s` is not a valid workspace layout: %s",
+		log_error("Argument for option `--%s` is not a valid workspace layout: "
+		          "%s",
 		          opt->long_name, arg_str);
 		return false;
 	}

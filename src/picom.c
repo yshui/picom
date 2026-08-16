@@ -1740,14 +1740,14 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			    ps->o.use_damage && !ws_switch_consume_full_repaint(ps);
 			succeeded = renderer_render(
 			    ps->renderer, ps->backend_data, ps->root_image,
-			    &ps->root_image_extent, ps->layout_manager, ps->command_builder,
-			    ps->backend_blur_context, render_start_us, ps->sync_fence,
-			    use_damage, ps->o.monitor_repaint, ps->o.force_win_blend,
-			    ps->o.blur_background_frame, ps->o.inactive_dim_fixed,
-			    ps->o.max_brightness,
+			    &ps->root_image_extent, ps->layout_manager,
+			    ps->command_builder, ps->backend_blur_context, render_start_us,
+			    ps->sync_fence, use_damage, ps->o.monitor_repaint,
+			    ps->o.force_win_blend, ps->o.blur_background_frame,
+			    ps->o.inactive_dim_fixed, ps->o.max_brightness,
 			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-			    ps->root_pixmap_shader, ps->shaders, NULL, NULL, &frame_changed,
-			    &after_damage_us);
+			    ps->root_pixmap_shader, ps->shaders, NULL, NULL,
+			    &frame_changed, &after_damage_us);
 		}
 		if (!succeeded) {
 			// The workspace switch frame can fail to render without being

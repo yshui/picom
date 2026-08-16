@@ -570,19 +570,18 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		// frame, and the caller wants a copy of the rendered frame. Capture it
 		// before the override overwrites the back buffer.
 		if (*capture_target == NULL) {
-			*capture_target = backend->ops.new_image(backend, r->format,
-			                                         r->canvas_size);
+			*capture_target =
+			    backend->ops.new_image(backend, r->format, r->canvas_size);
 			if (*capture_target == NULL) {
 				log_error("Failed to create a snapshot image");
 				return false;
 			}
 		}
 		region_t full_region;
-		pixman_region32_init_rect(&full_region, 0, 0,
-		                          (unsigned)r->canvas_size.width,
+		pixman_region32_init_rect(&full_region, 0, 0, (unsigned)r->canvas_size.width,
 		                          (unsigned)r->canvas_size.height);
-		bool succeeded = backend->ops.copy_image(backend, (ivec2){}, *capture_target,
-		                                        r->back_image, &full_region);
+		bool succeeded = backend->ops.copy_image(
+		    backend, (ivec2){}, *capture_target, r->back_image, &full_region);
 		pixman_region32_fini(&full_region);
 		if (!succeeded) {
 			log_error("Failed to take a snapshot of the rendered frame");
@@ -728,10 +727,9 @@ bool renderer_render_workspace_switch(struct renderer *r, struct backend_base *b
 		} break;
 		default: unreachable();
 		}
-		succeeded = succeeded &&
-		            renderer_snapshot_blit(r, backend, from, from_pos, 1.0);
-		succeeded = succeeded &&
-		            renderer_snapshot_blit(r, backend, to, to_pos, 1.0);
+		succeeded =
+		    succeeded && renderer_snapshot_blit(r, backend, from, from_pos, 1.0);
+		succeeded = succeeded && renderer_snapshot_blit(r, backend, to, to_pos, 1.0);
 	} else {
 		// Cross-fade between the old and the new desktop
 		succeeded = succeeded &&

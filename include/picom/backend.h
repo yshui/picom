@@ -334,8 +334,8 @@ struct backend_operations {
 	/// @param region       the region to copy, in the target image's coordinate.
 	/// @return             whether the operation is successful
 	bool (*copy_image)(struct backend_base *backend_data, ivec2 origin,
-	                   image_handle target, image_handle source, const region_t *region)
-	    __attribute__((nonnull(1, 3, 4, 5)));
+	                   image_handle target, image_handle source,
+	                   const region_t *region) __attribute__((nonnull(1, 3, 4, 5)));
 
 	/// Initialize an image with a given color value. If the image has a mask format,
 	/// only the alpha channel of the color is used.
