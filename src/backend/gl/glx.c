@@ -517,6 +517,7 @@ const struct backend_operations glx_ops = {
     .clear = gl_clear,
     .copy_area = gl_copy_area,
     .copy_area_quantize = gl_copy_area_quantize,
+    .copy_image = gl_copy_image,
     .image_capabilities = gl_image_capabilities,
     .is_format_supported = gl_is_format_supported,
     .new_image = gl_new_image,

@@ -69,6 +69,7 @@
 #include "vblank.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
+#include "ws_switch.h"
 #include "x.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
@@ -423,6 +424,9 @@ static void rebuild_screen_reg(session_t *ps) {
 
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
+	// Cancel any workspace switch, as the snapshots are bound to the backend
+	// that is about to be destroyed.
+	ws_switch_cancel(ps);
 	wm_stack_foreach_safe(ps->wm, cursor, next_cursor) {
 		auto w = wm_ref_deref(cursor);
 		if (w == NULL) {
@@ -1718,20 +1722,41 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			reset_enable(ps->loop, NULL, 0);
 			return;
 		}
-		layout_manager_append_layout(
-		    ps->layout_manager, ps->wm, ps->root_image_generation,
-		    (ivec2){.width = ps->root_width, .height = ps->root_height});
-		bool succeeded = renderer_render(
-		    ps->renderer, ps->backend_data, ps->root_image, &ps->root_image_extent,
-		    ps->layout_manager, ps->command_builder, ps->backend_blur_context,
-		    render_start_us, ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
-		    ps->o.force_win_blend, ps->o.blur_background_frame,
-		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-		    ps->root_pixmap_shader, ps->shaders, &after_damage_us);
+		bool succeeded;
+		bool is_ws_switch_frame = ws_switch_is_active(ps);
+		if (is_ws_switch_frame) {
+			// A workspace switch is in progress, render the switch
+			// animation frame instead of a normal frame.
+			succeeded = ws_switch_render(ps, render_start_us, animation);
+		} else {
+			layout_manager_append_layout(
+			    ps->layout_manager, ps->wm, ps->root_image_generation,
+			    (ivec2){.width = ps->root_width, .height = ps->root_height});
+			bool frame_changed = false;
+			// The first frame after a workspace switch animation has to be
+			// a full repaint, because the buffer age / damage tracking is
+			// in an inconsistent state after the animation frames.
+			bool use_damage =
+			    ps->o.use_damage && !ws_switch_consume_full_repaint(ps);
+			succeeded = renderer_render(
+			    ps->renderer, ps->backend_data, ps->root_image,
+			    &ps->root_image_extent, ps->layout_manager,
+			    ps->command_builder, ps->backend_blur_context, render_start_us,
+			    ps->sync_fence, use_damage, ps->o.monitor_repaint,
+			    ps->o.force_win_blend, ps->o.blur_background_frame,
+			    ps->o.inactive_dim_fixed, ps->o.max_brightness,
+			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
+			    ps->root_pixmap_shader, ps->shaders, NULL, NULL,
+			    &frame_changed, &after_damage_us);
+		}
 		if (!succeeded) {
-			log_fatal("Render failure");
-			abort();
+			// The workspace switch frame can fail to render without being
+			// a fatal error (e.g. the switch was cancelled).
+			if (!is_ws_switch_frame) {
+				log_fatal("Render failure");
+				abort();
+			}
+			goto skip_render;
 		}
 		did_render = true;
 		if (ps->next_render > 0) {
@@ -1753,6 +1778,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			exit(0);
 		}
 	}
+skip_render:
 
 	// With frame pacing, we set backend_busy to true after the end of
 	// vblank. Without frame pacing, we won't be receiving vblank events, so
@@ -1770,7 +1796,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 
 	// Queue redraw if animation is running. This should be picked up by next present
 	// event.
-	if (animation) {
+	if (animation || ws_switch_is_active(ps)) {
 		queue_redraw(ps);
 	} else {
 		ps->fade_time = 0L;
@@ -2089,6 +2115,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ps->atoms = init_atoms(ps->c.c);
 	ps->c2_state = c2_state_new(ps->atoms);
+	ps->ws_switch = ws_switch_new(ps);
 
 	// Get needed atoms for c2 condition lists
 	options_postprocess_c2_lists(ps->c2_state, &ps->c, &ps->o);
@@ -2372,6 +2399,11 @@ static void session_destroy(session_t *ps) {
 	// Stop listening to events on root window
 	xcb_change_window_attributes(ps->c.c, ps->c.screen_info->root, XCB_CW_EVENT_MASK,
 	                             (const uint32_t[]){0});
+
+	// Release the workspace switch state. The backend is already destroyed, so
+	// any snapshots should have been released by destroy_backend.
+	ws_switch_free(ps, ps->ws_switch);
+	ps->ws_switch = NULL;
 
 #ifdef CONFIG_DBUS
 	// Kill DBus connection

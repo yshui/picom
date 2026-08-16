@@ -318,6 +318,25 @@ struct backend_operations {
 	                           const region_t *region)
 	    __attribute__((nonnull(1, 3, 4, 5)));
 
+	/// Direct copy of pixels from the `source` image onto the `target` image.
+	/// Unlike `copy_area`, this copies the exact pixel content of the `source`
+	/// image, rather than potentially reading from an intermediate buffer such as
+	/// the back buffer, so it should be used when the exact content of `source`
+	/// is required.
+	///
+	/// Source and target MUST NOT be the same image.
+	///
+	/// @param backend_data backend data
+	/// @param origin       the origin of the operation, in the target image's
+	///                     coordinate.
+	/// @param target       an image handle, cannot be NULL.
+	/// @param source       an image handle, cannot be NULL.
+	/// @param region       the region to copy, in the target image's coordinate.
+	/// @return             whether the operation is successful
+	bool (*copy_image)(struct backend_base *backend_data, ivec2 origin,
+	                   image_handle target, image_handle source,
+	                   const region_t *region) __attribute__((nonnull(1, 3, 4, 5)));
+
 	/// Initialize an image with a given color value. If the image has a mask format,
 	/// only the alpha channel of the color is used.
 	///
