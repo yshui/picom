@@ -518,6 +518,12 @@ typedef struct options {
 	int workspace_animation_wait;
 	/// Effect to use for the workspace switch animation
 	enum ws_switch_effect workspace_animation_effect;
+	/// Number of columns of the workspace grid. Used to determine the slide direction
+	/// of the workspace switch animation. 0 means the direction is determined by the
+	/// desktop numbers.
+	int workspace_layout_columns;
+	/// Number of rows of the workspace grid. Only used for validating the grid.
+	int workspace_layout_rows;
 	// === Animation ===
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 	/// Array of all the scripts used in `animations`. This is a dynarr.
@@ -563,6 +569,8 @@ char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
 int must_use parse_blur_method(const char *src);
 int must_use parse_ws_switch_effect(const char *src);
+/// Parse a workspace grid layout string of the form "columnsxrows" (e.g. "2x3").
+bool parse_workspace_layout(const char *src, int *columns, int *rows);
 void parse_debug_options(struct debug_options *);
 
 const char *xdg_config_home(void);

@@ -43,12 +43,24 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 bool renderer_copy_back_image(struct renderer *r, struct backend_base *backend,
                               image_handle *target);
 
+/// Direction of a workspace switch animation
+enum ws_switch_direction {
+	/// The new desktop comes in from the right
+	WS_SWITCH_DIRECTION_RIGHT = 0,
+	/// The new desktop comes in from the left
+	WS_SWITCH_DIRECTION_LEFT,
+	/// The new desktop comes in from the bottom
+	WS_SWITCH_DIRECTION_DOWN,
+	/// The new desktop comes in from the top
+	WS_SWITCH_DIRECTION_UP,
+};
+
 /// Render a frame of the workspace switch animation, blending the `from` and `to`
 /// screen snapshots according to `progress` (from 0 to 1), and present the result.
 bool renderer_render_workspace_switch(struct renderer *r, struct backend_base *backend,
                                       image_handle from, image_handle to,
                                       enum ws_switch_effect effect, double progress,
-                                      int direction);
+                                      enum ws_switch_direction direction);
 
 /// Present the given screen snapshot as-is. The image must have the size of the screen.
 bool renderer_present_image(struct renderer *r, struct backend_base *backend,

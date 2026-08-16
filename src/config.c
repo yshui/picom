@@ -207,6 +207,22 @@ int parse_ws_switch_effect(const char *src) {
 	return WS_SWITCH_EFFECT_INVALID;
 }
 
+bool parse_workspace_layout(const char *src, int *columns, int *rows) {
+	int c = 0, r = 0;
+	const char *endptr = NULL;
+	c = strtol(src, (char **)&endptr, 10);
+	if (endptr == src || *endptr != 'x' || c <= 0) {
+		return false;
+	}
+	r = strtol(endptr + 1, (char **)&endptr, 10);
+	if (*endptr != '\0' || r <= 0) {
+		return false;
+	}
+	*columns = c;
+	*rows = r;
+	return true;
+}
+
 /**
  * Parse a matrix.
  *
@@ -735,6 +751,8 @@ bool parse_config(options_t *opt, const char *config_file) {
 	    .workspace_animation_duration = 300,
 	    .workspace_animation_wait = 500,
 	    .workspace_animation_effect = WS_SWITCH_EFFECT_SLIDE,
+	    .workspace_layout_columns = 0,
+	    .workspace_layout_rows = 0,
 
 	    .rules = NULL,
 	};

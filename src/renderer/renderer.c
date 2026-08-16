@@ -684,7 +684,7 @@ static bool renderer_snapshot_blit(struct renderer *r, struct backend_base *back
 bool renderer_render_workspace_switch(struct renderer *r, struct backend_base *backend,
                                       image_handle from, image_handle to,
                                       enum ws_switch_effect effect, double progress,
-                                      int direction) {
+                                      enum ws_switch_direction direction) {
 	if (r->back_image == NULL || from == NULL || to == NULL) {
 		return false;
 	}
@@ -702,16 +702,36 @@ bool renderer_render_workspace_switch(struct renderer *r, struct backend_base *b
 	    backend->ops.clear(backend, r->back_image, (struct color){0, 0, 0, 1});
 
 	if (effect == WS_SWITCH_EFFECT_SLIDE) {
-		// Slide the old desktop out, and the new desktop in, horizontally.
-		// `direction` > 0 means the new desktop comes in from the right.
-		int offset = (int)round(progress * (double)r->canvas_size.width);
-		int from_x = direction >= 0 ? -offset : offset;
-		int to_x = direction >= 0 ? r->canvas_size.width - offset
-		                          : offset - r->canvas_size.width;
+		// Slide the old desktop out, and the new desktop in, in the given
+		// direction. `direction` is the side the new desktop comes in from.
+		ivec2 from_pos = {}, to_pos = {};
+		switch (direction) {
+		case WS_SWITCH_DIRECTION_RIGHT: {
+			int offset = (int)round(progress * (double)r->canvas_size.width);
+			from_pos.x = -offset;
+			to_pos.x = r->canvas_size.width - offset;
+		} break;
+		case WS_SWITCH_DIRECTION_LEFT: {
+			int offset = (int)round(progress * (double)r->canvas_size.width);
+			from_pos.x = offset;
+			to_pos.x = offset - r->canvas_size.width;
+		} break;
+		case WS_SWITCH_DIRECTION_DOWN: {
+			int offset = (int)round(progress * (double)r->canvas_size.height);
+			from_pos.y = -offset;
+			to_pos.y = r->canvas_size.height - offset;
+		} break;
+		case WS_SWITCH_DIRECTION_UP: {
+			int offset = (int)round(progress * (double)r->canvas_size.height);
+			from_pos.y = offset;
+			to_pos.y = offset - r->canvas_size.height;
+		} break;
+		default: unreachable();
+		}
 		succeeded = succeeded &&
-		            renderer_snapshot_blit(r, backend, from, (ivec2){from_x, 0}, 1.0);
+		            renderer_snapshot_blit(r, backend, from, from_pos, 1.0);
 		succeeded = succeeded &&
-		            renderer_snapshot_blit(r, backend, to, (ivec2){to_x, 0}, 1.0);
+		            renderer_snapshot_blit(r, backend, to, to_pos, 1.0);
 	} else {
 		// Cross-fade between the old and the new desktop
 		succeeded = succeeded &&

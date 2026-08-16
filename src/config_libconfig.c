@@ -1120,6 +1120,15 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 		}
 		opt->workspace_animation_effect = (enum ws_switch_effect)effect;
 	}
+	// The workspace grid layout, in the form of "columnsxrows" (e.g. "2x3"). Used to
+	// determine the slide direction of the workspace switch animation.
+	if (config_lookup_string(&cfg, "workspace-layout", &sval)) {
+		if (!parse_workspace_layout(sval, &opt->workspace_layout_columns,
+		                            &opt->workspace_layout_rows)) {
+			log_fatal("Invalid workspace layout %s", sval);
+			goto out;
+		}
+	}
 	const struct {
 		const char *name;
 		ptrdiff_t offset;

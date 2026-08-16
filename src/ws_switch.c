@@ -36,9 +36,16 @@ struct ws_switch {
 	enum ws_switch_state state;
 	/// Cached value of the _NET_CURRENT_DESKTOP property of the root window
 	long current_desktop;
-	/// Direction of the slide animation, positive if the new desktop is to the right
-	/// of the old one.
-	int direction;
+	/// Direction of the slide animation, the side the new desktop comes in from
+	enum ws_switch_direction direction;
+	/// Workspace grid layout detected from the _NET_DESKTOP_LAYOUT property, or from
+	/// the `workspace-layout` config option. `has_layout` is false when neither is
+	/// available, in which case the direction falls back to the desktop numbers.
+	bool has_layout;
+	unsigned layout_orientation;
+	unsigned layout_columns;
+	unsigned layout_rows;
+	unsigned layout_corner;
 	/// Snapshot of the screen taken before the desktop switch
 	image_handle pre_image;
 	/// Snapshot of the screen taken after the desktop switch
@@ -78,10 +85,102 @@ static long ws_switch_read_current_desktop(session_t *ps) {
 	return desktop;
 }
 
+/// Read the workspace grid layout. The user-configured `workspace-layout` option takes
+/// precedence; otherwise the layout is detected from the `_NET_DESKTOP_LAYOUT` EWMH
+/// property (a CARDINAL[4] array of orientation, columns, rows and starting corner).
+static void ws_switch_read_layout(session_t *ps) {
+	auto ws = ps->ws_switch;
+	if (ps->o.workspace_layout_columns > 0 && ps->o.workspace_layout_rows > 0) {
+		ws->has_layout = true;
+		ws->layout_orientation = 0;
+		ws->layout_columns = (unsigned)ps->o.workspace_layout_columns;
+		ws->layout_rows = (unsigned)ps->o.workspace_layout_rows;
+		ws->layout_corner = 0;
+		return;
+	}
+	auto reply = XCB_AWAIT(xcb_get_property, &ps->c, 0, ps->c.screen_info->root,
+	                       ps->atoms->a_NET_DESKTOP_LAYOUT, XCB_ATOM_CARDINAL, 0, 4);
+	if (reply == NULL || reply->type != XCB_ATOM_CARDINAL ||
+	    xcb_get_property_value_length(reply) < 4 * 4) {
+		free(reply);
+		return;
+	}
+	const auto values = (const uint32_t *)xcb_get_property_value(reply);
+	unsigned columns = values[1], rows = values[2];
+	if (columns > 0 && rows > 0) {
+		ws->has_layout = true;
+		ws->layout_orientation = values[0];
+		ws->layout_columns = columns;
+		ws->layout_rows = rows;
+		ws->layout_corner = values[3];
+	}
+	free(reply);
+}
+
+/// Determine the grid position of the desktop with the given index. The position is
+/// given in (column, row) coordinates, where the starting corner is at (0, 0) and the
+/// second axis grows towards the opposite corner.
+static void ws_switch_layout_position(unsigned index, unsigned orientation,
+                                      unsigned columns, unsigned rows,
+                                      unsigned starting_corner, int *col, int *row) {
+	if (orientation == 0) {
+		// Horizontal layout: desktops are laid out row by row
+		*col = (int)(index % columns);
+		*row = (int)(index / columns);
+	} else {
+		// Vertical layout: desktops are laid out column by column
+		*col = (int)(index / rows);
+		*row = (int)(index % rows);
+	}
+	switch (starting_corner) {
+	case 1: // top-right
+		*col = (int)columns - 1 - *col;
+		break;
+	case 2: // bottom-left
+		*row = (int)rows - 1 - *row;
+		break;
+	case 3: // bottom-right
+		*col = (int)columns - 1 - *col;
+		*row = (int)rows - 1 - *row;
+		break;
+	}
+}
+
+/// Determine the direction the new desktop comes in from, based on the workspace grid
+/// layout. If no layout is available, fall back to comparing desktop numbers.
+static enum ws_switch_direction
+ws_switch_direction_for(session_t *ps, long old_desktop, long new_desktop) {
+	auto ws = ps->ws_switch;
+	if (ws->has_layout) {
+		int old_col = 0, old_row = 0, new_col = 0, new_row = 0;
+		ws_switch_layout_position((unsigned)old_desktop, ws->layout_orientation,
+		                          ws->layout_columns, ws->layout_rows, ws->layout_corner,
+		                          &old_col, &old_row);
+		ws_switch_layout_position((unsigned)new_desktop, ws->layout_orientation,
+		                          ws->layout_columns, ws->layout_rows, ws->layout_corner,
+		                          &new_col, &new_row);
+		if (new_col > old_col) {
+			return WS_SWITCH_DIRECTION_RIGHT;
+		}
+		if (new_col < old_col) {
+			return WS_SWITCH_DIRECTION_LEFT;
+		}
+		if (new_row > old_row) {
+			return WS_SWITCH_DIRECTION_DOWN;
+		}
+		if (new_row < old_row) {
+			return WS_SWITCH_DIRECTION_UP;
+		}
+	}
+	return new_desktop > old_desktop ? WS_SWITCH_DIRECTION_RIGHT
+	                                 : WS_SWITCH_DIRECTION_LEFT;
+}
+
 struct ws_switch *ws_switch_new(session_t *ps) {
 	auto ws = ccalloc(1, struct ws_switch);
 	ws->state = WS_SWITCH_IDLE;
 	ws->current_desktop = ws_switch_read_current_desktop(ps);
+	ws_switch_read_layout(ps);
 	return ws;
 }
 
@@ -130,7 +229,7 @@ void ws_switch_desktop_changed(session_t *ps) {
 	}
 
 	log_debug("Desktop switched from %ld to %ld", old_desktop, new_desktop);
-	ws->direction = new_desktop > old_desktop ? 1 : -1;
+	ws->direction = ws_switch_direction_for(ps, old_desktop, new_desktop);
 	// If another switch is already in progress, restart the animation targeting the
 	// new desktop.
 	ws_switch_cancel(ps);
