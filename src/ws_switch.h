@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2024, Yuxuan Shui <yshuiv7@gmail.com>
+// Copyright (c) 2026, Nikolay Borodin <monsterovich@gmail.com>
 
 #pragma once
 #include <stdbool.h>

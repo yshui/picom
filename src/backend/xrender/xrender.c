@@ -1179,6 +1179,7 @@ const struct backend_operations xrender_ops = {
     .clear = xrender_clear,
     .copy_area = xrender_copy_area,
     .copy_area_quantize = xrender_copy_area,
+    .copy_image = xrender_copy_area,
     .image_capabilities = xrender_image_capabilities,
     .is_format_supported = xrender_is_format_supported,
     .new_image = xrender_new_image,

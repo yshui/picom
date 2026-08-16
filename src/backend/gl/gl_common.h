@@ -170,6 +170,8 @@ bool gl_copy_area(backend_t *backend_data, ivec2 origin, image_handle target,
                   image_handle source, const region_t *region);
 bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle target_handle,
                            image_handle source_handle, const region_t *region);
+bool gl_copy_image(backend_t *backend_data, ivec2 origin, image_handle target,
+                   image_handle source, const region_t *region);
 bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op);
 image_handle gl_back_buffer(struct backend_base *base);
 uint32_t gl_image_capabilities(backend_t *base, image_handle img);

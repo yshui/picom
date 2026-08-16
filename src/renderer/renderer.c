@@ -581,7 +581,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		pixman_region32_init_rect(&full_region, 0, 0,
 		                          (unsigned)r->canvas_size.width,
 		                          (unsigned)r->canvas_size.height);
-		bool succeeded = backend->ops.copy_area(backend, (ivec2){}, *capture_target,
+		bool succeeded = backend->ops.copy_image(backend, (ivec2){}, *capture_target,
 		                                        r->back_image, &full_region);
 		pixman_region32_fini(&full_region);
 		if (!succeeded) {
@@ -643,7 +643,7 @@ bool renderer_copy_back_image(struct renderer *r, struct backend_base *backend,
 	pixman_region32_init_rect(&region, 0, 0, (unsigned)r->canvas_size.width,
 	                          (unsigned)r->canvas_size.height);
 	bool succeeded =
-	    backend->ops.copy_area(backend, (ivec2){}, *target, r->back_image, &region);
+	    backend->ops.copy_image(backend, (ivec2){}, *target, r->back_image, &region);
 	pixman_region32_fini(&region);
 	if (!succeeded) {
 		log_error("Failed to take a snapshot of the back image");
