@@ -463,6 +463,9 @@ static const struct picom_option picom_options[] = {
                                                                              "rendered screen. Reduces banding artifacts, but might cause performance "
                                                                              "degradation. Only works with OpenGL."},
     [341] = {"no-frame-pacing"          , DISABLE(frame_pacing)            , "Disable frame pacing. This might increase the latency."},
+    [343] = {"workspace-animation"      , ENABLE(workspace_animation)      , "Animate workspace switches. When the window manager changes the current "
+                                                                             "desktop, picom takes a snapshot of the screen before and after the "
+                                                                             "change, and animates between the two."},
     [733] = {"legacy-backends"          , WARN_DEPRECATED(ENABLE(use_legacy_backends)), NULL},
     [800] = {"monitor-repaint"          , ENABLE(monitor_repaint)          , "Highlight the updated area of the screen. For debugging."},
     [801] = {"diagnostics"              , ENABLE(print_diagnostics)        , "Print diagnostic information"},
@@ -544,6 +547,14 @@ static const struct picom_option picom_options[] = {
     [328] = {"blur-method", PARSE_WITH(parse_blur_method, BLUR_METHOD_INVALID, blur_method),
              "The algorithm used for background bluring. Available choices are: 'none' to disable, 'gaussian', "
 	     "'box' or 'kernel' for custom convolution blur with --blur-kern."},
+    [344] = {"workspace-animation-duration", INTEGER(workspace_animation_duration, 1, INT_MAX),
+             "The duration of the workspace switch animation, in milliseconds. (default 300)"},
+    [345] = {"workspace-animation-wait", INTEGER(workspace_animation_wait, 0, INT_MAX),
+             "The maximum time to wait for the new desktop to settle before starting the "
+             "workspace switch animation, in milliseconds. (default 500)"},
+    [346] = {"workspace-animation-effect",
+             PARSE_WITH(parse_ws_switch_effect, WS_SWITCH_EFFECT_INVALID, workspace_animation_effect),
+             "The effect of the workspace switch animation. Available choices are: 'slide' and 'fade'."},
 
     // Deprecated options
     [269] = {"refresh-rate"       , WARN_DEPRECATED(IGNORE(required_argument))},

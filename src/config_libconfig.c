@@ -1107,6 +1107,19 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	lcfg_lookup_bool(&cfg, "transparent-clipping", &opt->transparent_clipping);
 	// --dithered_present
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
+	// Workspace switch animation
+	lcfg_lookup_bool(&cfg, "workspace-animation", &opt->workspace_animation);
+	config_lookup_int(&cfg, "workspace-animation-duration",
+	                  &opt->workspace_animation_duration);
+	config_lookup_int(&cfg, "workspace-animation-wait", &opt->workspace_animation_wait);
+	if (config_lookup_string(&cfg, "workspace-animation-effect", &sval)) {
+		int effect = parse_ws_switch_effect(sval);
+		if (effect >= WS_SWITCH_EFFECT_INVALID) {
+			log_fatal("Invalid workspace animation effect %s", sval);
+			goto out;
+		}
+		opt->workspace_animation_effect = (enum ws_switch_effect)effect;
+	}
 	const struct {
 		const char *name;
 		ptrdiff_t offset;

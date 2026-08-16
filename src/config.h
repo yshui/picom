@@ -291,6 +291,15 @@ struct option_name {
 	const char *name;
 };
 
+/// Effects for the workspace switch animation
+enum ws_switch_effect {
+	/// The old desktop slides out, and the new desktop slides in, horizontally.
+	WS_SWITCH_EFFECT_SLIDE = 0,
+	/// The old desktop fades out, and the new desktop fades in.
+	WS_SWITCH_EFFECT_FADE,
+	WS_SWITCH_EFFECT_INVALID,
+};
+
 /// Structure representing all options.
 typedef struct options {
 	// === Deprecation ===
@@ -500,6 +509,15 @@ typedef struct options {
 	struct list_node transparent_clipping_blacklist;
 
 	bool dithered_present;
+	// === Workspace switch animation ===
+	/// Animate workspace (desktop) switches
+	bool workspace_animation;
+	/// Duration of the workspace switch animation, in milliseconds
+	int workspace_animation_duration;
+	/// Maximum time to wait for the new desktop to settle, in milliseconds
+	int workspace_animation_wait;
+	/// Effect to use for the workspace switch animation
+	enum ws_switch_effect workspace_animation_effect;
 	// === Animation ===
 	struct win_script animations[ANIMATION_TRIGGER_COUNT];
 	/// Array of all the scripts used in `animations`. This is a dynarr.
@@ -544,6 +562,7 @@ void *parse_numeric_prefix(const char *src, const char **end, void *user_data);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
 int must_use parse_blur_method(const char *src);
+int must_use parse_ws_switch_effect(const char *src);
 void parse_debug_options(struct debug_options *);
 
 const char *xdg_config_home(void);
