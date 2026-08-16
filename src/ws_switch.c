@@ -283,11 +283,20 @@ bool ws_switch_render(session_t *ps, uint64_t render_start_us, bool window_anima
 
 	switch (ws->state) {
 	case WS_SWITCH_CAPTURE_PRE: {
+		// force a full repaint before snapshotting
+		bool ok = ws_switch_render_normal(ps, render_start_us, NULL, true, NULL,
+		                                   NULL);
+		if (!ok) {
+			log_warn("forced full repaint before snapshot failed");
+			ws_switch_cancel(ps);
+			return false;
+		}
+
 		// The renderer's back image still holds the last frame of the previous
 		// desktop, take a snapshot of it before the new desktop is rendered.
 		if (!renderer_copy_back_image(ps->renderer, ps->backend_data, &ws->pre_image)) {
 			log_warn("Failed to take a snapshot of the previous desktop, the "
-			         "workspace switch animation is cancelled.");
+					"workspace switch animation is cancelled.");
 			ws_switch_cancel(ps);
 			return false;
 		}
@@ -330,26 +339,22 @@ bool ws_switch_render(session_t *ps, uint64_t render_start_us, bool window_anima
 		double progress =
 		    (double)(ws_switch_now_ms() - ws->anim_start_ms) /
 		    (double)max2(ps->o.workspace_animation_duration, 1);
-		// Render the final frame of the animation (showing the snapshot of the
-		// new desktop) before finishing the switch. This keeps the frame
-		// timing query of the GL backend balanced, i.e. every frame is started
-		// with prepare and ended with present.
 		progress = min2(progress, 1.0);
-		bool succeeded = renderer_render_workspace_switch(
-		    ps->renderer, ps->backend_data, ws->pre_image, ws->post_image,
-		    ps->o.workspace_animation_effect, progress, ws->direction);
 		if (progress >= 1.0) {
-			// The animation is finished. The next few frames will be
-			// rendered normally, and they should be full repaints, so the
-			// layout manager ring is fully repopulated with post-switch
-			// layouts before the buffer age / damage tracking is trusted
-			// again.
+			bool frame_changed = false;
+			bool succeeded = ws_switch_render_normal(ps, render_start_us, NULL, true,
+			                                         NULL, &frame_changed);
 			ws->full_repaint_frames =
 			    layout_manager_max_buffer_age(ps->layout_manager) + 1;
 			ws_switch_cancel(ps);
 			queue_redraw(ps);
+			return succeeded;
 		}
-		return succeeded;
+		// Render an intermediate frame of the animation, blending between the
+		// "before" and the "after" snapshots.
+		return renderer_render_workspace_switch(
+		    ps->renderer, ps->backend_data, ws->pre_image, ws->post_image,
+		    ps->o.workspace_animation_effect, progress, ws->direction);
 	}
 	default: unreachable();
 	}
