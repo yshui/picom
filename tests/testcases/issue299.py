@@ -45,7 +45,10 @@ def create_client_window(name):
     conn.core.MapWindowChecked(client_win).check()
     return client_win
 
-loop = asyncio.get_event_loop()
+# Python 3.12+ no longer creates an implicit event loop in a thread that
+# doesn't have one, so get_event_loop() raises RuntimeError here.
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 bus = loop.run_until_complete(MessageBus().connect())
 
 cmid = conn.generate_id()
