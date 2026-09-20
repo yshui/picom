@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <inttypes.h>
+#include <poll.h>
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -1180,6 +1182,145 @@ static bool x_feed_event(struct x_connection *c, xcb_generic_event_t *e) {
 		                                error->minor_code, error->error_code));
 	}
 	return false;
+}
+
+/// Milliseconds of monotonic time elapsed since `start`.
+static int64_t ms_since(struct timespec start) {
+	auto now = get_time_timespec();
+	return (int64_t)(now.tv_sec - start.tv_sec) * 1000 +
+	       (now.tv_nsec - start.tv_nsec) / 1000000;
+}
+
+/// A second connection to the X server, used to release our main connection
+/// when it is stuck behind a fence await. Opened on first use and reopened if
+/// it breaks. Returns NULL if it cannot be opened.
+static xcb_connection_t *x_rescue_connection(void) {
+	static xcb_connection_t *rescue_conn = NULL;
+
+	if (rescue_conn != NULL && !xcb_connection_has_error(rescue_conn)) {
+		return rescue_conn;
+	}
+
+	if (rescue_conn != NULL) {
+		xcb_disconnect(rescue_conn);
+	}
+
+	rescue_conn = xcb_connect(NULL, NULL);
+	if (xcb_connection_has_error(rescue_conn)) {
+		log_error("Could not open a rescue X connection.");
+
+		return NULL;
+	}
+
+	return rescue_conn;
+}
+
+/// Send a fence request (trigger or destroy) on the rescue connection, which
+/// is not stuck behind our await. Returns whether the request was sent.
+static bool
+x_send_rescue_fence_request(xcb_void_cookie_t (*request)(xcb_connection_t *, xcb_sync_fence_t),
+                            xcb_sync_fence_t fence) {
+	auto rescue_conn = x_rescue_connection();
+	if (rescue_conn == NULL) {
+		return false;
+	}
+
+	request(rescue_conn, fence);
+	xcb_flush(rescue_conn);
+
+	return true;
+}
+
+/// Whether the reply for `sequence` has arrived; consumes it if so.
+static bool x_take_reply(xcb_connection_t *c, unsigned int sequence) {
+	void *reply = NULL;
+	xcb_generic_error_t *err = NULL;
+	if (xcb_poll_for_reply(c, sequence, &reply, &err) == 0) {
+		return false;
+	}
+
+	free(reply);
+	free(err);
+
+	return true;
+}
+
+/// See x.h. Any client may trigger or destroy a fence, so a second connection,
+/// which is not queued behind our await, can release it. Triggering is tried
+/// first. Per the SYNC spec a fence triggers only once rendering from all
+/// dispatched requests, any client's, has completed, so the rescue trigger
+/// completing where ours did not is a driver bug; when it does not complete,
+/// destroying the fence releases every client waiting on it. Either way this
+/// frame loses the ordering guarantee the fence exists to provide.
+///
+/// Time is measured on the monotonic clock rather than by counting poll
+/// slices: poll() returns early whenever X events arrive, so counting slices
+/// would let event traffic escalate long before the stall has actually lasted
+/// that long.
+enum x_fence_sync_result
+x_sync_with_fence_rescue(struct x_connection *c, xcb_sync_fence_t *fence) {
+	static const int poll_slice_ms = 100;
+	static const int64_t trigger_after_ms = 500;
+	static const int64_t destroy_after_ms = 2000;
+	static const int64_t abort_after_ms = 10000;
+
+	auto cookie = xcb_get_input_focus(c->c);
+	xcb_flush(c->c);
+
+	struct pollfd pfd = {
+	    .fd = xcb_get_file_descriptor(c->c),
+	    .events = POLLIN,
+	};
+	auto start = get_time_timespec();
+	bool trigger_attempted = false;
+	bool destroy_attempted = false;
+	bool fence_destroyed = false;
+	while (!x_take_reply(c->c, cookie.sequence)) {
+		if (xcb_connection_has_error(c->c)) {
+			return X_FENCE_CONNECTION_BROKEN;
+		}
+
+		poll(&pfd, 1, poll_slice_ms);
+		auto elapsed_ms = ms_since(start);
+		if (!trigger_attempted && elapsed_ms >= trigger_after_ms) {
+			trigger_attempted = true;
+			log_warn("X sync after fence await stalled for %" PRId64 " ms. "
+			         "Triggering the fence from a rescue connection.",
+			         elapsed_ms);
+			if (!global_debug_options.suppress_fence_rescue_trigger) {
+				x_send_rescue_fence_request(xcb_sync_trigger_fence, *fence);
+			}
+		}
+
+		if (!destroy_attempted && elapsed_ms >= destroy_after_ms) {
+			destroy_attempted = true;
+			log_warn("X sync still stalled %" PRId64 " ms after triggering "
+			         "the fence. Destroying the fence from a rescue "
+			         "connection to release the await.",
+			         elapsed_ms);
+			fence_destroyed =
+			    x_send_rescue_fence_request(xcb_sync_destroy_fence, *fence);
+		}
+
+		if (elapsed_ms >= abort_after_ms) {
+			log_fatal("X sync still stalled %" PRId64 " ms, even after "
+			          "triggering and destroying the fence; aborting instead "
+			          "of hanging invisibly.",
+			          elapsed_ms);
+			abort();
+		}
+	}
+
+	if (!fence_destroyed) {
+		return X_FENCE_SYNCED;
+	}
+
+	*fence = x_new_id(c);
+	x_set_error_action_abort(
+	    c, xcb_sync_create_fence(c->c, c->screen_info->root, *fence, 0));
+	log_info("Replaced the destroyed sync fence with a new one.");
+
+	return X_FENCE_REPLACED;
 }
 
 bool x_prepare_for_sleep(struct x_connection *c) {

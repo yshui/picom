@@ -470,6 +470,27 @@ static inline void x_await_request(struct x_connection *c, struct x_async_reques
 	list_insert_before(&c->pending_x_requests, &req->siblings);
 }
 
+/// The outcome of `x_sync_with_fence_rescue`.
+enum x_fence_sync_result {
+	/// The await completed and the fence is triggered; reset it before reuse.
+	X_FENCE_SYNCED,
+	/// The await was released by destroying the fence. The fence handle now
+	/// names a new, untriggered fence, which must not be reset.
+	X_FENCE_REPLACED,
+	/// The main X connection is broken.
+	X_FENCE_CONNECTION_BROKEN,
+};
+
+/// Complete the round-trip that follows `xcb_sync_await_fence` without
+/// trusting the server to ever reply. If the awaited fence never triggers
+/// (seen with the NVIDIA driver around VT switches), the await blocks this
+/// client's whole request queue; after a stall, trigger the fence from a
+/// separate rescue connection, and if that does not release the await
+/// either, destroy the fence from it and create a new one in `*fence`.
+/// Abort only if even that does not release the connection.
+enum x_fence_sync_result
+x_sync_with_fence_rescue(struct x_connection *c, xcb_sync_fence_t *fence);
+
 /// Flush all X buffers to ensure we don't sleep with outgoing messages not sent.
 ///
 /// If there are requests pending replies, an event sync request will
