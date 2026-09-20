@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <poll.h>
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -1180,6 +1181,69 @@ static bool x_feed_event(struct x_connection *c, xcb_generic_event_t *e) {
 		                                error->minor_code, error->error_code));
 	}
 	return false;
+}
+
+/// See x.h. The await only jams OUR queue — a fence can be triggered by any
+/// client, and a fresh connection has no rendering history for the driver to
+/// park, so its trigger completes immediately. The cost is that one frame
+/// skips the sync-fence ordering guarantee — on a VT nobody is looking at.
+bool x_sync_with_fence_rescue(struct x_connection *c, xcb_sync_fence_t fence) {
+	static const int poll_slice_ms = 100;
+	static const int rescue_after_ms = 500;
+	static const int abort_after_ms = 10000;
+	static xcb_connection_t *rescue_conn = NULL;
+
+	auto cookie = xcb_get_input_focus(c->c);
+	xcb_flush(c->c);
+
+	struct pollfd pfd = {
+	    .fd = xcb_get_file_descriptor(c->c),
+	    .events = POLLIN,
+	};
+	int elapsed_ms = 0;
+	bool rescue_sent = false;
+	while (true) {
+		void *reply = NULL;
+		xcb_generic_error_t *err = NULL;
+		if (xcb_poll_for_reply(c->c, cookie.sequence, &reply, &err) != 0) {
+			free(reply);
+			free(err);
+			return true;
+		}
+		if (xcb_connection_has_error(c->c)) {
+			return false;
+		}
+		poll(&pfd, 1, poll_slice_ms);
+		elapsed_ms += poll_slice_ms;
+		if (!rescue_sent && elapsed_ms >= rescue_after_ms) {
+			rescue_sent = true;
+			log_warn("X sync after fence await stalled for %d ms — the "
+			         "driver has parked our request queue (NVIDIA VT "
+			         "switch). Triggering the fence from a rescue "
+			         "connection.",
+			         elapsed_ms);
+			if (rescue_conn == NULL || xcb_connection_has_error(rescue_conn)) {
+				if (rescue_conn != NULL) {
+					xcb_disconnect(rescue_conn);
+				}
+				rescue_conn = xcb_connect(NULL, NULL);
+			}
+			if (xcb_connection_has_error(rescue_conn)) {
+				log_error("Could not open a rescue X connection; the "
+				          "abort fallback will fire if the stall "
+				          "persists.");
+			} else {
+				xcb_sync_trigger_fence(rescue_conn, fence);
+				xcb_flush(rescue_conn);
+			}
+		}
+		if (elapsed_ms >= abort_after_ms) {
+			log_fatal("X sync still stalled %d ms after the fence rescue; "
+			          "aborting instead of hanging invisibly.",
+			          elapsed_ms);
+			abort();
+		}
+	}
 }
 
 bool x_prepare_for_sleep(struct x_connection *c) {

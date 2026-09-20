@@ -478,6 +478,15 @@ static inline void x_await_request(struct x_connection *c, struct x_async_reques
 /// function MIGHT read data from X into xcb buffer (because `xcb_flush` might read,
 /// ridiculous, I know), so `x_poll_for_event(queued = true)` MUST be called after this to
 /// drain the buffer.
+/// Complete the round-trip that follows `xcb_sync_await_fence` without
+/// trusting the server to ever reply: if the awaited fence cannot trigger
+/// (e.g. the NVIDIA driver parks rendering completion while the X server's
+/// VT is switched away, jamming this client's whole request queue behind
+/// the await), trigger the fence from a separate rescue connection to
+/// unjam it; abort as a last resort rather than hanging invisibly forever.
+/// Returns false only if the main connection itself is broken.
+bool x_sync_with_fence_rescue(struct x_connection *c, xcb_sync_fence_t fence);
+
 bool x_prepare_for_sleep(struct x_connection *c);
 
 /// Poll for the next X event. This is like `xcb_poll_for_event`, but also includes
