@@ -80,6 +80,17 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Use an ev_timer callback for drawing
 	ev_timer draw_timer;
+	/// Poll timer used while rendering is paused because the display's VT is
+	/// in the background; fires draw_callback so rendering resumes the moment
+	/// the VT returns. Kept separate from draw_timer, whose lifecycle is owned
+	/// by the render scheduler.
+	ev_timer vt_poll_timer;
+	/// The kernel VT the X server displays on, from the root XFree86_VT
+	/// property; 0 if unknown.
+	int display_vt;
+	/// Whether rendering is currently paused because the display's VT is in
+	/// the background.
+	bool vt_paused;
 	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue

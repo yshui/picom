@@ -1567,9 +1567,87 @@ static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused)
 	quit(ps);
 }
 
+/// The kernel VT the X server displays on, from the XFree86_VT property the
+/// server sets on the root window; 0 when unavailable.
+static int x_query_display_vt(struct x_connection *c) {
+	auto atom_cookie = xcb_intern_atom(c->c, 1, strlen("XFree86_VT"), "XFree86_VT");
+	auto atom_reply = xcb_intern_atom_reply(c->c, atom_cookie, NULL);
+	if (atom_reply == NULL || atom_reply->atom == XCB_ATOM_NONE) {
+		free(atom_reply);
+		return 0;
+	}
+	auto prop_cookie = xcb_get_property(c->c, 0, c->screen_info->root, atom_reply->atom,
+	                                    XCB_GET_PROPERTY_TYPE_ANY, 0, 1);
+	free(atom_reply);
+	auto prop_reply = xcb_get_property_reply(c->c, prop_cookie, NULL);
+	if (prop_reply == NULL) {
+		return 0;
+	}
+	int vt = 0;
+	if (prop_reply->format == 32 && xcb_get_property_value_length(prop_reply) >= 4) {
+		vt = *(int32_t *)xcb_get_property_value(prop_reply);
+	}
+	free(prop_reply);
+	return vt > 0 ? vt : 0;
+}
+
+/// Whether the X server's VT is currently the foreground console. Errs on the
+/// side of "yes" so this guard can only ever disable itself, never the
+/// compositor.
+static bool display_vt_is_foreground(session_t *ps) {
+#ifdef __linux__
+	char buf[16];
+	if (ps->display_vt <= 0) {
+		return true;
+	}
+	int fd = open("/sys/class/tty/tty0/active", O_RDONLY);
+	if (fd < 0) {
+		return true;
+	}
+	ssize_t n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n < 4 || strncmp(buf, "tty", 3) != 0) {
+		return true;
+	}
+	buf[n] = '\0';
+	int active = atoi(buf + 3);
+	if (active <= 0) {
+		return true;
+	}
+	return active == ps->display_vt;
+#else
+	(void)ps;
+	return true;
+#endif
+}
+
 static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	assert(!ps->backend_busy);
 	assert(ps->render_queued);
+
+	// On NVIDIA, rendering submitted while our VT is in the background never
+	// completes: the sync fence cannot trigger and the buffer swap parks,
+	// wedging the event loop until a restart. Do not render at all while
+	// switched away — keep checking on a timer, and resume with a full
+	// repaint the moment the VT returns.
+	if (!display_vt_is_foreground(ps)) {
+		if (!ps->vt_paused) {
+			ps->vt_paused = true;
+			log_info("Display VT %d switched away — pausing rendering.",
+			         ps->display_vt);
+		}
+		if (!ev_is_active(&ps->vt_poll_timer)) {
+			ev_timer_set(&ps->vt_poll_timer, 0.2, 0);
+			ev_timer_start(EV_A_ & ps->vt_poll_timer);
+		}
+		return;
+	}
+	if (ps->vt_paused) {
+		ps->vt_paused = false;
+		log_info("Display VT %d returned — resuming with a full repaint.",
+		         ps->display_vt);
+		force_repaint(ps);
+	}
 
 	struct timespec now;
 	int64_t draw_callback_enter_us;
@@ -1781,6 +1859,12 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		// immediately know if we can render.
 		vblank_scheduler_schedule(ps->vblank_scheduler, check_render_finish, ps);
 	}
+}
+
+static void vt_poll_callback(EV_P_ ev_timer *w, int revents) {
+	session_t *ps = session_ptr(w, vt_poll_timer);
+	ev_timer_stop(EV_A_ w);
+	draw_callback_impl(EV_A_ ps, revents);
 }
 
 static void draw_callback(EV_P_ ev_timer *w, int revents) {
@@ -2210,6 +2294,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
+	ev_init(&ps->vt_poll_timer, vt_poll_callback);
+	ps->display_vt = x_query_display_vt(&ps->c);
 
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
@@ -2450,6 +2536,7 @@ static void session_destroy(session_t *ps) {
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->draw_timer);
+	ev_timer_stop(ps->loop, &ps->vt_poll_timer);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);

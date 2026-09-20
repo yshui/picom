@@ -186,6 +186,10 @@ struct debug_options {
 	/// ensuring no matter what buffer age apitrace gets during replay, the result
 	/// will be the same.
 	int consistent_buffer_age;
+	/// Do not trigger the render sync fence, simulating a driver that never
+	/// completes it (as the NVIDIA driver behaves while the X server's VT is
+	/// switched away). Only useful for testing the fence stall rescue.
+	int suppress_fence_trigger;
 };
 
 extern struct debug_options global_debug_options;

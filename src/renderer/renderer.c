@@ -10,10 +10,12 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "command_builder.h"
+#include "config.h"
 #include "damage.h"
 #include "layout.h"
 #include "picom.h"
 #include "utils/dynarr.h"
+#include "x.h"
 
 struct renderer {
 	/// Intermediate image to hold what will be presented to the back buffer.
@@ -432,7 +434,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      double max_brightness, const struct x_monitors *monitors,
                      const struct shader_info *root_pixmap_shader,
                      const struct shader_info *shaders, uint64_t *after_damage_us) {
-	if (xsync_fence != XCB_NONE) {
+	if (xsync_fence != XCB_NONE && !global_debug_options.suppress_fence_trigger) {
 		// Trigger the fence but don't immediately wait on it. Let it run
 		// concurrent with our CPU tasks to save time.
 		x_set_error_action_abort(
@@ -512,9 +514,12 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	if (xsync_fence != XCB_NONE) {
 		x_set_error_action_abort(
 		    backend->c, xcb_sync_await_fence(backend->c->c, 1, &xsync_fence));
-		// Making sure the wait is completed by receiving a response from the X
-		// server
-		xcb_aux_sync(backend->c->c);
+		// Making sure the wait is completed by receiving a response from the
+		// X server. Never wait unbounded: if the fence cannot trigger (the
+		// NVIDIA driver parks rendering completion while the VT is switched
+		// away), the await jams our whole request queue and a plain sync
+		// would hang the event loop forever.
+		x_sync_with_fence_rescue(backend->c, xsync_fence);
 		x_set_error_action_abort(
 		    backend->c, xcb_sync_reset_fence(backend->c->c, xsync_fence));
 	}
