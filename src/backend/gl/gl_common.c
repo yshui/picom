@@ -718,6 +718,14 @@ bool gl_copy_area(backend_t *backend_data, ivec2 origin, image_handle target,
 	return gl_copy_area_draw(gd, origin, target, source, &gd->copy_area_prog, region);
 }
 
+bool gl_copy_image(backend_t *backend_data, ivec2 origin, image_handle target,
+                   image_handle source, const region_t *region) {
+	auto gd = (struct gl_data *)backend_data;
+	// Copy the exact pixel content of the source texture, without reading from
+	// the window's back buffer like `gl_copy_area` does for the back image.
+	return gl_copy_area_draw(gd, origin, target, source, &gd->copy_area_prog, region);
+}
+
 bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle target_handle,
                            image_handle source_handle, const region_t *region) {
 	auto gd = (struct gl_data *)backend_data;

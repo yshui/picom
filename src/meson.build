@@ -18,6 +18,7 @@ srcs = [
 		'options.c',
 		'picom.c',
 		'vblank.c',
+		'ws_switch.c',
 		'x.c',
 	),
 ]

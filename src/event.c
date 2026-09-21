@@ -23,6 +23,7 @@
 #include "region.h"
 #include "wm/defs.h"
 #include "wm/wm.h"
+#include "ws_switch.h"
 #include "x.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
@@ -551,6 +552,9 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			// Destroy the root "image" if the wallpaper probably changed
 			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
 				root_damaged(ps);
+			}
+			if (ps->atoms->a_NET_CURRENT_DESKTOP == ev->atom) {
+				ws_switch_desktop_changed(ps);
 			}
 		}
 
