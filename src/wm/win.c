@@ -1700,6 +1700,8 @@ win_script_context_prepare(struct session *ps, struct win *w) {
 	    .monitor_height = monitor.y2 - monitor.y1,
 	    .shadow_color_before = w->previous.shadow_color,
 	    .shadow_color = w->options.shadow_color,
+	    .dim = win_options(w).dim,
+	    .dim_before = w->previous.dim,
 	};
 	return ret;
 }
@@ -1731,6 +1733,7 @@ double win_animatable_get(const struct win *w, enum win_script_output output) {
 	case WIN_SCRIPT_SHADOW_RED: return wopts.shadow_color.red;
 	case WIN_SCRIPT_SHADOW_GREEN: return wopts.shadow_color.green;
 	case WIN_SCRIPT_SHADOW_BLUE: return wopts.shadow_color.blue;
+	case WIN_SCRIPT_DIM: return wopts.dim;
 	default: unreachable();
 	}
 	unreachable();
@@ -1788,6 +1791,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	w->previous.opacity = w->opacity;
 	w->previous.g = w->g;
 	w->previous.shadow_color = w->options.shadow_color;
+	w->previous.dim = win_options(w).dim;
 	w->previous.blur_opacity = win_get_blur_opacity(w);
 
 	if (!ps->redirected || will_never_render) {
@@ -1872,6 +1876,9 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	} else if (!color_eq(win_ctx.shadow_color_before, win_ctx.shadow_color)) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = ANIMATION_TRIGGER_COLOR;
+	} else if (win_ctx.dim_before != win_ctx.dim) {
+		assert(w->state == WSTATE_MAPPED);
+		trigger = ANIMATION_TRIGGER_DIM;
 	}
 
 	if (trigger == ANIMATION_TRIGGER_INVALID) {
