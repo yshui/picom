@@ -346,6 +346,8 @@ typedef struct options {
 	switch_t stoppaint_force;
 	/// Whether to enable D-Bus support.
 	bool dbus;
+	/// Dump configuration file to stdout.
+	bool dump_config;
 	/// Path to log file.
 	char *logpath;
 	/// Number of cycles to paint in benchmark mode. 0 for disabled.
@@ -509,6 +511,17 @@ typedef struct options {
 	bool has_both_style_of_rules;
 } options_t;
 
+// compatibility of *-exclude parameters with rules
+typedef struct rule_replacement {
+	const char *exclude;
+	const char *parameter;
+	int type;
+	union {
+		bool boolean;
+		double floating;
+	} value;
+} rule_replacement_t;
+
 bool load_plugin(const char *name, const char *include_dir);
 static inline void record_problematic_option(struct options *opt, const char *name) {
 	struct option_name *record = calloc(1, sizeof(*record));
@@ -552,13 +565,13 @@ char **xdg_config_dirs(void);
 /// Parse a configuration file from default location.
 ///
 /// @return if config is successfully parsed.
-bool parse_config_libconfig(options_t *, const char *config_file);
+bool parse_config_libconfig(options_t *, const char *config_file, config_t *release_cfg);
 
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
-bool parse_config(options_t *, const char *config_file);
+bool parse_config(options_t *, const char *config_file, config_t *release_cfg);
 
 /**
  * Parse a VSync option argument.
