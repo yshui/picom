@@ -299,6 +299,21 @@ static void win_update_properties(session_t *ps, struct win *w) {
 		}
 	}
 
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_KDE_NET_WM_BLUR_BEHIND_REGION)) {
+		// Clients may rewrite an identical region (the X server cannot
+		// deduplicate PropModeReplace writes), so only cascade the
+		// expensive FACTOR_CHANGED recomputation when the region really
+		// changed.
+		region_t old_blur_region;
+		pixman_region32_init(&old_blur_region);
+		pixman_region32_copy(&old_blur_region, &w->blur_region);
+		win_update_blur_region(&ps->c, ps->atoms, w);
+		if (!pixman_region32_equal(&old_blur_region, &w->blur_region)) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
+		pixman_region32_fini(&old_blur_region);
+	}
+
 	if (ps->o.track_leader &&
 	    (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
 	     win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR) ||
@@ -1154,6 +1169,17 @@ void win_on_client_update(session_t *ps, struct win *w) {
 	win_update_role(&ps->c, ps->atoms, w);
 	c2_window_state_mark_dirty_for_client_change(ps->c2_state, &w->c2_state);
 
+	// The first read of _KDE_NET_WM_BLUR_BEHIND_REGION happens before we
+	// know which client window belongs to this toplevel, so it reads from
+	// the toplevel itself and finds nothing -- the property is set on the
+	// client window. Now that the client window is known, mark the property
+	// stale so the region is read again, this time from the client. Without
+	// this, a client that set the property before mapping and never changes
+	// it afterwards would send no further PropertyNotify, the region would
+	// never be read, and the whole window would be blurred instead of the
+	// requested region.
+	win_set_property_stale(w, ps->atoms->a_KDE_NET_WM_BLUR_BEHIND_REGION);
+
 	// Update everything related to conditions
 	win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 
@@ -1175,6 +1201,7 @@ void free_win_res(session_t *ps, struct win *w) {
 
 	pixman_region32_fini(&w->damaged);
 	pixman_region32_fini(&w->bounding_shape);
+	pixman_region32_fini(&w->blur_region);
 	// BadDamage may be thrown if the window is destroyed
 	x_set_error_action_ignore(&ps->c, xcb_damage_destroy(ps->c.c, w->damage));
 	free(w->name);
@@ -1241,6 +1268,8 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	new->a = *attrs;
 	new->shadow_opacity = ps->o.shadow_opacity;
 	pixman_region32_init(&new->bounding_shape);
+	pixman_region32_init(&new->blur_region);
+	new->blur_region_set = false;
 
 	xcb_generic_error_t *e;
 	auto g = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, wid), &e);
@@ -1307,7 +1336,7 @@ struct win *win_maybe_allocate(session_t *ps, struct wm_ref *cursor,
 	    ps->atoms->a_NET_WM_NAME,        ps->atoms->aWM_CLASS,
 	    ps->atoms->aWM_WINDOW_ROLE,      ps->atoms->a_COMPTON_SHADOW,
 	    ps->atoms->aWM_CLIENT_LEADER,    ps->atoms->aWM_TRANSIENT_FOR,
-	    ps->atoms->a_NET_WM_STATE,
+	    ps->atoms->a_NET_WM_STATE,       ps->atoms->a_KDE_NET_WM_BLUR_BEHIND_REGION,
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 	c2_window_state_init(ps->c2_state, &new->c2_state);
@@ -1480,6 +1509,53 @@ void win_update_bounding_shape(struct x_connection *c, struct win *w,
 	if (w->bounding_shaped && detect_rounded_corners) {
 		w->rounded_corners = win_has_rounded_corners(w);
 	}
+}
+
+/**
+ * Read _KDE_NET_WM_BLUR_BEHIND_REGION from a window's client.
+ */
+void win_update_blur_region(struct x_connection *c, struct atom *atoms, struct win *w) {
+	xcb_window_t wid = win_client_id(w, /*fallback_to_self=*/true);
+	xcb_get_property_reply_t *reply = xcb_get_property_reply(
+	    c->c,
+	    xcb_get_property(c->c, 0, wid, atoms->a_KDE_NET_WM_BLUR_BEHIND_REGION,
+	                     XCB_ATOM_CARDINAL, 0, 1024),
+	    NULL);
+
+	bool was_set = w->blur_region_set;
+	pixman_region32_clear(&w->blur_region);
+	w->blur_region_set = false;
+
+	if (!reply) {
+		return;
+	}
+
+	int len = xcb_get_property_value_length(reply) / 4;
+	int nrects_used = 0;
+	if (len >= 4) {
+		uint32_t *data = xcb_get_property_value(reply);
+		int nrects = len / 4;
+		for (int i = 0; i < nrects; i++) {
+			int x = (int)data[i * 4 + 0];
+			int y = (int)data[i * 4 + 1];
+			int rw = (int)data[i * 4 + 2];
+			int rh = (int)data[i * 4 + 3];
+			if (rw > 0 && rh > 0) {
+				pixman_region32_union_rect(&w->blur_region, &w->blur_region,
+				                           x, y, (unsigned)rw, (unsigned)rh);
+				w->blur_region_set = true;
+				nrects_used++;
+			}
+		}
+	}
+	if (w->blur_region_set) {
+		log_debug("Blur region of window %#010x (%s): %d rects", win_id(w),
+		          w->name, nrects_used);
+	} else if (was_set) {
+		log_debug("Blur region of window %#010x (%s) cleared", win_id(w), w->name);
+	}
+
+	free(reply);
 }
 
 /**
