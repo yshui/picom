@@ -253,7 +253,11 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 		return 0;
 	}
 	if (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0) {
-		pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
+		if (w->blur_region_set) {
+			pixman_region32_copy(&cmd->target_mask, &w->blur_region);
+		} else {
+			pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
+		}
 		pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
 		                          layer->window.origin.y);
 	} else if (blur_frame && mode == WMODE_FRAME_TRANS) {

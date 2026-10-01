@@ -134,6 +134,9 @@ struct win {
 	/// Bounding shape of the window. In local coordinates.
 	/// See above about coordinate systems.
 	region_t bounding_shape;
+	/// Custom blur region from _KDE_NET_WM_BLUR_BEHIND_REGION.
+	region_t blur_region;
+	bool blur_region_set;
 	/// Window flags. Definitions above.
 	uint64_t flags;
 	/// Cached width/height of the window including border.
@@ -543,6 +546,7 @@ void win_on_win_size_change(struct win *w, int shadow_offset_x, int shadow_offse
                             int shadow_radius);
 void win_update_bounding_shape(struct x_connection *c, struct win *w,
                                bool detect_rounded_corners);
+void win_update_blur_region(struct x_connection *c, struct atom *atoms, struct win *w);
 bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
                                 struct win *w);
 
