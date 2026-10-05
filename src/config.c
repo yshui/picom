@@ -664,6 +664,22 @@ bool parse_config(options_t *opt, const char *config_file) {
 
 	    .use_damage = true,
 	    .frame_pacing = true,
+	    .wobbly_windows_level = 0,
+	    .wobbly = {
+	        .stiffness = -1.0,
+	        .drag = -1.0,
+	        .move_factor = -1.0,
+	        .min_velocity = 0.0,
+	        .max_velocity = 1000.0,
+	        .stop_velocity = 0.5,
+	        .min_acceleration = 0.0,
+	        .max_acceleration = 1000.0,
+	        .stop_acceleration = 0.5,
+	        .x_tessellation = 20,
+	        .y_tessellation = 20,
+	    },
+	    .wobbly_windows_move = true,
+	    .wobbly_windows_resize = true,
 
 	    .shadow_red = 0.0,
 	    .shadow_green = 0.0,

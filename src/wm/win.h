@@ -21,6 +21,7 @@
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "wm/wm.h"
+#include "wm/wobbly.h"
 #include "x.h"
 #include "xcb/xproto.h"
 
@@ -111,6 +112,8 @@ struct win {
 	struct win_geometry g;
 	/// Updated geometry received in events
 	struct win_geometry pending_g;
+	/// KWin-style spring surface for the GL window image.
+	struct wobbly_window wobbly;
 	/// Window visual pict format
 	const xcb_render_pictforminfo_t *pictfmt;
 	/// Client window visual pict format

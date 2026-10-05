@@ -19,6 +19,7 @@
 #include <picom/types.h>
 
 #include "atom.h"
+#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
@@ -368,11 +369,40 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		// window was rendered last frame, not if it's mapped in X server.
 
 		// Update window geometry
+		bool moved = w->g.x != w->pending_g.x || w->g.y != w->pending_g.y;
+		bool resized = w->g.width != w->pending_g.width ||
+		               w->g.height != w->pending_g.height;
+		int dx = w->pending_g.x - w->g.x;
+		int dy = w->pending_g.y - w->g.y;
+		int dw = w->pending_g.width - w->g.width;
+		int dh = w->pending_g.height - w->g.height;
+		// Large one-step changes usually come from layout actions such as
+		// maximizing or tiling. The spring mesh is for interactive movement.
+		bool layout_jump = abs(dx) >= 200 || abs(dy) >= 200 ||
+		                   abs(dw) >= 200 || abs(dh) >= 200;
+		if (layout_jump) {
+			w->wobbly.active = false;
+		}
+		const char *backend = ps->o.backend ? backend_name(ps->o.backend) : "";
+		if (ps->o.wobbly_windows &&
+		    (!strcmp(backend, "glx") || !strcmp(backend, "egl")) &&
+		    ((resized && ps->o.wobbly_windows_resize) ||
+		     (!resized && moved && ps->o.wobbly_windows_move)) &&
+		    !layout_jump && !w->is_fullscreen && w->widthb > 80 &&
+		    w->heightb > 50) {
+			if (!w->wobbly.active) {
+				wobbly_start(&w->wobbly, (ivec2){w->g.x, w->g.y},
+				             (ivec2){w->widthb, w->heightb}, ps->o.wobbly);
+			}
+		}
 		w->previous.g = w->g;
 		w->g = w->pending_g;
 
 		// Whether a window is fullscreen changes based on its geometry
 		win_update_is_fullscreen(ps, w);
+		if (w->is_fullscreen) {
+			w->wobbly.active = false;
+		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
@@ -1618,6 +1648,7 @@ void win_destroy_finish(session_t *ps, struct win *w) {
 /// because of fading and such.
 void win_destroy_start(struct win *w) {
 	BUG_ON(w == NULL);
+	w->wobbly.active = false;
 	log_debug("Destroying %#010x (%s)", win_id(w), w->name);
 
 	if (w->state != WSTATE_UNMAPPED) {
@@ -1651,6 +1682,7 @@ void win_destroy_start(struct win *w) {
 
 void unmap_win_start(struct win *w) {
 	assert(w);
+	w->wobbly.active = false;
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
 
 	log_debug("Unmapping %#010x (%s)", win_id(w), w->name);
@@ -2106,6 +2138,7 @@ static void win_handle_get_geometry_reply(struct x_connection *c,
 /// the window in.
 void win_map_start(struct session *ps, struct win *w) {
 	assert(w);
+	w->wobbly.active = false;
 
 	// Don't care about window mapping if it's an InputOnly window
 	// Also, try avoiding mapping a window twice

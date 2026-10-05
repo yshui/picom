@@ -10,7 +10,7 @@
 #include "types.h"
 
 #define PICOM_BACKEND_MAJOR (2UL)
-#define PICOM_BACKEND_MINOR (0UL)
+#define PICOM_BACKEND_MINOR (2UL)
 #define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
 
 typedef pixman_region32_t region_t;
@@ -165,6 +165,11 @@ struct backend_blit_args {
 	int border_width;
 	/// Whether the source image should be inverted.
 	bool color_inverted;
+	/// Optional 4x4 Bezier control points in target coordinates (since API 2.1).
+	/// The OpenGL backend deforms the source rectangle through this surface.
+	const vec2 *wobbly_points;
+	/// Mesh spacing in pixels for the optional wobbly surface (since API 2.2).
+	int wobbly_x_tessellation, wobbly_y_tessellation;
 };
 
 enum backend_image_format {

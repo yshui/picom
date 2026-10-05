@@ -26,6 +26,7 @@
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "wm/defs.h"
+#include "wm/wobbly.h"
 
 typedef struct session session_t;
 
@@ -330,6 +331,13 @@ typedef struct options {
 	bool detect_rounded_corners;
 	/// Force painting of window content with blending.
 	bool force_win_blend;
+	/// Deform windows with a spring mesh while they move (OpenGL backends).
+	bool wobbly_windows;
+	/// KWin-style wobbly preset and optional spring/mesh tuning.
+	int wobbly_windows_level;
+	struct wobbly_parameters wobbly;
+	bool wobbly_windows_move;
+	bool wobbly_windows_resize;
 	/// Resize damage for a specific number of pixels.
 	int resize_damage;
 	/// Whether to unredirect all windows if a full-screen opaque window

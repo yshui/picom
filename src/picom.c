@@ -683,6 +683,9 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		if (w->running_animation_instance != NULL) {
 			*animation = true;
 		}
+		if (w->wobbly.active) {
+			*animation = true;
+		}
 
 		if (win_has_frame(w)) {
 			w->frame_opacity = ps->o.frame_opacity;
@@ -1591,6 +1594,18 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	}
 
 	handle_pending_updates(ps, (double)delta_ms / 1000.0);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL && w->wobbly.active) {
+			if (ps->o.wobbly_windows) {
+				wobbly_advance(&w->wobbly, (ivec2){w->g.x, w->g.y},
+				               (ivec2){w->widthb, w->heightb},
+				               delta_ms > 0 ? (double)delta_ms : 10.0);
+			} else {
+				w->wobbly.active = false;
+			}
+		}
+	}
 
 	int64_t after_handle_pending_updates_us;
 	clock_gettime(CLOCK_MONOTONIC, &now);

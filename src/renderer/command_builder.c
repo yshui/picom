@@ -59,6 +59,11 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	}
 
 	const struct shader_info *shader_info = NULL;
+	bool wobbly = w->wobbly.active && w->frame_opacity == 1.0 &&
+	              layer->saved_image_blend == 0 &&
+	              vec2_eq(layer->scale, SCALE_IDENTITY) &&
+	              layer->window.origin.x == w->g.x &&
+	              layer->window.origin.y == w->g.y;
 	if (layer->options.shader != NULL) {
 		HASH_FIND(hh, shaders, layer->options.shader->data,
 		          layer->options.shader->size, shader_info);
@@ -84,7 +89,20 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
+	    .wobbly_points = wobbly ? w->wobbly.position : NULL,
+	    .wobbly_x_tessellation = wobbly ? w->wobbly.parameters.x_tessellation : 0,
+	    .wobbly_y_tessellation = wobbly ? w->wobbly.parameters.y_tessellation : 0,
 	};
+	if (wobbly) {
+		// The surface can extend past the original window rectangle.
+		pixman_region32_clear(&cmd->target_mask);
+		pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
+		                           layer->window.origin.x - WOBBLY_MARGIN,
+		                           layer->window.origin.y - WOBBLY_MARGIN,
+		                           (unsigned)(layer->window.size.width + 2 * WOBBLY_MARGIN),
+		                           (unsigned)(layer->window.size.height + 2 * WOBBLY_MARGIN));
+		pixman_region32_clear(&cmd->opaque_region);
+	}
 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
 	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
@@ -94,6 +112,12 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->origin = layer->window.origin;
 	cmd->shader_info = shader_info;
 	cmd->blit = args_base;
+	if (wobbly && w->bounding_shaped) {
+		cmd->source_mask.origin = (vec2){};
+		cmd->source_mask.inverted = false;
+		cmd->source_mask.corner_radius = 0;
+		cmd->blit.source_mask = &cmd->source_mask;
+	}
 	cmd->blit.target_mask = &cmd->target_mask;
 	cmd -= 1;
 	if (layer->saved_image_blend > 0) {
