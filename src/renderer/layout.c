@@ -225,23 +225,32 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 
 	unsigned rank = 0;
 	struct layer_index *index, *next_index;
-	wm_stack_foreach_rev(wm, cursor) {
-		auto w = wm_ref_deref(cursor);
-		if (w == NULL) {
-			continue;
-		}
-		dynarr_resize(layout->layers, rank + 1, layer_init, layer_deinit);
-		if (!layer_from_window(&layout->layers[rank], (struct win *)w, size)) {
-			continue;
-		}
+	// Minimizing windows are drawn above everything else. The WM usually raises
+	// and focuses another window as soon as one is minimized, which would hide
+	// the Magic Lamp animation behind it.
+	for (int pass = 0; pass < 2; pass++) {
+		wm_stack_foreach_rev(wm, cursor) {
+			auto w = wm_ref_deref(cursor);
+			if (w == NULL) {
+				continue;
+			}
+			bool minimizing = win_magic_lamp_busy(w) && !w->lamp.restoring;
+			if (minimizing != (pass == 1)) {
+				continue;
+			}
+			dynarr_resize(layout->layers, rank + 1, layer_init, layer_deinit);
+			if (!layer_from_window(&layout->layers[rank], (struct win *)w, size)) {
+				continue;
+			}
 
-		HASH_FIND(hh, lm->layer_indices, &layout->layers[rank].key,
-		          sizeof(layout->layers[rank].key), index);
-		if (index) {
-			prev_layout->layers[index->index].next_rank = (int)rank;
-			layout->layers[rank].prev_rank = (int)index->index;
+			HASH_FIND(hh, lm->layer_indices, &layout->layers[rank].key,
+			          sizeof(layout->layers[rank].key), index);
+			if (index) {
+				prev_layout->layers[index->index].next_rank = (int)rank;
+				layout->layers[rank].prev_rank = (int)index->index;
+			}
+			rank++;
 		}
-		rank++;
 	}
 	dynarr_truncate(layout->layers, rank, layer_deinit);
 
