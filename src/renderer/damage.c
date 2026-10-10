@@ -75,6 +75,7 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	// First part, if any blit argument that would affect the whole image changed
 	if (!color_eq(cmd1->blit.tint, cmd2->blit.tint)            ||
 	    cmd1->blit.wobbly_points != NULL || cmd2->blit.wobbly_points != NULL ||
+	    cmd1->blit.magic_lamp.enabled || cmd2->blit.magic_lamp.enabled ||
 	    cmd1->blit.shader  != cmd2->blit.shader                ||
 	    cmd1->blit.corner_radius  != cmd2->blit.corner_radius  ||
 	    cmd1->blit.max_brightness != cmd2->blit.max_brightness ||

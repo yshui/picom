@@ -50,6 +50,12 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 		goto out;
 	}
 
+	out_layer->magic_lamp = w->lamp.mesh;
+	if (out_layer->magic_lamp.enabled) {
+		w_opts.shadow = false;
+		w_opts.blur_background = false;
+		w_opts.transparent_clipping = false;
+	}
 	out_layer->options = w_opts;
 	out_layer->scale = (vec2){
 	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X),
@@ -96,7 +102,8 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	    .size = ivec2_scale_floor(out_layer->window.size, out_layer->scale),
 	};
 	struct ibox screen = {.origin = {0, 0}, .size = size};
-	if (!ibox_overlap(window_scaled, screen) || !ibox_overlap(out_layer->crop, screen)) {
+	if (out_layer->magic_lamp.enabled) out_layer->crop = screen;
+	if ((!out_layer->magic_lamp.enabled && !ibox_overlap(window_scaled, screen)) || !ibox_overlap(out_layer->crop, screen)) {
 		goto out;
 	}
 

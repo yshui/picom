@@ -21,6 +21,7 @@
 #include "test.h"
 #include "utils/misc.h"
 #include "wm/wobbly.h"
+#include "wm/magic_lamp.h"
 
 #include "gl_common.h"
 
@@ -523,6 +524,61 @@ void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, vec2
 	}
 }
 
+// Split translucent decorations in source space, then bend each rectangle
+// with the same mapping. Adjacent rectangles share exact boundary positions.
+static int gl_magic_lamp_coords(const struct backend_blit_args *args, GLfloat **coord,
+                                GLuint **indices) {
+	const auto m = &args->magic_lamp;
+	int width = args->effective_size.width, height = args->effective_size.height;
+	if (width <= 0 || height <= 0) return 0;
+	int x1 = m->body.origin.x, y1 = m->body.origin.y;
+	int x2 = x1 + m->body.size.width, y2 = y1 + m->body.size.height;
+	rect_t rects[4] = {{0, 0, width, height}};
+	int nr = 1;
+	if (m->split_frame && !m->frame_only) rects[0] = (rect_t){x1, y1, x2, y2};
+	if (m->split_frame && m->frame_only) {
+		rects[0] = (rect_t){0, 0, width, y1};
+		rects[1] = (rect_t){0, y2, width, height};
+		rects[2] = (rect_t){0, y1, x1, y2};
+		rects[3] = (rect_t){x2, y1, width, y2};
+		nr = 4;
+	}
+	int nx[4] = {0}, ny[4] = {0}, count = 0;
+	for (int r = 0; r < nr; r++) {
+		if (rects[r].x2 <= rects[r].x1 || rects[r].y2 <= rects[r].y1) continue;
+		nx[r] = clamp((rects[r].x2 - rects[r].x1 + 39) / 40, 1, 256);
+		ny[r] = clamp((rects[r].y2 - rects[r].y1 + 39) / 40, 1, 256);
+		count += nx[r] * ny[r];
+	}
+	*coord = ccalloc((size_t)count * 16, GLfloat);
+	*indices = ccalloc((size_t)count * 6, GLuint);
+	int index = 0;
+	for (int r = 0; r < nr; r++) {
+		for (int j = 0; j < ny[r]; j++) {
+			for (int i = 0; i < nx[r]; i++, index++) {
+				double left = rects[r].x1 + (double)(rects[r].x2 - rects[r].x1) * i / nx[r];
+				double right = rects[r].x1 + (double)(rects[r].x2 - rects[r].x1) * (i + 1) / nx[r];
+				double top = rects[r].y1 + (double)(rects[r].y2 - rects[r].y1) * j / ny[r];
+				double bottom = rects[r].y1 + (double)(rects[r].y2 - rects[r].y1) * (j + 1) / ny[r];
+				vec2 source[] = {{left, top}, {right, top}, {right, bottom}, {left, bottom}};
+				for (int k = 0; k < 4; k++) {
+					vec2 point = magic_lamp_point(m, source[k]);
+					GLfloat *vertex = &(*coord)[index * 16 + k * 4];
+					vertex[0] = (GLfloat)point.x;
+					vertex[1] = (GLfloat)point.y;
+					vertex[2] = (GLfloat)source[k].x;
+					vertex[3] = (GLfloat)source[k].y;
+				}
+				GLuint first = (GLuint)(index * 4);
+				memcpy(&(*indices)[index * 6],
+				       (GLuint[]){first, first + 1, first + 2, first + 2, first + 3, first},
+				       sizeof(GLuint) * 6);
+			}
+		}
+	}
+	return count;
+}
+
 static int gl_wobbly_coords(const struct backend_blit_args *args, GLfloat **coord,
                             GLuint **indices) {
 	int width = args->effective_size.width;
@@ -600,7 +656,9 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 		// Nothing to paint
 		return 0;
 	}
-	if (args->wobbly_points != NULL) {
+	if (args->magic_lamp.enabled) {
+		nrects = gl_magic_lamp_coords(args, coord, indices);
+	} else if (args->wobbly_points != NULL) {
 		nrects = gl_wobbly_coords(args, coord, indices);
 		if (!nrects) {
 			return 0;
@@ -692,8 +750,8 @@ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
 		return false;
 	}
 
-	GLfloat *coord;
-	GLuint *indices;
+	GLfloat *coord = NULL;
+	GLuint *indices = NULL;
 	struct gl_shader *shader;
 	struct gl_uniform_value uniforms[NUMBER_OF_UNIFORMS] = {};
 	int nrects =
@@ -712,7 +770,7 @@ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	gl_blit_inner(gd, fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
 	              NUMBER_OF_UNIFORMS, uniforms,
-	              args->wobbly_points != NULL ? args->target_mask : NULL,
+	              (args->wobbly_points != NULL || args->magic_lamp.enabled) ? args->target_mask : NULL,
 	              target->height, target->y_inverted);
 
 	free(indices);

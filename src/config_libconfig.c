@@ -643,6 +643,7 @@ static const struct {
 	ptrdiff_t offset;
 } all_window_options[] = {
     {"fade", offsetof(struct window_maybe_options, fade)},
+    {"magic-lamp", offsetof(struct window_maybe_options, magic_lamp)},
     {"paint", offsetof(struct window_maybe_options, paint)},
     {"shadow", offsetof(struct window_maybe_options, shadow)},
     {"full-shadow", offsetof(struct window_maybe_options, full_shadow)},
@@ -1084,6 +1085,8 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
+	lcfg_lookup_bool(&cfg, "magic-lamp", &opt->magic_lamp);
+	config_lookup_int(&cfg, "magic-lamp-duration", &opt->magic_lamp_duration);
 	lcfg_lookup_bool(&cfg, "wobbly-windows", &opt->wobbly_windows);
 	config_lookup_int(&cfg, "wobbly-windows-level", &opt->wobbly_windows_level);
 	config_lookup_float(&cfg, "wobbly-windows-stiffness", &opt->wobbly.stiffness);

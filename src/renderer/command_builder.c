@@ -59,7 +59,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	}
 
 	const struct shader_info *shader_info = NULL;
-	bool wobbly = w->wobbly.active && w->frame_opacity == 1.0 &&
+	bool wobbly = !layer->magic_lamp.enabled && w->wobbly.active && w->frame_opacity == 1.0 &&
 	              layer->saved_image_blend == 0 &&
 	              vec2_eq(layer->scale, SCALE_IDENTITY) &&
 	              layer->window.origin.x == w->g.x &&
@@ -93,6 +93,40 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .wobbly_x_tessellation = wobbly ? w->wobbly.parameters.x_tessellation : 0,
 	    .wobbly_y_tessellation = wobbly ? w->wobbly.parameters.y_tessellation : 0,
 	};
+	if (layer->magic_lamp.enabled) {
+		// Deformed source rectangles are clipped in destination space by a full
+		// screen mask. Shape/corners remain attached to the source texture.
+		args_base.magic_lamp = layer->magic_lamp;
+		args_base.magic_lamp.split_frame = w->frame_opacity < 1;
+		margin_t ext = win_calc_frame_extents(w);
+		int left = clamp(ext.left, 0, w->widthb);
+		int top = clamp(ext.top, 0, w->heightb);
+		int right = clamp(w->widthb - ext.right, left, w->widthb);
+		int bottom = clamp(w->heightb - ext.bottom, top, w->heightb);
+		args_base.magic_lamp.body = (struct ibox){
+		    .origin = {left, top}, .size = {right - left, bottom - top},
+		};
+		unsigned count = w->frame_opacity > 0 && w->frame_opacity < 1 ? 2 : 1;
+		for (unsigned i = 0; i < count; i++) {
+			auto lamp_cmd = cmd_base - i;
+			pixman_region32_copy(&lamp_cmd->target_mask, &crop);
+			if (i != 0) pixman_region32_init(&lamp_cmd->opaque_region);
+			pixman_region32_clear(&lamp_cmd->opaque_region);
+			lamp_cmd->op = BACKEND_COMMAND_BLIT;
+			lamp_cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
+			lamp_cmd->origin = layer->window.origin;
+			lamp_cmd->shader_info = shader_info;
+			lamp_cmd->blit = args_base;
+			lamp_cmd->blit.target_mask = &lamp_cmd->target_mask;
+			lamp_cmd->blit.magic_lamp.frame_only = i != 0;
+			if (i != 0) lamp_cmd->blit.tint = color_mult_alpha(tint, opacity * w->frame_opacity);
+			if (w->bounding_shaped) {
+				lamp_cmd->source_mask = (typeof(lamp_cmd->source_mask)){0};
+				lamp_cmd->blit.source_mask = &lamp_cmd->source_mask;
+			}
+		}
+		return count;
+	}
 	if (wobbly) {
 		// The surface can extend past the original window rectangle.
 		pixman_region32_clear(&cmd->target_mask);

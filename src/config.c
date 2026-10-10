@@ -664,6 +664,7 @@ bool parse_config(options_t *opt, const char *config_file) {
 
 	    .use_damage = true,
 	    .frame_pacing = true,
+	    .magic_lamp_duration = 250,
 	    .wobbly_windows_level = 0,
 	    .wobbly = {
 	        .stiffness = -1.0,

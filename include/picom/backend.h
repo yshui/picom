@@ -10,7 +10,7 @@
 #include "types.h"
 
 #define PICOM_BACKEND_MAJOR (2UL)
-#define PICOM_BACKEND_MINOR (2UL)
+#define PICOM_BACKEND_MINOR (3UL)
 #define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
 
 typedef pixman_region32_t region_t;
@@ -128,6 +128,18 @@ struct backend_blur_args {
 	double opacity;
 };
 
+/// Magic Lamp deformation, in root coordinates (since API 2.3).
+enum magic_lamp_direction { MAGIC_LAMP_BOTTOM, MAGIC_LAMP_TOP, MAGIC_LAMP_LEFT, MAGIC_LAMP_RIGHT };
+struct backend_magic_lamp {
+	bool enabled;
+	double progress;
+	enum magic_lamp_direction direction;
+	vec2 origin, size, target, target_size;
+	/// Source-space frame/body split for translucent decorations.
+	struct ibox body;
+	bool split_frame, frame_only;
+};
+
 struct backend_blit_args {
 	/// Source image, can be NULL.
 	image_handle source_image;
@@ -170,6 +182,7 @@ struct backend_blit_args {
 	const vec2 *wobbly_points;
 	/// Mesh spacing in pixels for the optional wobbly surface (since API 2.2).
 	int wobbly_x_tessellation, wobbly_y_tessellation;
+	struct backend_magic_lamp magic_lamp;
 };
 
 enum backend_image_format {

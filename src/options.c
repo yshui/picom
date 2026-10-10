@@ -464,6 +464,8 @@ static const struct picom_option picom_options[] = {
                                                                              "rendered screen. Reduces banding artifacts, but might cause performance "
                                                                              "degradation. Only works with OpenGL."},
     [341] = {"no-frame-pacing"          , DISABLE(frame_pacing)            , "Disable frame pacing. This might increase the latency."},
+    [823] = {"magic-lamp", ENABLE(magic_lamp), "Animate minimize and restore with Magic Lamp (GLX/EGL)."},
+    [824] = {"magic-lamp-duration", INTEGER(magic_lamp_duration, 0, 5000), "Magic Lamp duration in milliseconds (0 uses 250)."},
     [806] = {"wobbly-windows"           , ENABLE(wobbly_windows)           , "Deform windows with a spring mesh when they move or resize. Requires an OpenGL backend."},
     [821] = {"wobbly-windows-move"      , ENABLE(wobbly_windows_move)      , "Enable wobble on window moves."},
     [822] = {"wobbly-windows-resize"    , ENABLE(wobbly_windows_resize)    , "Enable wobble on window resizes."},
@@ -829,6 +831,13 @@ static void script_ptr_deinit(struct script **ptr) {
 }
 
 static bool sanitize_options(struct options *opt) {
+	if (opt->magic_lamp_duration < 0 || opt->magic_lamp_duration > 5000) {
+		log_error("magic-lamp-duration must be between 0 and 5000 milliseconds");
+		return false;
+	}
+	if (opt->magic_lamp_duration == 0) {
+		opt->magic_lamp_duration = 250;
+	}
 	if (opt->backend == NULL) {
 		log_error("Backend not specified. You must choose one "
 		          "explicitly. Valid ones are: ");
