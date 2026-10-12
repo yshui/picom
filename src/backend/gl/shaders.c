@@ -23,6 +23,34 @@ const char copy_area_with_dither_frag[] = GLSL(330,
 	}
 );
 
+// The screen color matrix is linear, so it works on premultiplied colors too.
+const char copy_area_color_matrix_frag[] = GLSL(330,
+	layout(location = UNIFORM_TEX_LOC)
+	uniform sampler2D tex;
+	layout(location = UNIFORM_COLOR_MATRIX_LOC)
+	uniform mat3 color_matrix;
+	in vec2 texcoord;
+	void main() {
+		vec2 texsize = textureSize(tex, 0);
+		vec4 c = texture2D(tex, texcoord / texsize, 0);
+		gl_FragColor = vec4(color_matrix * c.rgb, c.a);
+	}
+);
+
+const char copy_area_with_dither_color_matrix_frag[] = GLSL(330,
+	layout(location = UNIFORM_TEX_LOC)
+	uniform sampler2D tex;
+	layout(location = UNIFORM_COLOR_MATRIX_LOC)
+	uniform mat3 color_matrix;
+	in vec2 texcoord;
+	vec4 dither(vec4, vec2);
+	void main() {
+		vec2 texsize = textureSize(tex, 0);
+		vec4 c = texture2D(tex, texcoord / texsize, 0);
+		gl_FragColor = dither(vec4(color_matrix * c.rgb, c.a), gl_FragCoord.xy);
+	}
+);
+
 const char blend_with_mask_frag[] = GLSL(330,
 	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;

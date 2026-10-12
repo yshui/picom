@@ -361,6 +361,7 @@ const struct backend_operations egl_ops = {
     .clear = gl_clear,
     .copy_area = gl_copy_area,
     .copy_area_quantize = gl_copy_area_quantize,
+    .set_color_matrix = gl_set_color_matrix,
     .is_format_supported = gl_is_format_supported,
     .image_capabilities = gl_image_capabilities,
     .new_image = gl_new_image,

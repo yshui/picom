@@ -485,6 +485,62 @@ static void destroy_backend(session_t *ps) {
 	}
 }
 
+static const float color_matrix_identity[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+
+/// Read _PICOM_COLOR_MATRIX from the root window: 9 INTEGER items, a row-major
+/// 3x3 matrix in signed 16.16 fixed point. Missing or malformed, the identity.
+static void read_color_matrix(session_t *ps, float out[9]) {
+	memcpy(out, color_matrix_identity, sizeof(color_matrix_identity));
+	// Ask for one more, so that a longer property is malformed too.
+	winprop_t prop =
+	    x_get_prop(&ps->c, ps->c.screen_info->root, ps->atoms->a_PICOM_COLOR_MATRIX,
+	               10L, XCB_ATOM_INTEGER, 32);
+	if (prop.nitems == 9) {
+		for (int i = 0; i < 9; i++) {
+			out[i] = (float)((int32_t)prop.c32[i]) / 65536.0F;
+		}
+	}
+	free_winprop(&prop);
+}
+
+/// Hand the session's color matrix to the backend, if it can apply one.
+static void backend_set_color_matrix(session_t *ps) {
+	if (ps->backend_data == NULL) {
+		return;
+	}
+	uint64_t major, minor;
+	ps->backend_data->ops.version(ps->backend_data, &major, &minor);
+	if (minor < 1 || ps->backend_data->ops.set_color_matrix == NULL) {
+		if (!ps->color_matrix_identity) {
+			log_warn("The %s backend ignores _PICOM_COLOR_MATRIX.",
+			         backend_name(ps->o.backend));
+		}
+		return;
+	}
+	ps->backend_data->ops.set_color_matrix(ps->backend_data, ps->color_matrix);
+}
+
+static void set_color_matrix(session_t *ps, const float matrix[9]) {
+	memcpy(ps->color_matrix, matrix, sizeof(ps->color_matrix));
+	ps->color_matrix_identity =
+	    memcmp(matrix, color_matrix_identity, sizeof(color_matrix_identity)) == 0;
+	backend_set_color_matrix(ps);
+}
+
+void update_color_matrix(session_t *ps) {
+	float matrix[9];
+	read_color_matrix(ps, matrix);
+	if (memcmp(matrix, ps->color_matrix, sizeof(matrix)) == 0) {
+		return;
+	}
+	set_color_matrix(ps, matrix);
+	log_debug("Color matrix changed: %s",
+	          ps->color_matrix_identity ? "identity" : "not the identity");
+	// Leaving the identity may have to redirect a fullscreen window again.
+	ps->pending_updates = true;
+	force_repaint(ps);
+}
+
 static bool initialize_blur(session_t *ps) {
 	struct kernel_blur_args kargs;
 	struct gaussian_blur_args gargs;
@@ -537,6 +593,7 @@ static bool initialize_backend(session_t *ps) {
 		quit(ps);
 		return false;
 	}
+	backend_set_color_matrix(ps);
 
 	if (!initialize_blur(ps)) {
 		log_fatal("Failed to prepare for background blur, aborting...");
@@ -829,6 +886,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		//
 		// (might not be the best naming.)
 		unredir_possible = true;
+	}
+	// The color matrix only reaches what picom paints.
+	if (!ps->color_matrix_identity && ps->o.redirected_force == UNSET) {
+		unredir_possible = false;
 	}
 	if (unredir_possible) {
 		if (ps->redirected) {
@@ -2268,6 +2329,13 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_error_x_error(&ps->c, e, "Failed to setup root window event mask");
 		free(e);
 		goto err;
+	}
+
+	// Read after selecting PropertyChange on the root, so no change is missed.
+	{
+		float matrix[9];
+		read_color_matrix(ps, matrix);
+		set_color_matrix(ps, matrix);
 	}
 
 	// Query the size of the root window. We need the size information before any

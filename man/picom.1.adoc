@@ -839,6 +839,22 @@ vec4 window_shader() {
 
 The interface is expected to be mostly stable.
 
+SCREEN COLOR MATRIX
+-------------------
+With the _glx_ and _egl_ backends, picom can transform the colors of the whole screen with a 3x3 matrix, set at runtime through the _pass:[_]PICOM_COLOR_MATRIX_ property of the root window: exactly 9 items of type _INTEGER_ and format 32, the matrix in row-major order, each a signed 16.16 fixed-point number (65536 is 1.0). Every pixel becomes _(R', G', B') = M (R, G, B)_. Without the property, or with a malformed one, the matrix is the identity.
+
+Changing the property takes effect on the next frame: picom repaints the screen once, without restarting. The matrix is applied when the finished frame is copied to the screen, after everything else, so it adds no rendering pass and reaches windows, shadows, blur and the desktop background alike. While it is not the identity, the screen is never unredirected (see *--unredir-if-possible*), so that nothing bypasses it.
+
+Unlike a gamma ramp, which can only scale each channel on its own, a matrix can mix channels. For example, a night light filter that sends the luminance of every color to the red channel keeps blue and cyan text readable with no blue or green light at all, and a gradual transition is just a series of matrices. The same works for grayscale or for color blindness correction.
+
+This makes the screen red luminance at 40% brightness, then puts it back:
+
+----
+xprop -root -f _PICOM_COLOR_MATRIX 32i -set _PICOM_COLOR_MATRIX \
+    7838,15388,2988,0,0,0,0,0,0
+xprop -root -remove _PICOM_COLOR_MATRIX
+----
+
 CONFIGURATION FILES
 -------------------
 picom could read from a configuration file if libconfig support is compiled in. If *--config* is not used, picom will seek for a configuration file in `$XDG_CONFIG_HOME/picom.conf` (`~/.config/picom.conf`, usually), then `$XDG_CONFIG_HOME/picom/picom.conf`, then `$XDG_CONFIG_DIRS/picom.conf` (often `/etc/xdg/picom.conf`), then `$XDG_CONFIG_DIRS/picom/picom.conf`.
