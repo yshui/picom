@@ -26,6 +26,7 @@
 // TODO(yshui) move static inline functions that are only used in picom.c, into picom.c
 
 void root_damaged(session_t *ps);
+void update_color_matrix(session_t *ps);
 
 void queue_redraw(session_t *ps);
 
