@@ -723,12 +723,35 @@ bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle t
 	auto gd = (struct gl_data *)backend_data;
 	auto target = (struct gl_texture *)target_handle;
 	auto source = (struct gl_texture *)source_handle;
-	if (source->format != BACKEND_IMAGE_FORMAT_PIXMAP_HIGH ||
-	    source->format == target->format) {
+	bool dither = source->format == BACKEND_IMAGE_FORMAT_PIXMAP_HIGH &&
+	              source->format != target->format;
+	if (!gd->color_matrix_identity && source != &gd->back_image) {
+		return gl_copy_area_draw(gd, origin, target_handle, source_handle,
+		                         dither ? &gd->copy_area_with_dither_color_matrix_prog
+		                                : &gd->copy_area_color_matrix_prog,
+		                         region);
+	}
+	if (!dither) {
 		return gl_copy_area(backend_data, origin, target_handle, source_handle, region);
 	}
 	return gl_copy_area_draw(gd, origin, target_handle, source_handle,
 	                         &gd->copy_area_with_dither_prog, region);
+}
+
+void gl_set_color_matrix(backend_t *backend_data, const float matrix[9]) {
+	auto gd = (struct gl_data *)backend_data;
+	static const float identity[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+	gd->color_matrix_identity = memcmp(matrix, identity, sizeof(identity)) == 0;
+	// Uniforms are part of the program state, so this holds until the next
+	// change instead of being set on every frame.
+	const GLuint programs[] = {gd->copy_area_color_matrix_prog.prog,
+	                           gd->copy_area_with_dither_color_matrix_prog.prog};
+	for (size_t i = 0; i < ARR_SIZE(programs); i++) {
+		glUseProgram(programs[i]);
+		glUniformMatrix3fv(UNIFORM_COLOR_MATRIX_LOC, 1, GL_TRUE, matrix);
+	}
+	glUseProgram(0);
+	gl_check_err();
 }
 
 uint32_t gl_image_capabilities(backend_t *base, image_handle img) {
@@ -1055,6 +1078,25 @@ static const struct {
     [GL_SAMPLER_BORDER] = {GL_NEAREST, GL_CLAMP_TO_BORDER},
 };
 
+/// Create one of the programs that copy an area of an image, from `vertex_shader`
+/// and the fragment shader `frag` (plus `extra`, if not NULL).
+static bool gl_init_copy_area_prog(struct gl_shader *shader, const char *frag,
+                                   const char *extra, GLfloat projection_matrix[4][4]) {
+	shader->prog = gl_create_program_from_strv((const char *[]){vertex_shader, NULL},
+	                                           (const char *[]){frag, extra, NULL});
+	if (!shader->prog) {
+		log_error("Failed to create a copy_area shader");
+		return false;
+	}
+	// Make sure our uniforms are not ignored.
+	shader->uniform_bitmask = (uint32_t)-1;
+	glUseProgram(shader->prog);
+	glUniform1i(UNIFORM_TEX_LOC, 0);
+	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
+	glUseProgram(0);
+	return true;
+}
+
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	if (!epoxy_has_gl_extension("GL_ARB_explicit_uniform_location")) {
 		log_error("GL_ARB_explicit_uniform_location support is required but "
@@ -1125,32 +1167,17 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(0);
 
 	gd->dithered_present = ps->o.dithered_present;
-	gd->copy_area_prog.prog = gl_create_program_from_strv(
-	    (const char *[]){vertex_shader, NULL}, (const char *[]){copy_area_frag, NULL});
-	if (!gd->copy_area_prog.prog) {
-		log_error("Failed to create the copy_area shader");
+	if (!gl_init_copy_area_prog(&gd->copy_area_prog, copy_area_frag, NULL, projection_matrix) ||
+	    !gl_init_copy_area_prog(&gd->copy_area_with_dither_prog, copy_area_with_dither_frag,
+	                            dither_glsl, projection_matrix) ||
+	    !gl_init_copy_area_prog(&gd->copy_area_color_matrix_prog,
+	                            copy_area_color_matrix_frag, NULL, projection_matrix) ||
+	    !gl_init_copy_area_prog(&gd->copy_area_with_dither_color_matrix_prog,
+	                            copy_area_with_dither_color_matrix_frag, dither_glsl,
+	                            projection_matrix)) {
 		return false;
 	}
-	gd->copy_area_prog.uniform_bitmask = (uint32_t)-1;        // make sure our
-	                                                          // uniforms are not
-	                                                          // ignored.
-
-	glUseProgram(gd->copy_area_prog.prog);
-	glUniform1i(UNIFORM_TEX_LOC, 0);
-	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
-
-	gd->copy_area_with_dither_prog.prog = gl_create_program_from_strv(
-	    (const char *[]){vertex_shader, NULL},
-	    (const char *[]){copy_area_with_dither_frag, dither_glsl, NULL});
-	if (!gd->copy_area_with_dither_prog.prog) {
-		log_error("Failed to create the copy_area with dither shader");
-		return false;
-	}
-	gd->copy_area_with_dither_prog.uniform_bitmask = (uint32_t)-1;
-
-	glUseProgram(gd->copy_area_with_dither_prog.prog);
-	glUniform1i(UNIFORM_TEX_LOC, 0);
-	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
+	gl_set_color_matrix(&gd->base, (const float[]){1, 0, 0, 0, 1, 0, 0, 0, 1});
 
 	gd->brightness_shader.prog =
 	    gl_create_program_from_str(interpolating_vert, interpolating_frag);
@@ -1207,10 +1234,13 @@ void gl_deinit(struct gl_data *gd) {
 	}
 
 	gl_destroy_window_shader_inner(&gd->default_shader);
-	glDeleteProgram(gd->copy_area_prog.prog);
-	glDeleteProgram(gd->copy_area_with_dither_prog.prog);
-	gd->copy_area_prog.prog = 0;
-	gd->copy_area_with_dither_prog.prog = 0;
+	struct gl_shader *copy_area_progs[] = {
+	    &gd->copy_area_prog, &gd->copy_area_with_dither_prog,
+	    &gd->copy_area_color_matrix_prog, &gd->copy_area_with_dither_color_matrix_prog};
+	for (size_t i = 0; i < ARR_SIZE(copy_area_progs); i++) {
+		glDeleteProgram(copy_area_progs[i]->prog);
+		copy_area_progs[i]->prog = 0;
+	}
 
 	glDeleteProgram(gd->fill_shader.prog);
 	glDeleteProgram(gd->brightness_shader.prog);

@@ -40,6 +40,9 @@ struct gl_blur_context;
 // Added in backend API 2.0
 #define UNIFORM_TINT_LOC 22
 #define UNIFORM_MASK_SCALE_LOC 23
+// A mat3, used only by the copy_area_color_matrix programs: it takes this
+// location and the next two.
+#define UNIFORM_COLOR_MATRIX_LOC 26
 #define UNIFORM_BLUR_NOISE_RADIUS_LOC 24
 #define UNIFORM_BLUR_NOISE_SCALE_LOC 25
 #define NUMBER_OF_UNIFORMS (UNIFORM_BLUR_NOISE_SCALE_LOC + 1)
@@ -102,6 +105,12 @@ struct gl_data {
 	int current_frame_timing;
 	struct gl_shader copy_area_prog;
 	struct gl_shader copy_area_with_dither_prog;
+	/// The same two, applying the screen color matrix.
+	struct gl_shader copy_area_color_matrix_prog;
+	struct gl_shader copy_area_with_dither_color_matrix_prog;
+	/// Whether the screen color matrix is the identity: then
+	/// `copy_area_quantize` doesn't use the programs above.
+	bool color_matrix_identity;
 	GLuint samplers[GL_MAX_SAMPLERS];
 	GLuint buffer_objects[4];
 	GLuint vertex_array_objects[2];
@@ -168,6 +177,7 @@ bool gl_blur(struct backend_base *gd, ivec2 origin, image_handle target,
              const struct backend_blur_args *args);
 bool gl_copy_area(backend_t *backend_data, ivec2 origin, image_handle target,
                   image_handle source, const region_t *region);
+void gl_set_color_matrix(backend_t *backend_data, const float matrix[9]);
 bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle target_handle,
                            image_handle source_handle, const region_t *region);
 bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op);
@@ -311,6 +321,7 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define QUOTE(...) #__VA_ARGS__
 
 extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
-    scaled_masking_glsl[], copy_area_frag[], copy_area_with_dither_frag[], fill_frag[],
+    scaled_masking_glsl[], copy_area_frag[], copy_area_with_dither_frag[],
+    copy_area_color_matrix_frag[], copy_area_with_dither_color_matrix_frag[], fill_frag[],
     fill_vert[], interpolating_frag[], interpolating_vert[], blit_shader_glsl[],
     blit_shader_default[], present_vertex_shader[], dither_glsl[], perturb_glsl[];
