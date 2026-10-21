@@ -632,7 +632,7 @@ void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, voi
 }
 
 bool load_plugin(const char *name, const char *include_dir) {
-	scoped_charp path = locate_auxiliary_file("plugins", optarg, include_dir);
+	scoped_charp path = locate_auxiliary_file("plugins", name, include_dir);
 	void *handle = NULL;
 	if (!path) {
 		handle = dlopen(name, RTLD_LAZY);
