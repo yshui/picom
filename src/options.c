@@ -3,6 +3,7 @@
 
 #include <getopt.h>
 #include <locale.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -463,6 +464,13 @@ static const struct picom_option picom_options[] = {
                                                                              "rendered screen. Reduces banding artifacts, but might cause performance "
                                                                              "degradation. Only works with OpenGL."},
     [341] = {"no-frame-pacing"          , DISABLE(frame_pacing)            , "Disable frame pacing. This might increase the latency."},
+    [823] = {"magic-lamp", ENABLE(magic_lamp), "Animate minimize and restore with Magic Lamp (GLX/EGL)."},
+    [824] = {"magic-lamp-duration", INTEGER(magic_lamp_duration, 0, 5000), "Magic Lamp duration in milliseconds (0 uses 250)."},
+    [806] = {"wobbly-windows"           , ENABLE(wobbly_windows)           , "Deform windows with a spring mesh when they move or resize. Requires an OpenGL backend."},
+    [821] = {"wobbly-windows-move"      , ENABLE(wobbly_windows_move)      , "Enable wobble on window moves."},
+    [822] = {"wobbly-windows-resize"    , ENABLE(wobbly_windows_resize)    , "Enable wobble on window resizes."},
+    [807] = {"no-wobbly-windows-move"   , DISABLE(wobbly_windows_move)      , "Disable wobble on window moves."},
+    [808] = {"no-wobbly-windows-resize" , DISABLE(wobbly_windows_resize)    , "Disable wobble on window resizes."},
     [733] = {"legacy-backends"          , WARN_DEPRECATED(ENABLE(use_legacy_backends)), NULL},
     [800] = {"monitor-repaint"          , ENABLE(monitor_repaint)          , "Highlight the updated area of the screen. For debugging."},
     [801] = {"diagnostics"              , ENABLE(print_diagnostics)        , "Print diagnostic information"},
@@ -476,6 +484,18 @@ static const struct picom_option picom_options[] = {
                                                                              "changed about a window.", "picom-inspect"},
 
     // Flags that takes an argument
+    [809] = {"wobbly-windows-level"             , INTEGER(wobbly_windows_level, 0, 4), "KWin wobblyness preset, 0 (default) to 4."},
+    [810] = {"wobbly-windows-stiffness"         , FLOAT(wobbly.stiffness, 0, 1), "Spring stiffness (default from preset)."},
+    [811] = {"wobbly-windows-drag"              , FLOAT(wobbly.drag, 0, 0.99), "Spring damping (default from preset)."},
+    [812] = {"wobbly-windows-move-factor"       , FLOAT(wobbly.move_factor, 0, 1), "Position change per spring step (default from preset)."},
+    [813] = {"wobbly-windows-min-velocity"     , FLOAT(wobbly.min_velocity, 0, 1000), "Velocity dead zone (default 0)."},
+    [814] = {"wobbly-windows-max-velocity"     , FLOAT(wobbly.max_velocity, 0, 1000), "Maximum velocity (default 1000)."},
+    [815] = {"wobbly-windows-stop-velocity"    , FLOAT(wobbly.stop_velocity, 0, 1000), "Velocity settle threshold (default 0.5)."},
+    [816] = {"wobbly-windows-min-acceleration" , FLOAT(wobbly.min_acceleration, 0, 1000), "Acceleration dead zone (default 0)."},
+    [817] = {"wobbly-windows-max-acceleration" , FLOAT(wobbly.max_acceleration, 0, 1000), "Maximum acceleration (default 1000)."},
+    [818] = {"wobbly-windows-stop-acceleration", FLOAT(wobbly.stop_acceleration, 0, 1000), "Acceleration settle threshold (default 0.5)."},
+    [819] = {"wobbly-windows-x-tessellation"   , INTEGER(wobbly.x_tessellation, 2, 200), "Horizontal mesh spacing in pixels (default 20)."},
+    [820] = {"wobbly-windows-y-tessellation"   , INTEGER(wobbly.y_tessellation, 2, 200), "Vertical mesh spacing in pixels (default 20)."},
     ['r'] = {"shadow-radius"               , INTEGER(shadow_radius, 0, INT_MAX)             , "The blur radius for shadows. (default 12)"},
     ['o'] = {"shadow-opacity"              , FLOAT(shadow_opacity, 0, 1)                    , "The translucency for shadows. (default .75)"},
     ['l'] = {"shadow-offset-x"             , INTEGER(shadow_offset_x, INT_MIN, INT_MAX)     , "The left offset for shadows. (default -15)"},
@@ -811,12 +831,60 @@ static void script_ptr_deinit(struct script **ptr) {
 }
 
 static bool sanitize_options(struct options *opt) {
+	if (opt->magic_lamp_duration < 0 || opt->magic_lamp_duration > 5000) {
+		log_error("magic-lamp-duration must be between 0 and 5000 milliseconds");
+		return false;
+	}
+	if (opt->magic_lamp_duration == 0) {
+		opt->magic_lamp_duration = 250;
+	}
 	if (opt->backend == NULL) {
 		log_error("Backend not specified. You must choose one "
 		          "explicitly. Valid ones are: ");
 		for (auto i = backend_iter(); i; i = backend_iter_next(i)) {
 			log_error("\t%s", backend_name(i));
 		}
+		return false;
+	}
+	static const struct {
+		double stiffness, drag, move_factor;
+	} wobbly_presets[] = {
+	    {0.15, 0.80, 0.10}, {0.10, 0.85, 0.10}, {0.06, 0.90, 0.10},
+	    {0.03, 0.92, 0.20}, {0.01, 0.97, 0.25},
+	};
+	if (opt->wobbly_windows_level < 0 || opt->wobbly_windows_level >= 5) {
+		log_error("wobbly-windows-level must be between 0 and 4");
+		return false;
+	}
+	if (opt->wobbly.stiffness == -1.0) {
+		opt->wobbly.stiffness = wobbly_presets[opt->wobbly_windows_level].stiffness;
+	}
+	if (opt->wobbly.drag == -1.0) {
+		opt->wobbly.drag = wobbly_presets[opt->wobbly_windows_level].drag;
+	}
+	if (opt->wobbly.move_factor == -1.0) {
+		opt->wobbly.move_factor = wobbly_presets[opt->wobbly_windows_level].move_factor;
+	}
+	if (!isfinite(opt->wobbly.stiffness) || opt->wobbly.stiffness <= 0 ||
+	    opt->wobbly.stiffness > 1 || !isfinite(opt->wobbly.drag) ||
+	    opt->wobbly.drag < 0 || opt->wobbly.drag >= 1 ||
+	    !isfinite(opt->wobbly.move_factor) || opt->wobbly.move_factor <= 0 ||
+	    opt->wobbly.move_factor > 1 || !isfinite(opt->wobbly.min_velocity) ||
+	    opt->wobbly.min_velocity < 0 || !isfinite(opt->wobbly.max_velocity) ||
+	    opt->wobbly.max_velocity <= 0 ||
+	    opt->wobbly.min_velocity > opt->wobbly.max_velocity ||
+	    !isfinite(opt->wobbly.stop_velocity) || opt->wobbly.stop_velocity <= 0 ||
+	    !isfinite(opt->wobbly.min_acceleration) ||
+	    opt->wobbly.min_acceleration < 0 ||
+	    !isfinite(opt->wobbly.max_acceleration) ||
+	    opt->wobbly.max_acceleration <= 0 ||
+	    opt->wobbly.min_acceleration > opt->wobbly.max_acceleration ||
+	    !isfinite(opt->wobbly.stop_acceleration) ||
+	    opt->wobbly.stop_acceleration <= 0 ||
+	    opt->wobbly.x_tessellation < 2 || opt->wobbly.x_tessellation > 200 ||
+	    opt->wobbly.y_tessellation < 2 || opt->wobbly.y_tessellation > 200) {
+		log_error("Invalid wobbly-windows parameter; check spring values, "
+		          "thresholds, and mesh spacing");
 		return false;
 	}
 

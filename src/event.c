@@ -544,6 +544,18 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		free(reply);
 	}
 
+	// Track lifecycle properties even while unmapped. Parent/root changes can
+	// affect descendants, so invalidate cached decisions throughout the stack.
+	if (ev->atom == ps->atoms->aWM_STATE || ev->atom == ps->atoms->a_NET_WM_STATE ||
+	    ev->atom == ps->atoms->a_NET_WM_ICON_GEOMETRY || ev->atom == ps->atoms->a_NET_WM_DESKTOP ||
+	    ev->atom == ps->atoms->a_NET_CURRENT_DESKTOP || ev->atom == ps->atoms->a_NET_SHOWING_DESKTOP ||
+	    ev->atom == ps->atoms->a_NET_SUPPORTED || ev->atom == ps->atoms->aWM_TRANSIENT_FOR) {
+		wm_stack_foreach(ps->wm, cursor) {
+			auto w = wm_ref_deref(cursor);
+			if (w) w->lamp.dirty = true;
+		}
+		ps->pending_updates = true;
+	}
 	if (ps->c.screen_info->root == ev->window) {
 		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			ev_update_focused(ps);

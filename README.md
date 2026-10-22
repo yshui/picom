@@ -17,6 +17,8 @@ See [Releases](https://github.com/yshui/picom/releases)
 
 ## Build
 
+For the optional Wobbly Windows effect, see [wobbly.md](wobbly.md).
+
 ### Dependencies
 
 Assuming you already have all the usual building tools installed (e.g. gcc, python, meson, ninja, etc.), you still need:

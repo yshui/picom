@@ -119,7 +119,7 @@ struct sgi_video_sync_thread_args {
 static bool check_sgi_video_sync_extension(Display *dpy, int screen) {
 	const char *glx_ext = glXQueryExtensionsString(dpy, screen);
 	const char *needle = "GLX_SGI_video_sync";
-	char *found = strstr(glx_ext, needle);
+	const char *found = strstr(glx_ext, needle);
 	if (!found) {
 		return false;
 	}

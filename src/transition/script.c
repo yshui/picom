@@ -136,7 +136,7 @@ char *instruction_to_c(struct instruction i) {
 }
 
 static char parse_op(const char *input_str, const char **end, char **err) {
-	char *op = strchr(operators, input_str[0]);
+	const char *op = strchr(operators, input_str[0]);
 	*err = NULL;
 	if (op != NULL) {
 		*end = input_str + 1;
@@ -149,7 +149,7 @@ static char parse_op(const char *input_str, const char **end, char **err) {
 }
 
 static enum op char_to_op(char ch) {
-	char *op = strchr(operators, ch);
+	const char *op = strchr(operators, ch);
 	BUG_ON(op == NULL);
 	return operator_types[op - operators];
 }

@@ -26,6 +26,7 @@
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "wm/defs.h"
+#include "wm/wobbly.h"
 
 typedef struct session session_t;
 
@@ -82,6 +83,8 @@ enum animation_trigger {
 	/// This includes: shadow-color
 	ANIMATION_TRIGGER_COLOR,
 
+	ANIMATION_TRIGGER_MINIMIZE,
+	ANIMATION_TRIGGER_RESTORE,
 	ANIMATION_TRIGGER_INVALID,
 	ANIMATION_TRIGGER_COUNT = ANIMATION_TRIGGER_INVALID,
 
@@ -101,6 +104,8 @@ static const char *animation_trigger_names[] attr_unused = {
     [ANIMATION_TRIGGER_SIZE] = "size",
     [ANIMATION_TRIGGER_POSITION] = "position",
     [ANIMATION_TRIGGER_COLOR] = "color",
+    [ANIMATION_TRIGGER_MINIMIZE] = "minimize",
+    [ANIMATION_TRIGGER_RESTORE] = "restore",
     [ANIMATION_TRIGGER_ALIAS_GEOMETRY] = "geometry",
 };
 
@@ -250,6 +255,7 @@ struct window_maybe_options {
 	enum tristate blur_background;
 	/// Whether this window should fade.
 	enum tristate fade;
+	enum tristate magic_lamp;
 	/// Do not paint shadow over this window.
 	enum tristate clip_shadow_above;
 	/// Whether the window is painted.
@@ -279,6 +285,7 @@ struct window_options {
 	bool invert_color;
 	bool blur_background;
 	bool fade;
+	bool magic_lamp;
 	bool clip_shadow_above;
 	bool paint;
 	bool full_shadow;
@@ -330,6 +337,15 @@ typedef struct options {
 	bool detect_rounded_corners;
 	/// Force painting of window content with blending.
 	bool force_win_blend;
+	/// Deform windows with a spring mesh while they move (OpenGL backends).
+	bool magic_lamp;
+	int magic_lamp_duration;
+	bool wobbly_windows;
+	/// KWin-style wobbly preset and optional spring/mesh tuning.
+	int wobbly_windows_level;
+	struct wobbly_parameters wobbly;
+	bool wobbly_windows_move;
+	bool wobbly_windows_resize;
 	/// Resize damage for a specific number of pixels.
 	int resize_damage;
 	/// Whether to unredirect all windows if a full-screen opaque window

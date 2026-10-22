@@ -21,6 +21,8 @@
 #include "utils/list.h"
 #include "utils/misc.h"
 #include "wm/wm.h"
+#include "wm/wobbly.h"
+#include "wm/magic_lamp.h"
 #include "x.h"
 #include "xcb/xproto.h"
 
@@ -111,6 +113,9 @@ struct win {
 	struct win_geometry g;
 	/// Updated geometry received in events
 	struct win_geometry pending_g;
+	/// KWin-style spring surface for the GL window image.
+	struct wobbly_window wobbly;
+	struct magic_lamp_window lamp;
 	/// Window visual pict format
 	const xcb_render_pictforminfo_t *pictfmt;
 	/// Client window visual pict format
@@ -303,6 +308,7 @@ static const struct window_maybe_options WIN_MAYBE_OPTIONS_DEFAULT = {
     .clip_shadow_above = TRI_UNKNOWN,
     .shadow = TRI_UNKNOWN,
     .fade = TRI_UNKNOWN,
+    .magic_lamp = TRI_UNKNOWN,
     .invert_color = TRI_UNKNOWN,
     .paint = TRI_UNKNOWN,
     .dim = NAN,
@@ -337,6 +343,7 @@ win_maybe_options_fold(struct window_maybe_options upper, struct window_maybe_op
 	    .full_shadow = tri_or(upper.full_shadow, lower.full_shadow),
 	    .shadow = tri_or(upper.shadow, lower.shadow),
 	    .fade = tri_or(upper.fade, lower.fade),
+	    .magic_lamp = tri_or(upper.magic_lamp, lower.magic_lamp),
 	    .invert_color = tri_or(upper.invert_color, lower.invert_color),
 	    .paint = tri_or(upper.paint, lower.paint),
 	    .transparent_clipping =
@@ -367,6 +374,7 @@ win_maybe_options_or(struct window_maybe_options maybe, struct window_options de
 	    .corner_radius = maybe.corner_radius >= 0 ? (unsigned int)maybe.corner_radius
 	                                              : def.corner_radius,
 	    .fade = tri_or_bool(maybe.fade, def.fade),
+	    .magic_lamp = tri_or_bool(maybe.magic_lamp, def.magic_lamp),
 	    .invert_color = tri_or_bool(maybe.invert_color, def.invert_color),
 	    .paint = tri_or_bool(maybe.paint, def.paint),
 	    .transparent_clipping =

@@ -434,10 +434,11 @@ static void destroy_backend(session_t *ps) {
 		// `win_process_animation_and_state_change` hasn't been called.)
 		// TBH, this assertion is probably too complex than what it's worth.
 		assert(!w->win_image || w->state == WSTATE_MAPPED ||
-		       w->running_animation_instance != NULL || w->previous.state != w->state);
+		       w->running_animation_instance != NULL || win_magic_lamp_busy(w) || w->previous.state != w->state);
 		// Wrapping up animation in progress
 		free(w->running_animation_instance);
 		w->running_animation_instance = NULL;
+		win_magic_lamp_cancel(w);
 
 		if (ps->backend_data) {
 			// Unmapped windows could still have shadow images.
@@ -680,7 +681,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 			continue;
 		}
 
-		if (w->running_animation_instance != NULL) {
+		if (w->running_animation_instance != NULL || win_magic_lamp_busy(w)) {
+			*animation = true;
+		}
+		if (w->wobbly.active) {
 			*animation = true;
 		}
 
@@ -732,7 +736,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
 		if ((w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYED) &&
-		    w->running_animation_instance == NULL) {
+		    w->running_animation_instance == NULL && !win_magic_lamp_busy(w)) {
 			log_trace("|- is unmapped");
 			to_paint = false;
 		} else if (unlikely(ps->debug_window != XCB_NONE) &&
@@ -806,7 +810,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		}
 
 	skip_window:
-		if (w->state == WSTATE_DESTROYED && w->running_animation_instance == NULL) {
+		if (w->state == WSTATE_DESTROYED && w->running_animation_instance == NULL && !win_magic_lamp_busy(w)) {
 			// the window should be destroyed because it was destroyed
 			// by X server and now its animations are finished
 			win_destroy_finish(ps, w);
@@ -830,6 +834,7 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		// (might not be the best naming.)
 		unredir_possible = true;
 	}
+	if (*animation && ps->redirected) unredir_possible = false;
 	if (unredir_possible) {
 		if (ps->redirected) {
 			if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit) {
@@ -1534,6 +1539,7 @@ static void handle_pending_updates(struct session *ps, double delta_t) {
 		if (w != NULL && win_process_animation_and_state_change(ps, w, delta_t)) {
 			free(w->running_animation_instance);
 			w->running_animation_instance = NULL;
+		win_magic_lamp_cancel(w);
 			w->in_openclose = false;
 			if (w->saved_win_image != NULL) {
 				win_release_saved_win_image(ps->backend_data, w);
@@ -1591,6 +1597,18 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	}
 
 	handle_pending_updates(ps, (double)delta_ms / 1000.0);
+	wm_stack_foreach(ps->wm, cursor) {
+		auto w = wm_ref_deref(cursor);
+		if (w != NULL && w->wobbly.active) {
+			if (ps->o.wobbly_windows) {
+				wobbly_advance(&w->wobbly, (ivec2){w->g.x, w->g.y},
+				               (ivec2){w->widthb, w->heightb},
+				               delta_ms > 0 ? (double)delta_ms : 10.0);
+			} else {
+				w->wobbly.active = false;
+			}
+		}
+	}
 
 	int64_t after_handle_pending_updates_us;
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1617,6 +1635,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			}
 			free(w->running_animation_instance);
 			w->running_animation_instance = NULL;
+		win_magic_lamp_cancel(w);
 			if (w->state == WSTATE_DESTROYED) {
 				win_destroy_finish(ps, w);
 			}
@@ -1894,6 +1913,7 @@ static struct window_options win_options_from_config(const struct options *opts)
 	    .transparent_clipping = opts->transparent_clipping,
 	    .dim = 0,
 	    .fade = opts->fading_enable,
+	    .magic_lamp = opts->magic_lamp,
 	    .shader = opts->window_shader_fg,
 	    .invert_color = false,
 	    .paint = true,
