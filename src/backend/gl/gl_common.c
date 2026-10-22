@@ -550,6 +550,8 @@ static int gl_magic_lamp_coords(const struct backend_blit_args *args, GLfloat **
 		ny[r] = clamp((rects[r].y2 - rects[r].y1 + 39) / 40, 1, 256);
 		count += nx[r] * ny[r];
 	}
+	
+	if (count == 0) return 0;
 	*coord = ccalloc((size_t)count * 16, GLfloat);
 	*indices = ccalloc((size_t)count * 6, GLuint);
 	int index = 0;
