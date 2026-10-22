@@ -8,6 +8,7 @@
 #include <picom/backend.h>
 
 #include "log.h"
+#include "wm/wobbly.h"
 
 enum backend_command_op {
 	BACKEND_COMMAND_INVALID = -1,
@@ -52,6 +53,9 @@ struct backend_command {
 	struct backend_mask_image source_mask;
 	/// Target mask for the operation.
 	region_t target_mask;
+	/// Wobbly surface control points, pointed to by `blit.wobbly_points`. Copied so
+	/// retained layouts don't reference a window that may have been freed :)
+	vec2 wobbly_points[WOBBLY_POINT_COUNT];
 	/// Extra information attached to the shader used in this command.
 	const struct shader_info *shader_info;
 };

@@ -89,7 +89,6 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
-	    .wobbly_points = wobbly ? w->wobbly.position : NULL,
 	    .wobbly_x_tessellation = wobbly ? w->wobbly.parameters.x_tessellation : 0,
 	    .wobbly_y_tessellation = wobbly ? w->wobbly.parameters.y_tessellation : 0,
 	};
@@ -146,6 +145,10 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->origin = layer->window.origin;
 	cmd->shader_info = shader_info;
 	cmd->blit = args_base;
+	if (wobbly) {
+		memcpy(cmd->wobbly_points, w->wobbly.position, sizeof(cmd->wobbly_points));
+		cmd->blit.wobbly_points = cmd->wobbly_points;
+	}
 	if (wobbly && w->bounding_shaped) {
 		cmd->source_mask.origin = (vec2){};
 		cmd->source_mask.inverted = false;
