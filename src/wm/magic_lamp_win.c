@@ -114,7 +114,7 @@ static void choose_target(session_t *ps, struct win *w) {
 		                      fabs(cx - monitor.x1), fabs(monitor.x2 - cx)};
 		m->direction = MAGIC_LAMP_BOTTOM;
 		for (int i = 1; i < 4; i++) {
-			if (distances[i] < distances[m->direction]) m->direction = i;
+			if (distances[i] < distances[m->direction]) m->direction = (enum magic_lamp_direction)i;
 		}
 		// A dock containing the icon disambiguates corner icons.
 		wm_stack_foreach(ps->wm, cursor) {
@@ -145,7 +145,7 @@ static void choose_target(session_t *ps, struct win *w) {
 			double distance[] = {m->size.y - y, y, x, m->size.x - x};
 			m->direction = MAGIC_LAMP_TOP;
 			for (int i = 0; i < 4; i++) {
-				if (distance[i] < distance[m->direction]) m->direction = i;
+				if (distance[i] < distance[m->direction]) m->direction = (enum magic_lamp_direction)i;
 			}
 			switch (m->direction) {
 			case MAGIC_LAMP_BOTTOM: m->target.y = m->origin.y + m->size.y; break;

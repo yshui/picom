@@ -62,7 +62,7 @@ TEST_CASE(magic_lamp_reference_and_endpoints) {
 	TEST_TRUE(fabs(point.y - 508.203125) < 1e-6);
 	TEST_TRUE(fabs(point.x - 447.65625) < 1e-6);
 	for (int direction = 0; direction < 4; direction++) {
-		m.direction = direction;
+		m.direction = (enum magic_lamp_direction)direction;
 		m.progress = 1;
 		point = magic_lamp_point(&m, (vec2){200, 150});
 		TEST_TRUE(isfinite(point.x) && isfinite(point.y));
@@ -79,7 +79,7 @@ TEST_CASE(magic_lamp_reference_and_endpoints) {
 TEST_CASE(magic_lamp_degenerate_and_reversal) {
 	struct backend_magic_lamp m = {.size = {400, 300}, .target = {0, 300}};
 	for (int direction = 0; direction < 4; direction++) {
-		m.direction = direction;
+		m.direction = (enum magic_lamp_direction)direction;
 		for (int i = 0; i <= 100; i++) {
 			m.progress = (double)i / 100;
 			vec2 point = magic_lamp_point(&m, (vec2){0, 300});
