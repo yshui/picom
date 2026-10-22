@@ -529,7 +529,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 			// Needs to draw the frame separately
 			n_cmds_for_window_body += 1;
 		}
-		if (layer->saved_image_blend > 0) {
+		if (layer->saved_image_blend > 0 && !layer->magic_lamp.enabled) {
 			n_cmds_for_window_body *= 2;
 		}
 		ncmds += n_cmds_for_window_body;        // window body
