@@ -20,6 +20,8 @@
 #include "region.h"
 #include "test.h"
 #include "utils/misc.h"
+#include "wm/wobbly.h"
+#include "wm/magic_lamp.h"
 
 #include "gl_common.h"
 
@@ -390,7 +392,8 @@ static void
 gl_blit_inner(struct gl_data *gd, GLuint target_fbo, int nrects, GLfloat *coord,
               GLuint *indices, const struct gl_vertex_attribs_definition *vert_attribs,
               const struct gl_shader *shader, int nuniforms,
-              struct gl_uniform_value *uniforms) {
+              struct gl_uniform_value *uniforms, const region_t *clip,
+              int target_height, bool target_y_inverted) {
 	// FIXME(yshui) breaks when `mask` and `img` doesn't have the same y_inverted
 	//              value. but we don't ever hit this problem because all of our
 	//              images and masks are y_inverted.
@@ -449,7 +452,20 @@ gl_blit_inner(struct gl_data *gd, GLuint target_fbo, int nrects, GLfloat *coord,
 	}
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
-	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	if (clip != NULL) {
+		int nclips;
+		const rect_t *rects = pixman_region32_rectangles(clip, &nclips);
+		glEnable(GL_SCISSOR_TEST);
+		for (int i = 0; i < nclips; i++) {
+			int y = target_y_inverted ? rects[i].y1 : target_height - rects[i].y2;
+			glScissor(rects[i].x1, y, rects[i].x2 - rects[i].x1,
+			          rects[i].y2 - rects[i].y1);
+			glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+		}
+		glDisable(GL_SCISSOR_TEST);
+	} else {
+		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	}
 
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
@@ -508,6 +524,109 @@ void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, vec2
 	}
 }
 
+// Split translucent decorations in source space, then bend each rectangle
+// with the same mapping. Adjacent rectangles share exact boundary positions.
+static int gl_magic_lamp_coords(const struct backend_blit_args *args, GLfloat **coord,
+                                GLuint **indices) {
+	const auto m = &args->magic_lamp;
+	int width = args->effective_size.width, height = args->effective_size.height;
+	if (width <= 0 || height <= 0) return 0;
+	int x1 = m->body.origin.x, y1 = m->body.origin.y;
+	int x2 = x1 + m->body.size.width, y2 = y1 + m->body.size.height;
+	rect_t rects[4] = {{0, 0, width, height}};
+	int nr = 1;
+	if (m->split_frame && !m->frame_only) rects[0] = (rect_t){x1, y1, x2, y2};
+	if (m->split_frame && m->frame_only) {
+		rects[0] = (rect_t){0, 0, width, y1};
+		rects[1] = (rect_t){0, y2, width, height};
+		rects[2] = (rect_t){0, y1, x1, y2};
+		rects[3] = (rect_t){x2, y1, width, y2};
+		nr = 4;
+	}
+	int nx[4] = {0}, ny[4] = {0}, count = 0;
+	for (int r = 0; r < nr; r++) {
+		if (rects[r].x2 <= rects[r].x1 || rects[r].y2 <= rects[r].y1) continue;
+		nx[r] = clamp((rects[r].x2 - rects[r].x1 + 39) / 40, 1, 256);
+		ny[r] = clamp((rects[r].y2 - rects[r].y1 + 39) / 40, 1, 256);
+		count += nx[r] * ny[r];
+	}
+	
+	if (count == 0) return 0;
+	*coord = ccalloc((size_t)count * 16, GLfloat);
+	*indices = ccalloc((size_t)count * 6, GLuint);
+	int index = 0;
+	for (int r = 0; r < nr; r++) {
+		for (int j = 0; j < ny[r]; j++) {
+			for (int i = 0; i < nx[r]; i++, index++) {
+				double left = rects[r].x1 + (double)(rects[r].x2 - rects[r].x1) * i / nx[r];
+				double right = rects[r].x1 + (double)(rects[r].x2 - rects[r].x1) * (i + 1) / nx[r];
+				double top = rects[r].y1 + (double)(rects[r].y2 - rects[r].y1) * j / ny[r];
+				double bottom = rects[r].y1 + (double)(rects[r].y2 - rects[r].y1) * (j + 1) / ny[r];
+				vec2 source[] = {{left, top}, {right, top}, {right, bottom}, {left, bottom}};
+				for (int k = 0; k < 4; k++) {
+					vec2 point = magic_lamp_point(m, source[k]);
+					GLfloat *vertex = &(*coord)[index * 16 + k * 4];
+					vertex[0] = (GLfloat)point.x;
+					vertex[1] = (GLfloat)point.y;
+					vertex[2] = (GLfloat)source[k].x;
+					vertex[3] = (GLfloat)source[k].y;
+				}
+				GLuint first = (GLuint)(index * 4);
+				memcpy(&(*indices)[index * 6],
+				       (GLuint[]){first, first + 1, first + 2, first + 2, first + 3, first},
+				       sizeof(GLuint) * 6);
+			}
+		}
+	}
+	return count;
+}
+
+static int gl_wobbly_coords(const struct backend_blit_args *args, GLfloat **coord,
+                            GLuint **indices) {
+	int width = args->effective_size.width;
+	int height = args->effective_size.height;
+	if (width <= 0 || height <= 0) {
+		return 0;
+	}
+	int x_spacing = max2(args->wobbly_x_tessellation, 1);
+	int y_spacing = max2(args->wobbly_y_tessellation, 1);
+	int nx = clamp((width + x_spacing - 1) / x_spacing, 1, 96);
+	int ny = clamp((height + y_spacing - 1) / y_spacing, 1, 96);
+	int count = nx * ny;
+	*coord = ccalloc((size_t)count * 16, GLfloat);
+	*indices = ccalloc((size_t)count * 6, GLuint);
+	for (int j = 0; j < ny; j++) {
+		for (int i = 0; i < nx; i++) {
+			int index = j * nx + i;
+			double x1 = (double)i / nx, x2 = (double)(i + 1) / nx;
+			double y1 = (double)j / ny, y2 = (double)(j + 1) / ny;
+			vec2 point[] = {
+			    wobbly_point(args->wobbly_points, x1, y1),
+			    wobbly_point(args->wobbly_points, x2, y1),
+			    wobbly_point(args->wobbly_points, x2, y2),
+			    wobbly_point(args->wobbly_points, x1, y2),
+			};
+			GLfloat tex[][2] = {{(GLfloat)(x1 * width), (GLfloat)(y1 * height)},
+			                    {(GLfloat)(x2 * width), (GLfloat)(y1 * height)},
+			                    {(GLfloat)(x2 * width), (GLfloat)(y2 * height)},
+			                    {(GLfloat)(x1 * width), (GLfloat)(y2 * height)}};
+			for (int k = 0; k < 4; k++) {
+				GLfloat *vertex = &(*coord)[index * 16 + k * 4];
+				vertex[0] = (GLfloat)point[k].x;
+				vertex[1] = (GLfloat)point[k].y;
+				vertex[2] = tex[k][0];
+				vertex[3] = tex[k][1];
+			}
+			GLuint first = (GLuint)(index * 4);
+			memcpy(&(*indices)[index * 6],
+			       (GLuint[]){first, first + 1, first + 2,
+			                  first + 2, first + 3, first},
+			       sizeof(GLuint) * 6);
+		}
+	}
+	return count;
+}
+
 /// Flip the texture coordinates returned by `gl_mask_rects_to_coords` vertically relative
 /// to the texture. Target coordinates are unchanged.
 ///
@@ -539,9 +658,18 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 		// Nothing to paint
 		return 0;
 	}
-	*coord = ccalloc(nrects * 16, GLfloat);
-	*indices = ccalloc(nrects * 6, GLuint);
-	gl_mask_rects_to_coords(origin, nrects, rects, args->scale, *coord, *indices);
+	if (args->magic_lamp.enabled) {
+		nrects = gl_magic_lamp_coords(args, coord, indices);
+	} else if (args->wobbly_points != NULL) {
+		nrects = gl_wobbly_coords(args, coord, indices);
+		if (!nrects) {
+			return 0;
+		}
+	} else {
+		*coord = ccalloc(nrects * 16, GLfloat);
+		*indices = ccalloc(nrects * 6, GLuint);
+		gl_mask_rects_to_coords(origin, nrects, rects, args->scale, *coord, *indices);
+	}
 	if (!img->y_inverted) {
 		gl_y_flip_texture(nrects, *coord, img->height);
 	}
@@ -624,8 +752,8 @@ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
 		return false;
 	}
 
-	GLfloat *coord;
-	GLuint *indices;
+	GLfloat *coord = NULL;
+	GLuint *indices = NULL;
 	struct gl_shader *shader;
 	struct gl_uniform_value uniforms[NUMBER_OF_UNIFORMS] = {};
 	int nrects =
@@ -643,7 +771,9 @@ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
 	// Thanks to derhass for help.
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	gl_blit_inner(gd, fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
-	              NUMBER_OF_UNIFORMS, uniforms);
+	              NUMBER_OF_UNIFORMS, uniforms,
+	              (args->wobbly_points != NULL || args->magic_lamp.enabled) ? args->target_mask : NULL,
+	              target->height, target->y_inverted);
 
 	free(indices);
 	free(coord);
@@ -703,7 +833,7 @@ static bool gl_copy_area_draw(struct gl_data *gd, ivec2 origin,
 	auto fbo = gl_bind_image_to_fbo(gd, target_handle);
 	glBlendFunc(GL_ONE, GL_ZERO);
 	gl_blit_inner(gd, fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
-	              ARR_SIZE(uniforms), uniforms);
+	              ARR_SIZE(uniforms), uniforms, NULL, 0, true);
 	free(indices);
 	free(coord);
 	return true;
@@ -1328,7 +1458,7 @@ bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const re
 	};
 	gl_mask_rects_to_coords_simple(nrects, rect, coord, indices);
 	gl_blit_inner(gd, gd->temp_fbo, nrects, coord, indices, &vertex_attribs,
-	              &gd->fill_shader, ARR_SIZE(uniforms), uniforms);
+	              &gd->fill_shader, ARR_SIZE(uniforms), uniforms, NULL, 0, true);
 	free(indices);
 	free(coord);
 

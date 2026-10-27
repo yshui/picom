@@ -234,6 +234,27 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--no-use-damage*::
 	Disable the use of damage information. This cause the whole screen to be redrawn every time, instead of the part of the screen has actually changed. Potentially degrades the performance, but might fix some artifacts.
 
+*--wobbly-windows*::
+	Deform windows with a spring surface when their position or size changes, then let them settle. Requires the `glx` or `egl` backend. Disabled by default. The equivalent configuration setting is `wobbly-windows = true;`.
+
+*--wobbly-windows-level* _LEVEL_::
+	Select a KWin Wobbly Windows preset, from 0 (default, firmest) to 4 (loosest). Individual spring settings override the selected preset.
+
+*--wobbly-windows-stiffness* _VALUE_, *--wobbly-windows-drag* _VALUE_, *--wobbly-windows-move-factor* _VALUE_::
+	Set spring stiffness, damping, and motion factor. Level 0 uses 0.15, 0.80, and 0.10, respectively. Values use the same 0 to 1 scale as KWin internally.
+
+*--wobbly-windows-min-velocity* _VALUE_, *--wobbly-windows-max-velocity* _VALUE_, *--wobbly-windows-stop-velocity* _VALUE_::
+	Control velocity dead zone, maximum, and settle threshold. Defaults are 0, 1000, and 0.5.
+
+*--wobbly-windows-min-acceleration* _VALUE_, *--wobbly-windows-max-acceleration* _VALUE_, *--wobbly-windows-stop-acceleration* _VALUE_::
+	Control acceleration dead zone, maximum, and settle threshold. Defaults are 0, 1000, and 0.5.
+
+*--wobbly-windows-x-tessellation* _PIXELS_, *--wobbly-windows-y-tessellation* _PIXELS_::
+	Set horizontal and vertical spacing of the deformed mesh in pixels. Both default to 20.
+
+*--wobbly-windows-move*, *--no-wobbly-windows-move*, *--wobbly-windows-resize*, *--no-wobbly-windows-resize*::
+	Enable or disable the effect for moves or resizes independently. Both are enabled by default. The corresponding configuration settings are `wobbly-windows-move` and `wobbly-windows-resize`.
+
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 

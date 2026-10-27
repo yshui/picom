@@ -643,6 +643,7 @@ static const struct {
 	ptrdiff_t offset;
 } all_window_options[] = {
     {"fade", offsetof(struct window_maybe_options, fade)},
+    {"magic-lamp", offsetof(struct window_maybe_options, magic_lamp)},
     {"paint", offsetof(struct window_maybe_options, paint)},
     {"shadow", offsetof(struct window_maybe_options, shadow)},
     {"full-shadow", offsetof(struct window_maybe_options, full_shadow)},
@@ -1084,6 +1085,23 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
+	lcfg_lookup_bool(&cfg, "magic-lamp", &opt->magic_lamp);
+	config_lookup_int(&cfg, "magic-lamp-duration", &opt->magic_lamp_duration);
+	lcfg_lookup_bool(&cfg, "wobbly-windows", &opt->wobbly_windows);
+	config_lookup_int(&cfg, "wobbly-windows-level", &opt->wobbly_windows_level);
+	config_lookup_float(&cfg, "wobbly-windows-stiffness", &opt->wobbly.stiffness);
+	config_lookup_float(&cfg, "wobbly-windows-drag", &opt->wobbly.drag);
+	config_lookup_float(&cfg, "wobbly-windows-move-factor", &opt->wobbly.move_factor);
+	config_lookup_float(&cfg, "wobbly-windows-min-velocity", &opt->wobbly.min_velocity);
+	config_lookup_float(&cfg, "wobbly-windows-max-velocity", &opt->wobbly.max_velocity);
+	config_lookup_float(&cfg, "wobbly-windows-stop-velocity", &opt->wobbly.stop_velocity);
+	config_lookup_float(&cfg, "wobbly-windows-min-acceleration", &opt->wobbly.min_acceleration);
+	config_lookup_float(&cfg, "wobbly-windows-max-acceleration", &opt->wobbly.max_acceleration);
+	config_lookup_float(&cfg, "wobbly-windows-stop-acceleration", &opt->wobbly.stop_acceleration);
+	config_lookup_int(&cfg, "wobbly-windows-x-tessellation", &opt->wobbly.x_tessellation);
+	config_lookup_int(&cfg, "wobbly-windows-y-tessellation", &opt->wobbly.y_tessellation);
+	lcfg_lookup_bool(&cfg, "wobbly-windows-move", &opt->wobbly_windows_move);
+	lcfg_lookup_bool(&cfg, "wobbly-windows-resize", &opt->wobbly_windows_resize);
 	// --unredir-if-possible
 	lcfg_lookup_bool(&cfg, "unredir-if-possible", &opt->unredir_if_possible);
 	// --unredir-if-possible-delay

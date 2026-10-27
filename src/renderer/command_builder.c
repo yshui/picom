@@ -59,6 +59,11 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	}
 
 	const struct shader_info *shader_info = NULL;
+	bool wobbly = !layer->magic_lamp.enabled && w->wobbly.active && w->frame_opacity == 1.0 &&
+	              layer->saved_image_blend == 0 &&
+	              vec2_eq(layer->scale, SCALE_IDENTITY) &&
+	              layer->window.origin.x == w->g.x &&
+	              layer->window.origin.y == w->g.y;
 	if (layer->options.shader != NULL) {
 		HASH_FIND(hh, shaders, layer->options.shader->data,
 		          layer->options.shader->size, shader_info);
@@ -84,7 +89,53 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	    .color_inverted = layer->options.invert_color,
 	    .source_mask = NULL,
 	    .max_brightness = max_brightness,
+	    .wobbly_x_tessellation = wobbly ? w->wobbly.parameters.x_tessellation : 0,
+	    .wobbly_y_tessellation = wobbly ? w->wobbly.parameters.y_tessellation : 0,
 	};
+	if (layer->magic_lamp.enabled) {
+		// Deformed source rectangles are clipped in destination space by a full
+		// screen mask. Shape/corners remain attached to the source texture.
+		args_base.magic_lamp = layer->magic_lamp;
+		args_base.magic_lamp.split_frame = w->frame_opacity < 1;
+		margin_t ext = win_calc_frame_extents(w);
+		int left = clamp(ext.left, 0, w->widthb);
+		int top = clamp(ext.top, 0, w->heightb);
+		int right = clamp(w->widthb - ext.right, left, w->widthb);
+		int bottom = clamp(w->heightb - ext.bottom, top, w->heightb);
+		args_base.magic_lamp.body = (struct ibox){
+		    .origin = {left, top}, .size = {right - left, bottom - top},
+		};
+		unsigned count = w->frame_opacity > 0 && w->frame_opacity < 1 ? 2 : 1;
+		for (unsigned i = 0; i < count; i++) {
+			auto lamp_cmd = cmd_base - i;
+			pixman_region32_copy(&lamp_cmd->target_mask, &crop);
+			if (i != 0) pixman_region32_init(&lamp_cmd->opaque_region);
+			pixman_region32_clear(&lamp_cmd->opaque_region);
+			lamp_cmd->op = BACKEND_COMMAND_BLIT;
+			lamp_cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
+			lamp_cmd->origin = layer->window.origin;
+			lamp_cmd->shader_info = shader_info;
+			lamp_cmd->blit = args_base;
+			lamp_cmd->blit.target_mask = &lamp_cmd->target_mask;
+			lamp_cmd->blit.magic_lamp.frame_only = i != 0;
+			if (i != 0) lamp_cmd->blit.tint = color_mult_alpha(tint, opacity * w->frame_opacity);
+			if (w->bounding_shaped) {
+				lamp_cmd->source_mask = (typeof(lamp_cmd->source_mask)){0};
+				lamp_cmd->blit.source_mask = &lamp_cmd->source_mask;
+			}
+		}
+		return count;
+	}
+	if (wobbly) {
+		// The surface can extend past the original window rectangle.
+		pixman_region32_clear(&cmd->target_mask);
+		pixman_region32_union_rect(&cmd->target_mask, &cmd->target_mask,
+		                           layer->window.origin.x - WOBBLY_MARGIN,
+		                           layer->window.origin.y - WOBBLY_MARGIN,
+		                           (unsigned)(layer->window.size.width + 2 * WOBBLY_MARGIN),
+		                           (unsigned)(layer->window.size.height + 2 * WOBBLY_MARGIN));
+		pixman_region32_clear(&cmd->opaque_region);
+	}
 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
 	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
 	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
@@ -94,6 +145,16 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd_base,
 	cmd->origin = layer->window.origin;
 	cmd->shader_info = shader_info;
 	cmd->blit = args_base;
+	if (wobbly) {
+		memcpy(cmd->wobbly_points, w->wobbly.position, sizeof(cmd->wobbly_points));
+		cmd->blit.wobbly_points = cmd->wobbly_points;
+	}
+	if (wobbly && w->bounding_shaped) {
+		cmd->source_mask.origin = (vec2){};
+		cmd->source_mask.inverted = false;
+		cmd->source_mask.corner_radius = 0;
+		cmd->blit.source_mask = &cmd->source_mask;
+	}
 	cmd->blit.target_mask = &cmd->target_mask;
 	cmd -= 1;
 	if (layer->saved_image_blend > 0) {
@@ -468,7 +529,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 			// Needs to draw the frame separately
 			n_cmds_for_window_body += 1;
 		}
-		if (layer->saved_image_blend > 0) {
+		if (layer->saved_image_blend > 0 && !layer->magic_lamp.enabled) {
 			n_cmds_for_window_body *= 2;
 		}
 		ncmds += n_cmds_for_window_body;        // window body

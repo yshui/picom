@@ -19,6 +19,7 @@
 #include <picom/types.h>
 
 #include "atom.h"
+#include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
@@ -368,11 +369,40 @@ void win_process_primary_flags(session_t *ps, struct win *w) {
 		// window was rendered last frame, not if it's mapped in X server.
 
 		// Update window geometry
+		bool moved = w->g.x != w->pending_g.x || w->g.y != w->pending_g.y;
+		bool resized = w->g.width != w->pending_g.width ||
+		               w->g.height != w->pending_g.height;
+		int dx = w->pending_g.x - w->g.x;
+		int dy = w->pending_g.y - w->g.y;
+		int dw = w->pending_g.width - w->g.width;
+		int dh = w->pending_g.height - w->g.height;
+		// Large one-step changes usually come from layout actions such as
+		// maximizing or tiling. The spring mesh is for interactive movement.
+		bool layout_jump = abs(dx) >= 200 || abs(dy) >= 200 ||
+		                   abs(dw) >= 200 || abs(dh) >= 200;
+		if (layout_jump) {
+			w->wobbly.active = false;
+		}
+		const char *backend = ps->o.backend ? backend_name(ps->o.backend) : "";
+		if (ps->o.wobbly_windows && !win_magic_lamp_busy(w) &&
+		    (!strcmp(backend, "glx") || !strcmp(backend, "egl")) &&
+		    ((resized && ps->o.wobbly_windows_resize) ||
+		     (!resized && moved && ps->o.wobbly_windows_move)) &&
+		    !layout_jump && !w->is_fullscreen && w->widthb > 80 &&
+		    w->heightb > 50) {
+			if (!w->wobbly.active) {
+				wobbly_start(&w->wobbly, (ivec2){w->g.x, w->g.y},
+				             (ivec2){w->widthb, w->heightb}, ps->o.wobbly);
+			}
+		}
 		w->previous.g = w->g;
 		w->g = w->pending_g;
 
 		// Whether a window is fullscreen changes based on its geometry
 		win_update_is_fullscreen(ps, w);
+		if (w->is_fullscreen) {
+			w->wobbly.active = false;
+		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
@@ -1618,6 +1648,7 @@ void win_destroy_finish(session_t *ps, struct win *w) {
 /// because of fading and such.
 void win_destroy_start(struct win *w) {
 	BUG_ON(w == NULL);
+	w->wobbly.active = false;
 	log_debug("Destroying %#010x (%s)", win_id(w), w->name);
 
 	if (w->state != WSTATE_UNMAPPED) {
@@ -1651,6 +1682,7 @@ void win_destroy_start(struct win *w) {
 
 void unmap_win_start(struct win *w) {
 	assert(w);
+	w->wobbly.active = false;
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
 
 	log_debug("Unmapping %#010x (%s)", win_id(w), w->name);
@@ -1705,7 +1737,10 @@ win_script_context_prepare(struct session *ps, struct win *w) {
 }
 
 double win_animatable_get(const struct win *w, enum win_script_output output) {
-	if (w->running_animation_instance && w->running_animation.output_indices[output] >= 0) {
+	bool lamp = win_magic_lamp_busy(w);
+	if (lamp && output == WIN_SCRIPT_OPACITY) return w->lamp.opacity;
+	if (lamp && (output == WIN_SCRIPT_SHADOW_OPACITY || output == WIN_SCRIPT_BLUR_OPACITY)) return 0;
+	if (!lamp && w->running_animation_instance && w->running_animation.output_indices[output] >= 0) {
 		return w->running_animation_instance
 		    ->memory[w->running_animation.output_indices[output]];
 	}
@@ -1778,6 +1813,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	bool will_never_render =
 	    (!w->ever_damaged || w->win_image == NULL) && w->state != WSTATE_MAPPED;
 	auto win_ctx = win_script_context_prepare(ps, w);
+	auto lamp_result = win_magic_lamp_process(ps, w, delta_t);
 
 	bool size_changed = win_size_changed(w->previous.g, w->g);
 	bool position_changed = win_position_changed(w->previous.g, w->g);
@@ -1789,6 +1825,25 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	w->previous.g = w->g;
 	w->previous.shadow_color = w->options.shadow_color;
 	w->previous.blur_opacity = win_get_blur_opacity(w);
+
+	if (old_state != w->state) {
+		// Send D-Bus signal
+		if (ps->o.dbus) {
+			switch (w->state) {
+			case WSTATE_UNMAPPED:
+				cdbus_ev_win_unmapped(session_get_cdbus(ps), w);
+				break;
+			case WSTATE_MAPPED:
+				cdbus_ev_win_mapped(session_get_cdbus(ps), w);
+				break;
+			case WSTATE_DESTROYED:
+				cdbus_ev_win_destroyed(session_get_cdbus(ps), w);
+				break;
+			}
+		}
+	}
+	if (lamp_result == LAMP_RUNNING) return false;
+	if (lamp_result == LAMP_FINISHED) return true;
 
 	if (!ps->redirected || will_never_render) {
 		// This window won't be rendered, so we don't need to run the animations.
@@ -1811,21 +1866,6 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	// Animation trigger priority:
 	//   state > position > size > opacity > color
 	if (old_state != w->state) {
-		// Send D-Bus signal
-		if (ps->o.dbus) {
-			switch (w->state) {
-			case WSTATE_UNMAPPED:
-				cdbus_ev_win_unmapped(session_get_cdbus(ps), w);
-				break;
-			case WSTATE_MAPPED:
-				cdbus_ev_win_mapped(session_get_cdbus(ps), w);
-				break;
-			case WSTATE_DESTROYED:
-				cdbus_ev_win_destroyed(session_get_cdbus(ps), w);
-				break;
-			}
-		}
-
 		switch (WSTATE_PAIR(old_state, w->state)) {
 		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_MAPPED):
 			trigger = w->in_openclose ? ANIMATION_TRIGGER_OPEN
@@ -1860,7 +1900,7 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	} else if (position_changed) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = ANIMATION_TRIGGER_POSITION;
-	} else if (win_ctx.opacity_before != win_ctx.opacity) {
+	} else if (w->state == WSTATE_MAPPED && win_ctx.opacity_before != win_ctx.opacity) {
 		assert(w->state == WSTATE_MAPPED);
 		trigger = win_ctx.opacity > win_ctx.opacity_before
 		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
@@ -1874,6 +1914,12 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 		trigger = ANIMATION_TRIGGER_COLOR;
 	}
 
+	if (lamp_result == LAMP_HIDE || lamp_result == LAMP_MINIMIZE_SCRIPT) {
+		trigger = lamp_result == LAMP_HIDE ? ANIMATION_TRIGGER_HIDE : ANIMATION_TRIGGER_MINIMIZE;
+		win_ctx.opacity_before = w->lamp.opacity;
+	} else if (lamp_result == LAMP_SHOW || lamp_result == LAMP_RESTORE_SCRIPT) {
+		trigger = lamp_result == LAMP_SHOW ? ANIMATION_TRIGGER_SHOW : ANIMATION_TRIGGER_RESTORE;
+	}
 	if (trigger == ANIMATION_TRIGGER_INVALID) {
 		// No state changes, if there's a animation running, we just continue it.
 		return win_advance_animation(w, delta_t, &win_ctx);
@@ -2110,6 +2156,7 @@ static void win_handle_get_geometry_reply(struct x_connection *c,
 /// the window in.
 void win_map_start(struct session *ps, struct win *w) {
 	assert(w);
+	w->wobbly.active = false;
 
 	// Don't care about window mapping if it's an InputOnly window
 	// Also, try avoiding mapping a window twice

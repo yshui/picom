@@ -7,6 +7,7 @@
 #include <xcb/xproto.h>
 
 #include <picom/types.h>
+#include <picom/backend.h>
 
 #include "config.h"
 #include "region.h"
@@ -20,6 +21,7 @@ struct layer {
 	/// a frame has passed, windows could have been freed.
 	struct win *win;
 	struct window_options options;
+	struct backend_magic_lamp magic_lamp;
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
 	/// Window rectangle in screen coordinates, before it's scaled.
