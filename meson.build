@@ -3,6 +3,7 @@ project('picom', 'c', version: '13',
 
 cc = meson.get_compiler('c')
 
+if get_option('git')
 # use git describe if that's available
 git = find_program('git', required: false)
 if git.found()
@@ -20,6 +21,7 @@ if git.found()
 	if git_repository.returncode() == 0
 		repository = git_repository.stdout().strip()
 	endif
+endif
 endif
 
 add_global_arguments('-DPICOM_VERSION="v'+meson.project_version()+'"', language: 'c')
