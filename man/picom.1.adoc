@@ -682,7 +682,7 @@ _d_ is a timing function, which is a group with several options specifying its b
 
 These options are valid for a timing function: :::
 
-  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _steps_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_. The _curve_ option is optional, is not specified, the linear curve will be used.
+  _curve_:: Type of the curve and its parameters. It can be _linear_, which takes no parameters and defines a linear curve; or _cubic-bezier_, which takes four parameters for the four control points of the cubic bezier curve; or _steps_, which takes one or two parameters, the first is the number of steps, the second is the "jumpterm", which can be _jump-start_, _jump-end_, _jump-none_, or _jump-both_; or _spring_, which takes three parameters, see below. The _curve_ option is optional, is not specified, the linear curve will be used.
 
   _delay_:: The number of seconds to wait before the value starts changing. Optional, defaults to 0.
 
@@ -693,6 +693,40 @@ These options are valid for a timing function: :::
   _end_:: The end value of the variable. Mandatory.
 
 All options except _curve_ can be set to expressions. Timing function options are not variables themselves.
+
+--
+
+*Spring curves*
+
+`spring(stiffness, damping, mass)` describes the motion of a mass attached to a spring and a damper, released from the _start_ value with no initial velocity and pulled towards the _end_ value. _stiffness_ is the spring constant and must be positive, _damping_ is the damping coefficient and must be non-negative, and _mass_ must be positive.
+
+Unlike a real spring, the curve is defined on the transition's own timeline: one unit of time is one _duration_. The parameters therefore control the _shape_ of the curve, and _duration_ controls how long that shape takes to play out. Doubling _duration_ plays the same motion at half the speed, rather than showing you twice as much of it.
+
+How the curve behaves is decided by the damping ratio, `damping / (2 * sqrt(stiffness * mass))`:
+
+  * Below 1 the spring is underdamped: it overshoots the _end_ value and oscillates around it before settling. This is what gives the familiar bouncy feel.
+  * At 1 the spring is critically damped, and approaches the _end_ value as quickly as it can without ever overshooting it.
+  * Above 1 the spring is overdamped, and creeps towards the _end_ value without overshooting. The larger the ratio, the more sluggish it is.
+
+A spring only reaches its resting position asymptotically, so it will not have completely settled when the transition ends. The curve is truncated at the end of _duration_ and lands exactly on _end_. To keep that from being visible, pick parameters that settle well within the duration: the oscillation decays like `e^(-damping / (2 * mass) * t)`, so a `damping / (2 * mass)` of around 5 or more leaves nothing noticeable behind.
+
+----
+# a bouncy spring, and a firm one that doesn't overshoot
+a = {
+	curve = "spring(200, 15, 1)";
+	duration = 0.4;
+	start = 0;
+	end = 1;
+};
+b = {
+	curve = "spring(200, 28.3, 1)";
+	duration = 0.4;
+	start = 0;
+	end = 1;
+};
+----
+
+--
 
 NOTE: If any of _delay_, _duration_, _start_, or _end_ is defined with an expression, the expression will be evaluated only once when the animation starts. The values of _delay_, _duration_, _start_, and _end_ will then be fixed for the duration of the animation.
 
