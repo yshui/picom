@@ -550,8 +550,9 @@ xrender_copy_area(struct backend_base *base, ivec2 origin, image_handle target_h
 	auto source = (struct xrender_image_data_inner *)source_handle;
 	auto target = (struct xrender_image_data_inner *)target_handle;
 	auto extent = pixman_region32_extents(region);
-	x_set_picture_clip_region(base->c, source->pict, 0, 0, region);
-	x_clear_picture_clip_region(base->c, target->pict);
+	x_clear_picture_clip_region(base->c, source->pict);
+	x_set_picture_clip_region(base->c, target->pict, to_i16_checked(origin.x),
+	                          to_i16_checked(origin.y), region);
 	xrender_set_picture_repeat(xd, source->pict, XCB_RENDER_REPEAT_PAD);
 	xcb_render_composite(
 	    base->c->c, XCB_RENDER_PICT_OP_SRC, source->pict, XCB_NONE, target->pict,
