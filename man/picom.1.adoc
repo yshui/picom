@@ -776,6 +776,8 @@ Currently, these context variables are defined: :::
   _window-shadow-red_, _window-shadow-green_, _window-shadow-blue_, _window-shadow-red-before_, _window-shadow-green-before_, _window-shadow-blue-before_:: Color of the shadow before and after the shadow color change. (See notes below about _window-*-before_ variables.
 
 IMPORTANT: All of the _window-*-before_ variables are updated every frame, and reflects the state of the window in the previous frame. Which means they will only be meaningful for a single frame, when an animation has just been triggered. Which means you should only use them to define the _start_, _end_, _duration_, or _delay_ values of a timing function, since these values are only evaluated once when the animation starts.
+
+Plugins (see *--plugins*) can add animation variables of their own, which you use like context variables. picom asks the plugin for the value when an animation starts, and the value stays the same until the animation ends. Their names start with the name of the plugin, which starts with _plugin-_, and like context variables they are shadowed by a variable you define with the same name. The plugin's documentation says what they mean.
 --
 
 === Share your animations

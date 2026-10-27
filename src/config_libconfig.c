@@ -11,6 +11,7 @@
 #include <libconfig.h>
 #include <libgen.h>
 
+#include "api_internal.h"
 #include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
@@ -250,6 +251,7 @@ compile_win_script(struct win_script *result, config_setting_t *setting, char **
 	struct script_parse_config parse_config = {
 	    .context_info = win_script_context_info,
 	    .output_info = outputs,
+	    .inputs = api_animation_variable_names(),
 	};
 	result->script = script_compile(setting, parse_config, err);
 	if (result->script == NULL) {
