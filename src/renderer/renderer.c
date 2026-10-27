@@ -4,6 +4,7 @@
 #include "renderer.h"
 
 #include <inttypes.h>
+#include <math.h>
 #include <picom/backend.h>
 #include <xcb/xcb_aux.h>
 
@@ -431,7 +432,9 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                      double max_brightness, const struct x_monitors *monitors,
                      const struct shader_info *root_pixmap_shader,
-                     const struct shader_info *shaders, uint64_t *after_damage_us) {
+                     const struct shader_info *shaders, image_handle present_override,
+                     image_handle *capture_target, bool *frame_changed,
+                     uint64_t *after_damage_us) {
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
 		// concurrent with our CPU tasks to save time.
@@ -558,8 +561,46 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		backend->ops.blit(backend, (ivec2){}, r->back_image, &blit);
 	}
 
-	backend->ops.copy_area_quantize(backend, (ivec2){}, backend->ops.back_buffer(backend),
-	                                r->back_image, &damage_region);
+	if (frame_changed != NULL) {
+		*frame_changed = pixman_region32_not_empty(&damage_region);
+	}
+
+	if (capture_target != NULL && present_override != NULL) {
+		// A different image is about to be presented instead of the rendered
+		// frame, and the caller wants a copy of the rendered frame. Capture it
+		// before the override overwrites the back buffer.
+		if (*capture_target == NULL) {
+			*capture_target =
+			    backend->ops.new_image(backend, r->format, r->canvas_size);
+			if (*capture_target == NULL) {
+				log_error("Failed to create a snapshot image");
+				return false;
+			}
+		}
+		region_t full_region;
+		pixman_region32_init_rect(&full_region, 0, 0, (unsigned)r->canvas_size.width,
+		                          (unsigned)r->canvas_size.height);
+		bool succeeded = backend->ops.copy_image(
+		    backend, (ivec2){}, *capture_target, r->back_image, &full_region);
+		pixman_region32_fini(&full_region);
+		if (!succeeded) {
+			log_error("Failed to take a snapshot of the rendered frame");
+			backend->ops.release_image(backend, *capture_target);
+			*capture_target = NULL;
+			return false;
+		}
+	}
+
+	if (present_override != NULL) {
+		// Present the given image instead of the rendered frame
+		backend->ops.copy_area_quantize(backend, (ivec2){},
+		                                backend->ops.back_buffer(backend),
+		                                present_override, &screen_region);
+	} else {
+		backend->ops.copy_area_quantize(backend, (ivec2){},
+		                                backend->ops.back_buffer(backend),
+		                                r->back_image, &damage_region);
+	}
 
 	if (global_debug_options.consistent_buffer_age) {
 		region_t region;
@@ -583,4 +624,143 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 
 	r->frame_index = (r->frame_index + 1) % r->max_buffer_age;
 	return true;
+}
+
+bool renderer_copy_back_image(struct renderer *r, struct backend_base *backend,
+                              image_handle *target) {
+	if (r->back_image == NULL || r->canvas_size.width <= 0 || r->canvas_size.height <= 0) {
+		return false;
+	}
+	if (*target == NULL) {
+		*target = backend->ops.new_image(backend, r->format, r->canvas_size);
+		if (*target == NULL) {
+			log_error("Failed to create a snapshot image");
+			return false;
+		}
+	}
+	region_t region;
+	pixman_region32_init_rect(&region, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	bool succeeded =
+	    backend->ops.copy_image(backend, (ivec2){}, *target, r->back_image, &region);
+	pixman_region32_fini(&region);
+	if (!succeeded) {
+		log_error("Failed to take a snapshot of the back image");
+		backend->ops.release_image(backend, *target);
+		*target = NULL;
+	}
+	return succeeded;
+}
+
+/// Blit a screen snapshot onto the renderer's back image, clipped to the screen.
+static bool renderer_snapshot_blit(struct renderer *r, struct backend_base *backend,
+                                   image_handle image, ivec2 origin, double opacity) {
+	region_t target_mask;
+	pixman_region32_init_rect(&target_mask, origin.x, origin.y,
+	                          (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	region_t screen;
+	pixman_region32_init_rect(&screen, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	pixman_region32_intersect(&target_mask, &target_mask, &screen);
+	bool succeeded = true;
+	if (pixman_region32_not_empty(&target_mask)) {
+		struct backend_blit_args args = {
+		    .source_image = image,
+		    .target_mask = &target_mask,
+		    .tint = {opacity, opacity, opacity, opacity},
+		    .max_brightness = 1,
+		    .scale = SCALE_IDENTITY,
+		    .effective_size = r->canvas_size,
+		};
+		succeeded = backend->ops.blit(backend, origin, r->back_image, &args);
+	}
+	pixman_region32_fini(&target_mask);
+	pixman_region32_fini(&screen);
+	return succeeded;
+}
+
+bool renderer_render_workspace_switch(struct renderer *r, struct backend_base *backend,
+                                      image_handle from, image_handle to,
+                                      enum ws_switch_effect effect, double progress,
+                                      enum ws_switch_direction direction) {
+	if (r->back_image == NULL || from == NULL || to == NULL) {
+		return false;
+	}
+	progress = clamp(progress, 0.0, 1.0);
+
+	region_t screen_region;
+	pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	if (backend->ops.prepare) {
+		backend->ops.prepare(backend, &screen_region);
+	}
+	pixman_region32_fini(&screen_region);
+
+	bool succeeded =
+	    backend->ops.clear(backend, r->back_image, (struct color){0, 0, 0, 1});
+
+	if (effect == WS_SWITCH_EFFECT_SLIDE) {
+		// Slide the old desktop out, and the new desktop in, in the given
+		// direction. `direction` is the side the new desktop comes in from.
+		ivec2 from_pos = {}, to_pos = {};
+		switch (direction) {
+		case WS_SWITCH_DIRECTION_RIGHT: {
+			int offset = (int)round(progress * (double)r->canvas_size.width);
+			from_pos.x = -offset;
+			to_pos.x = r->canvas_size.width - offset;
+		} break;
+		case WS_SWITCH_DIRECTION_LEFT: {
+			int offset = (int)round(progress * (double)r->canvas_size.width);
+			from_pos.x = offset;
+			to_pos.x = offset - r->canvas_size.width;
+		} break;
+		case WS_SWITCH_DIRECTION_DOWN: {
+			int offset = (int)round(progress * (double)r->canvas_size.height);
+			from_pos.y = -offset;
+			to_pos.y = r->canvas_size.height - offset;
+		} break;
+		case WS_SWITCH_DIRECTION_UP: {
+			int offset = (int)round(progress * (double)r->canvas_size.height);
+			from_pos.y = offset;
+			to_pos.y = offset - r->canvas_size.height;
+		} break;
+		default: unreachable();
+		}
+		succeeded =
+		    succeeded && renderer_snapshot_blit(r, backend, from, from_pos, 1.0);
+		succeeded = succeeded && renderer_snapshot_blit(r, backend, to, to_pos, 1.0);
+	} else {
+		// Cross-fade between the old and the new desktop
+		succeeded = succeeded &&
+		            renderer_snapshot_blit(r, backend, from, (ivec2){0, 0}, 1.0);
+		succeeded = succeeded &&
+		            renderer_snapshot_blit(r, backend, to, (ivec2){0, 0}, progress);
+	}
+
+	if (!succeeded) {
+		log_error("Failed to render the workspace switch animation frame");
+		return false;
+	}
+	return renderer_present_image(r, backend, r->back_image);
+}
+
+bool renderer_present_image(struct renderer *r, struct backend_base *backend,
+                            image_handle image) {
+	if (image == NULL || r->canvas_size.width <= 0 || r->canvas_size.height <= 0) {
+		return false;
+	}
+	region_t screen_region;
+	pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	bool succeeded = backend->ops.copy_area_quantize(
+	    backend, (ivec2){}, backend->ops.back_buffer(backend), image, &screen_region);
+	pixman_region32_fini(&screen_region);
+	if (succeeded && backend->ops.present) {
+		succeeded = backend->ops.present(backend);
+	}
+	if (!succeeded) {
+		log_warn("Failed to present the frame");
+	}
+	return succeeded;
 }

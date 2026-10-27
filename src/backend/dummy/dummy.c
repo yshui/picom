@@ -224,6 +224,7 @@ const struct backend_operations dummy_ops = {
     .clear = dummy_clear,
     .copy_area = dummy_copy_area,
     .copy_area_quantize = dummy_copy_area,
+    .copy_image = dummy_copy_area,
     .image_capabilities = dummy_image_capabilities,
     .is_format_supported = dummy_is_format_supported,
     .new_image = dummy_new_image,

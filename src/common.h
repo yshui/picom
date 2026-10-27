@@ -193,6 +193,9 @@ typedef struct session {
 
 	struct window_options window_options_default;
 
+	/// State of the workspace switch animation
+	struct ws_switch *ws_switch;
+
 	// === X extension related ===
 	/// Information about monitors.
 	struct x_monitors monitors;
