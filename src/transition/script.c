@@ -55,6 +55,11 @@ struct compilation_stack {
 
 struct script_compile_context {
 	struct script_context_info_internal *context_info;
+	/// Names of the inputs, NULL terminated. Can be NULL.
+	const char *const *inputs;
+	/// The inputs the script reads so far, a dynarr. Allocated when the first one is
+	/// read.
+	struct script_input *inputs_used;
 	struct variable_allocation *vars;
 	struct overridable_slot *overrides;
 	/// The memory slot for storing the elapsed time.
@@ -168,6 +173,37 @@ struct expression_parser_context {
 	bool need_context;
 };
 
+/// Find the input named by the characters from `str` to `end`. Returns its index in
+/// `inputs`, or -1 if there is none.
+static int input_find(const char *const *inputs, const char *str, const char *end) {
+	if (inputs == NULL) {
+		return -1;
+	}
+	auto len = (size_t)(end - str);
+	for (unsigned i = 0; inputs[i] != NULL; i++) {
+		if (strncmp(inputs[i], str, len) == 0 && inputs[i][len] == '\0') {
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+/// The memory slot of input `index`, allocated when the input is read for the first time.
+static unsigned input_slot(struct script_compile_context *ctx, unsigned index) {
+	if (ctx->inputs_used == NULL) {
+		ctx->inputs_used = dynarr_new(struct script_input, 4);
+	}
+	dynarr_foreach(ctx->inputs_used, used) {
+		if (used->index == index) {
+			return used->slot;
+		}
+	}
+	BUG_ON(ctx->allocated_slots > UINT_MAX - 1);
+	auto input = (struct script_input){.index = index, .slot = ctx->allocated_slots++};
+	dynarr_push(ctx->inputs_used, input);
+	return input.slot;
+}
+
 /// Parse a number or a variable. Variable can optionally be prefixed with a minus sign.
 static void
 parse_raw_operand(struct expression_parser_context *ctx, const char *str, const char **end,
@@ -204,6 +240,7 @@ parse_raw_operand(struct expression_parser_context *ctx, const char *str, const 
 	}
 	struct variable_allocation *var = NULL;
 	struct script_context_info_internal *exe_ctx = NULL;
+	int input;
 	HASH_FIND(hh, script_ctx->vars, str, (unsigned long)(*end - str), var);
 	HASH_FIND(hh, script_ctx->context_info, str, (unsigned long)(*end - str), exe_ctx);
 	if (var != NULL) {
@@ -218,6 +255,13 @@ parse_raw_operand(struct expression_parser_context *ctx, const char *str, const 
 		    .ctx = exe_ctx->info.offset,
 		};
 		ctx->need_context = true;
+	} else if ((input = input_find(script_ctx->inputs, str, *end)) >= 0) {
+		// The caller fills the slot before the first evaluation, so this adds no
+		// dependency.
+		expr->instrs[expr->ninstrs++] = (struct instruction){
+		    .type = INST_LOAD,
+		    .slot = input_slot(script_ctx, (unsigned)input),
+		};
 	} else {
 		casprintf(err, "variable name \"%.*s\" is not defined", (int)(*end - str), str);
 		*end = str;
@@ -714,6 +758,9 @@ void script_free(struct script *script) {
 	}
 	free_hash_table(script->vars);
 	free_hash_table(script->overrides);
+	if (script->inputs != NULL) {
+		dynarr_free_pod(script->inputs);
+	}
 	free(script);
 }
 
@@ -964,6 +1011,11 @@ unsigned script_total_duration_slot(const struct script *script) {
 	return script->elapsed_slot + 1;
 }
 
+unsigned script_inputs(const struct script *script, const struct script_input **inputs) {
+	*inputs = script->inputs;
+	return script->inputs != NULL ? (unsigned)dynarr_len(script->inputs) : 0;
+}
+
 struct script *
 script_compile(config_setting_t *setting, struct script_parse_config cfg, char **out_err) {
 	if (!config_setting_is_group(setting)) {
@@ -983,6 +1035,7 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 	struct script_compile_context ctx = {};
 	script_compile_context_init(&ctx, setting);
 	ctx.context_info = context_table;
+	ctx.inputs = cfg.inputs;
 	const uint32_t n = to_u32_checked(config_setting_length(setting));
 	auto stack = ccalloc(n, struct compilation_stack *);
 	for (uint32_t i = 0; i < n; i++) {
@@ -1023,6 +1076,9 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 	if (!succeeded) {
 		free_hash_table(ctx.vars);
 		free_hash_table(ctx.overrides);
+		if (ctx.inputs_used != NULL) {
+			dynarr_free_pod(ctx.inputs_used);
+		}
 		list_foreach_safe(struct fragment, i, &ctx.all_fragments, siblings) {
 			fragment_free(i);
 		}
@@ -1042,6 +1098,7 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 	auto script = script_codegen(&ctx.all_fragments, ctx.head);
 	script->vars = ctx.vars;
 	script->overrides = ctx.overrides;
+	script->inputs = ctx.inputs_used;
 	script->elapsed_slot = ctx.elapsed_slot;
 	script->n_slots = ctx.allocated_slots;
 	script->stack_size = ctx.max_stack;
@@ -1068,6 +1125,8 @@ script_compile(config_setting_t *setting, struct script_parse_config cfg, char *
 }
 
 char *script_to_c(const struct script *script, const struct script_output_info *outputs) {
+	// A generated script can't have inputs, because nothing would fill them.
+	BUG_ON(script->inputs != NULL);
 	char **buf = dynarr_new(char *, (size_t)script->len * 40);
 	char *tmp = NULL;
 	casprintf(&tmp, "{\n"
@@ -1081,7 +1140,7 @@ char *script_to_c(const struct script *script, const struct script_output_info *
 	          "    malloc(offsetof(struct script, instrs) + sizeof(instrs));\n"
 	          "    ret->len = ARR_SIZE(instrs); ret->elapsed_slot = %u;"
 	          "    ret->n_slots = %u; ret->stack_size = %u;\n"
-	          "    ret->vars = NULL; ret->overrides = NULL;\n"
+	          "    ret->vars = NULL; ret->overrides = NULL; ret->inputs = NULL;\n"
 	          "    memcpy(ret->instrs, instrs, sizeof(instrs));\n",
 	          script->elapsed_slot, script->n_slots, script->stack_size);
 	dynarr_push(buf, tmp);
@@ -1240,7 +1299,8 @@ enum script_evaluation_result script_instance_evaluate(struct script_instance *i
 #ifdef UNIT_TEST
 static inline void
 script_compile_str(struct test_case_metadata *metadata, const char *str,
-                   struct script_output_info *outputs, char **err, struct script **out) {
+                   struct script_output_info *outputs, const char *const *inputs,
+                   char **err, struct script **out) {
 	config_t cfg;
 	config_init(&cfg);
 	config_set_auto_convert(&cfg, 1);
@@ -1249,8 +1309,9 @@ script_compile_str(struct test_case_metadata *metadata, const char *str,
 
 	config_setting_t *setting = config_root_setting(&cfg);
 	TEST_NOTEQUAL(setting, NULL);
-	*out = script_compile(setting,
-	                      (struct script_parse_config){.output_info = outputs}, err);
+	*out = script_compile(
+	    setting,
+	    (struct script_parse_config){.output_info = outputs, .inputs = inputs}, err);
 	config_destroy(&cfg);
 }
 
@@ -1289,7 +1350,7 @@ TEST_CASE(scripts_1) {
 	struct script_output_info outputs[] = {{"a"}, {"b"}, {"c"}, {"d"}, {"e"}, {NULL}};
 	char *err = NULL;
 	struct script *script = NULL;
-	script_compile_str(metadata, str, outputs, &err, &script);
+	script_compile_str(metadata, str, outputs, NULL, &err, &script);
 	if (err) {
 		log_error("err: %s\n", err);
 		free(err);
@@ -1330,6 +1391,54 @@ TEST_CASE(scripts_1) {
 		script_free(script);
 	}
 }
+TEST_CASE(scripts_inputs) {
+	static const char *str = "\
+		a = \"in1 * 2\"; \
+		in2 = 5; \
+		b = \"in1 + in2\"; \
+		c : { \
+			duration = 1; \
+			start = \"in1\"; \
+			end = \"in1 + a\"; \
+		};";
+	// in2 is shadowed by the script's own variable, in3 is never read.
+	static const char *const inputs[] = {"in1", "in2", "in3", NULL};
+	struct script_output_info outputs[] = {{"a"}, {"b"}, {"c"}, {NULL}};
+	char *err = NULL;
+	struct script *script = NULL;
+	script_compile_str(metadata, str, outputs, inputs, &err, &script);
+	TEST_EQUAL(err, NULL);
+	TEST_NOTEQUAL(script, NULL);
+	if (script == NULL) {
+		return;
+	}
+
+	const struct script_input *used = NULL;
+	TEST_EQUAL(script_inputs(script, &used), 1);
+	TEST_EQUAL(used[0].index, 0);
+
+	auto instance = script_instance_new(script);
+	instance->memory[used[0].slot] = 3;
+	TEST_EQUAL(script_instance_evaluate(instance, NULL, true), SCRIPT_EVAL_OK);
+	TEST_EQUAL(instance->memory[outputs[0].slot], 6);
+	TEST_EQUAL(instance->memory[outputs[1].slot], 8);
+	TEST_EQUAL(instance->memory[outputs[2].slot], 3);
+
+	instance->memory[script->elapsed_slot] += 1;
+	TEST_EQUAL(script_instance_evaluate(instance, NULL, false), SCRIPT_EVAL_OK);
+	TEST_EQUAL(instance->memory[outputs[0].slot], 6);
+	TEST_EQUAL(instance->memory[outputs[2].slot], 9);
+	free(instance);
+	script_free(script);
+
+	// A name not in the list is still not defined.
+	script_compile_str(metadata, "a = \"in4\";", NULL, inputs, &err, &script);
+	TEST_EQUAL(script, NULL);
+	TEST_NOTEQUAL(err, NULL);
+	TEST_STREQUAL(err, "Failed to parse expression at line 1. variable name \"in4\" "
+	                   "is not defined");
+	free(err);
+}
 TEST_CASE(scripts_report_cycle) {
 	static const char *str = "\
 		a = \"c\"; \
@@ -1337,7 +1446,7 @@ TEST_CASE(scripts_report_cycle) {
 		c = \"b + 1\";";
 	char *err = NULL;
 	struct script *script = NULL;
-	script_compile_str(metadata, str, NULL, &err, &script);
+	script_compile_str(metadata, str, NULL, NULL, &err, &script);
 	TEST_EQUAL(script, NULL);
 	TEST_NOTEQUAL(err, NULL);
 	TEST_STREQUAL(err, "Cyclic references detected in animation script defined at "
@@ -1366,7 +1475,7 @@ TEST_CASE(script_errors) {
 	char *err = NULL;
 	struct script *script = NULL;
 	for (size_t i = 0; i < ARR_SIZE(cases); i++) {
-		script_compile_str(metadata, cases[i][0], NULL, &err, &script);
+		script_compile_str(metadata, cases[i][0], NULL, NULL, &err, &script);
 		TEST_EQUAL(script, NULL);
 		TEST_NOTEQUAL(err, NULL);
 		TEST_STREQUAL(err, cases[i][1]);

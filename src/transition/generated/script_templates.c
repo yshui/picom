@@ -117,6 +117,7 @@ static struct script *script_template__disappear(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));
@@ -337,6 +338,7 @@ static struct script *script_template__appear(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));
@@ -560,6 +562,7 @@ static struct script *script_template__slide_out(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));
@@ -787,6 +790,7 @@ static struct script *script_template__slide_in(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));
@@ -1024,6 +1028,7 @@ static struct script *script_template__fly_out(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));
@@ -1238,6 +1243,7 @@ static struct script *script_template__fly_in(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));
@@ -1539,6 +1545,7 @@ static struct script *script_template__geometry_change(int *output_slots) {
 	ret->stack_size = 3;
 	ret->vars = NULL;
 	ret->overrides = NULL;
+	ret->inputs = NULL;
 	memcpy(ret->instrs, instrs, sizeof(instrs));
 	{
 		struct variable_allocation *var = malloc(sizeof(*var));

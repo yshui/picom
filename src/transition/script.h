@@ -30,11 +30,23 @@ struct script_parse_config {
 	/// Set the output variables of this script, also used to receive the slot number
 	/// for those variables.
 	struct script_output_info *output_info;
+	/// Names of the inputs, NULL terminated, or NULL if there are none. An input is
+	/// a variable whose value the caller stores in each new script instance before
+	/// its first evaluation. Only the inputs the script reads get a memory slot, see
+	/// `script_inputs`.
+	const char *const *inputs;
 };
 struct script;
 struct script_instance {
 	const struct script *script;
 	double memory[];
+};
+/// An input a script reads, see `script_parse_config::inputs`.
+struct script_input {
+	/// Position of the input's name in `script_parse_config::inputs`.
+	unsigned index;
+	/// The memory slot that holds its value.
+	unsigned slot;
 };
 enum script_evaluation_result {
 	/// +/-inf in results
@@ -70,6 +82,9 @@ struct script_instance *script_instance_new(const struct script *script);
 /// Get the total duration slot of a script.
 unsigned script_total_duration_slot(const struct script *script);
 unsigned script_elapsed_slot(const struct script *script);
+/// Get the inputs a script reads. Returns how many there are, and sets `*inputs` to
+/// point to them.
+unsigned script_inputs(const struct script *script, const struct script_input **inputs);
 
 /// Specialize a script instance with a context. During evaluation of the resulting
 /// script, what would have been read from the context will be replaced with the hardcoded

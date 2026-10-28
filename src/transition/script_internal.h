@@ -94,5 +94,7 @@ struct script {
 	unsigned stack_size;
 	struct variable_allocation *vars;
 	struct overridable_slot *overrides;
+	/// The inputs this script reads, a dynarr. NULL if there are none.
+	struct script_input *inputs;
 	struct instruction instrs[];
 };

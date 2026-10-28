@@ -1514,6 +1514,7 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 }
 
 static void handle_pending_updates(struct session *ps, double delta_t) {
+	api_frame_begin();
 	// Process new windows, and maybe allocate struct managed_win for them
 	handle_new_windows(ps);
 

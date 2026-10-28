@@ -18,6 +18,7 @@
 
 #include <picom/types.h>
 
+#include "api_internal.h"
 #include "atom.h"
 #include "c2.h"
 #include "common.h"
@@ -1944,6 +1945,8 @@ bool win_process_animation_and_state_change(struct session *ps, struct win *w, d
 	}
 
 	auto new_animation = script_instance_new(wopts.animations[trigger].script);
+	api_animation_variables_fill(new_animation, animation_trigger_names[trigger],
+	                             win_id(w), win_client_id(w, /*fallback_to_self=*/false));
 	if (w->running_animation_instance) {
 		// Interrupt the old animation and start the new animation from where the
 		// old has left off. Note we still need to advance the old animation for
