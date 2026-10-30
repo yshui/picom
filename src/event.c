@@ -551,6 +551,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			// Destroy the root "image" if the wallpaper probably changed
 			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
 				root_damaged(ps);
+			} else if (ev->atom == ps->atoms->a_PICOM_COLOR_MATRIX) {
+				update_color_matrix(ps);
 			}
 		}
 

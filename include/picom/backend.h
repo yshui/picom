@@ -10,7 +10,7 @@
 #include "types.h"
 
 #define PICOM_BACKEND_MAJOR (2UL)
-#define PICOM_BACKEND_MINOR (0UL)
+#define PICOM_BACKEND_MINOR (1UL)
 #define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
 
 typedef pixman_region32_t region_t;
@@ -455,6 +455,16 @@ struct backend_operations {
 	void (*diagnostics)(backend_t *backend_data);
 
 	enum device_status (*device_status)(backend_t *backend_data);
+
+	// ===========  Added in API 2.1   ============
+	/// Set the color matrix applied to everything copied to the back buffer by
+	/// `copy_area_quantize`, i.e. to the whole screen: a row-major 3x3 matrix
+	/// that transforms the RGB channels of each pixel. The transform is
+	/// linear, so it works the same on premultiplied colors.
+	///
+	/// Optional. Only call it on backends that report API 2.1 or later.
+	void (*set_color_matrix)(backend_t *backend_data, const float matrix[9])
+	    __attribute__((nonnull(1, 2)));
 };
 
 struct backend_base {

@@ -180,6 +180,12 @@ typedef struct session {
 	struct renderer *renderer;
 	/// Whether all windows are currently redirected.
 	bool redirected;
+	/// The screen color matrix, row-major, from the _PICOM_COLOR_MATRIX property
+	/// of the root window.
+	float color_matrix[9];
+	/// Whether `color_matrix` is the identity. Anything else keeps the screen
+	/// redirected, so nothing bypasses it.
+	bool color_matrix_identity;
 	/// Time of last fading. In milliseconds.
 	long long fade_time;
 	/// If we should quit
