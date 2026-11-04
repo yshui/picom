@@ -106,6 +106,8 @@ enum win_script_output {
 	WIN_SCRIPT_SHADOW_GREEN,
 	/// Ditto
 	WIN_SCRIPT_SHADOW_BLUE,
+	/// Dim level of this window
+	WIN_SCRIPT_DIM,
 
 	NUM_OF_WIN_SCRIPT_OUTPUTS,
 };

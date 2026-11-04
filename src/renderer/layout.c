@@ -101,6 +101,7 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	}
 
 	out_layer->opacity = (float)win_animatable_get(w, WIN_SCRIPT_OPACITY);
+	out_layer->options.dim = win_animatable_get(w, WIN_SCRIPT_DIM);
 	out_layer->blur_opacity =
 	    (float)clamp(win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY), 0., 1.);
 	out_layer->shadow_color.red = (float)win_animatable_get(w, WIN_SCRIPT_SHADOW_RED);
