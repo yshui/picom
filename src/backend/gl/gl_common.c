@@ -564,7 +564,7 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 	}
 	double dim_compat = 1.0 - (args->tint.red + args->tint.green + args->tint.blue) / 3.0;
 	// clang-format off
-	auto tex_sampler = vec2_eq(args->scale, SCALE_IDENTITY) ?
+	auto tex_sampler = vec2_eq(args->scale, SCALE_IDENTITY) || args->nearest ?
 	    gd->samplers[GL_SAMPLER_REPEAT] : gd->samplers[GL_SAMPLER_REPEAT_SCALE];
 	struct gl_uniform_value from_uniforms[] = {
 	    [UNIFORM_OPACITY_LOC]        = {.type = GL_FLOAT, .f = (float)args->tint.alpha},
