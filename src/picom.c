@@ -70,6 +70,7 @@
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"
+#include "zoom.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -599,9 +600,11 @@ err:
 }
 
 static void monitors_updated(void *data) {
+	session_t *ps = data;
+	zoom_handle_monitors(ps->zoom, &ps->monitors);
 	// Shadows cropped to monitors and animations using the monitor's geometry
 	// may look different now.
-	force_repaint(data);
+	force_repaint(ps);
 }
 
 void update_monitors(session_t *ps) {
@@ -845,6 +848,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		//
 		// (might not be the best naming.)
 		unredir_possible = true;
+	}
+	if (zoom_is_active(ps->zoom)) {
+		// A magnified picture can only be shown while we are compositing.
+		unredir_possible = false;
 	}
 	if (unredir_possible) {
 		if (ps->redirected) {
@@ -1744,7 +1751,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		    ps->o.force_win_blend, ps->o.blur_background_frame,
 		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
 		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->root_pixmap_shader,
-		    ps->shaders, NULL, &after_damage_us);
+		    ps->shaders, zoom_render_parameters(ps->zoom), &after_damage_us);
 		if (!succeeded) {
 			log_fatal("Render failure");
 			abort();
@@ -1999,8 +2006,8 @@ static void show_config_warning_message_box(struct options *opt) {
 /// @param all_xerrors whether we should report all X errors
 /// @param fork whether we will fork after initialization
 ///
-static session_t *session_init(int argc, char **argv, Display *dpy,
-                               const char *config_file, bool all_xerrors, bool fork) {
+static session_t *session_init(int argc, char **argv, Display *dpy, const char *config_file,
+                               bool all_xerrors, bool fork, struct zoom_state *zoom_state) {
 	static const session_t s_def = {
 	    .backend_data = NULL,
 	    .root_height = 0,
@@ -2227,6 +2234,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
 
+	// The magnifier keeps its state in `zoom_state` across resets.
+	ps->zoom = zoom_new(ps, zoom_state);
+
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
 	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
@@ -2398,6 +2408,9 @@ static void session_destroy(session_t *ps) {
 	}
 #endif
 
+	zoom_free(ps->zoom);
+	ps->zoom = NULL;
+
 	wm_stack_foreach(ps->wm, cursor) {
 		auto w = wm_ref_deref(cursor);
 		if (w != NULL) {
@@ -2566,6 +2579,8 @@ int PICOM_MAIN(int argc, char **argv) {
 	bool quit = false;
 	int ret_code = 0;
 	char *pid_file = NULL;
+	// The magnifier's state is kept across resets.
+	auto zoom_state = zoom_state_new();
 
 	do {
 		Display *dpy = XOpenDisplay(NULL);
@@ -2581,7 +2596,8 @@ int PICOM_MAIN(int argc, char **argv) {
 		log_deinit_tls();
 		log_init_tls();
 
-		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
+		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork,
+		                    zoom_state);
 		if (!ps_g) {
 			log_fatal("Failed to create new session.");
 			ret_code = 1;
@@ -2625,6 +2641,7 @@ int PICOM_MAIN(int argc, char **argv) {
 		}
 	} while (!quit);
 
+	zoom_state_free(zoom_state);
 	free(config_file);
 	if (pid_file) {
 		log_trace("remove pid file %s", pid_file);

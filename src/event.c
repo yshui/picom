@@ -24,6 +24,7 @@
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"
+#include "zoom.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
 /// in-flight is no good. Because your internal state won't be up to date. Also, querying
@@ -804,6 +805,10 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		    ev->response_type ==
 		        (ps->c.e.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			update_monitors(ps);
+			break;
+		}
+		if (ev->response_type == ps->c.e.fixes_event + XCB_XFIXES_CURSOR_NOTIFY) {
+			zoom_handle_cursor_change(ps->zoom);
 			break;
 		}
 		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {

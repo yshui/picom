@@ -544,6 +544,12 @@ static const struct picom_option picom_options[] = {
     [328] = {"blur-method", PARSE_WITH(parse_blur_method, BLUR_METHOD_INVALID, blur_method),
              "The algorithm used for background bluring. Available choices are: 'none' to disable, 'gaussian', "
 	     "'box' or 'kernel' for custom convolution blur with --blur-kern."},
+    [345] = {"zoom-mouse-tracking", PARSE_WITH(parse_zoom_mouse_tracking, ZOOM_MOUSE_TRACKING_INVALID, zoom_mouse_tracking),
+             "How the view of a zoomed monitor follows the pointer. Possible values are: proportional (default), "
+             "centered, push, none. Zoom is controlled through the picom.Zoom D-Bus interface."},
+    [346] = {"zoom-focus-tracking", PARSE_WITH(parse_zoom_focus_tracking, ZOOM_FOCUS_TRACKING_INVALID, zoom_focus_tracking),
+             "How the view of a zoomed monitor follows the keyboard focus. Possible values are: none (default), "
+             "centered, push."},
 
     // Deprecated options
     [269] = {"refresh-rate"       , WARN_DEPRECATED(IGNORE(required_argument))},

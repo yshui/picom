@@ -943,6 +943,26 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	// --dbus
 	lcfg_lookup_bool(&cfg, "dbus", &opt->dbus);
 
+	// --zoom-mouse-tracking
+	if (config_lookup_string(&cfg, "zoom-mouse-tracking", &sval)) {
+		int mode = parse_zoom_mouse_tracking(sval);
+		if (mode >= ZOOM_MOUSE_TRACKING_INVALID) {
+			log_fatal("Invalid zoom-mouse-tracking mode %s", sval);
+			goto out;
+		}
+		opt->zoom_mouse_tracking = (enum zoom_mouse_tracking)mode;
+	}
+
+	// --zoom-focus-tracking
+	if (config_lookup_string(&cfg, "zoom-focus-tracking", &sval)) {
+		int mode = parse_zoom_focus_tracking(sval);
+		if (mode >= ZOOM_FOCUS_TRACKING_INVALID) {
+			log_fatal("Invalid zoom-focus-tracking mode %s", sval);
+			goto out;
+		}
+		opt->zoom_focus_tracking = (enum zoom_focus_tracking)mode;
+	}
+
 	// -D (fade_delta)
 	if (config_lookup_int(&cfg, "fade-delta", &ival)) {
 		opt->fade_delta = ival;

@@ -197,6 +197,66 @@ int parse_blur_method(const char *src) {
 	return BLUR_METHOD_INVALID;
 }
 
+static const char *const zoom_mouse_tracking_names[] = {
+    [ZOOM_MOUSE_TRACKING_PROPORTIONAL] = "proportional",
+    [ZOOM_MOUSE_TRACKING_CENTERED] = "centered",
+    [ZOOM_MOUSE_TRACKING_PUSH] = "push",
+    [ZOOM_MOUSE_TRACKING_NONE] = "none",
+};
+
+static const char *const zoom_focus_tracking_names[] = {
+    [ZOOM_FOCUS_TRACKING_NONE] = "none",
+    [ZOOM_FOCUS_TRACKING_CENTERED] = "centered",
+    [ZOOM_FOCUS_TRACKING_PUSH] = "push",
+};
+
+int parse_zoom_mouse_tracking(const char *src) {
+	for (int i = 0; i < ZOOM_MOUSE_TRACKING_INVALID; i++) {
+		if (strcmp(src, zoom_mouse_tracking_names[i]) == 0) {
+			return i;
+		}
+	}
+	return ZOOM_MOUSE_TRACKING_INVALID;
+}
+
+int parse_zoom_focus_tracking(const char *src) {
+	for (int i = 0; i < ZOOM_FOCUS_TRACKING_INVALID; i++) {
+		if (strcmp(src, zoom_focus_tracking_names[i]) == 0) {
+			return i;
+		}
+	}
+	return ZOOM_FOCUS_TRACKING_INVALID;
+}
+
+const char *zoom_mouse_tracking_name(enum zoom_mouse_tracking mode) {
+	if (mode >= ZOOM_MOUSE_TRACKING_INVALID) {
+		return NULL;
+	}
+	return zoom_mouse_tracking_names[mode];
+}
+
+const char *zoom_focus_tracking_name(enum zoom_focus_tracking mode) {
+	if (mode >= ZOOM_FOCUS_TRACKING_INVALID) {
+		return NULL;
+	}
+	return zoom_focus_tracking_names[mode];
+}
+
+TEST_CASE(parse_zoom_tracking) {
+	TEST_EQUAL(parse_zoom_mouse_tracking("proportional"), ZOOM_MOUSE_TRACKING_PROPORTIONAL);
+	TEST_EQUAL(parse_zoom_mouse_tracking("centered"), ZOOM_MOUSE_TRACKING_CENTERED);
+	TEST_EQUAL(parse_zoom_mouse_tracking("push"), ZOOM_MOUSE_TRACKING_PUSH);
+	TEST_EQUAL(parse_zoom_mouse_tracking("none"), ZOOM_MOUSE_TRACKING_NONE);
+	TEST_EQUAL(parse_zoom_mouse_tracking("NONE"), ZOOM_MOUSE_TRACKING_INVALID);
+	TEST_EQUAL(parse_zoom_mouse_tracking(""), ZOOM_MOUSE_TRACKING_INVALID);
+	TEST_EQUAL(parse_zoom_focus_tracking("none"), ZOOM_FOCUS_TRACKING_NONE);
+	TEST_EQUAL(parse_zoom_focus_tracking("centered"), ZOOM_FOCUS_TRACKING_CENTERED);
+	TEST_EQUAL(parse_zoom_focus_tracking("push"), ZOOM_FOCUS_TRACKING_PUSH);
+	TEST_EQUAL(parse_zoom_focus_tracking("proportional"), ZOOM_FOCUS_TRACKING_INVALID);
+	TEST_STREQUAL(zoom_mouse_tracking_name(ZOOM_MOUSE_TRACKING_PUSH), "push");
+	TEST_STREQUAL(zoom_focus_tracking_name(ZOOM_FOCUS_TRACKING_CENTERED), "centered");
+}
+
 /**
  * Parse a matrix.
  *
@@ -657,6 +717,8 @@ bool parse_config(options_t *opt, const char *config_file) {
 	    .redirected_force = UNSET,
 	    .stoppaint_force = UNSET,
 	    .dbus = false,
+	    .zoom_mouse_tracking = ZOOM_MOUSE_TRACKING_PROPORTIONAL,
+	    .zoom_focus_tracking = ZOOM_FOCUS_TRACKING_NONE,
 	    .benchmark = 0,
 	    .benchmark_wid = XCB_NONE,
 	    .logpath = NULL,
