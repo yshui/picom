@@ -598,6 +598,18 @@ err:
 	return false;
 }
 
+static void monitors_updated(void *data) {
+	// Shadows cropped to monitors and animations using the monitor's geometry
+	// may look different now.
+	force_repaint(data);
+}
+
+void update_monitors(session_t *ps) {
+	if (ps->c.e.has_randr) {
+		x_update_monitors_async(&ps->c, &ps->monitors, monitors_updated, ps);
+	}
+}
+
 /// Handle configure event of the root window
 void configure_root(session_t *ps) {
 	// TODO(yshui) re-initializing backend should be done outside of the
@@ -624,6 +636,10 @@ void configure_root(session_t *ps) {
 	free(r);
 
 	rebuild_screen_reg(ps);
+
+	// Monitors set with RRSetMonitor (e.g. `xrandr --setmonitor`) are announced
+	// with nothing but a ConfigureNotify of the root window.
+	update_monitors(ps);
 
 	// Whether a window is fullscreen depends on the new screen
 	// size. So we need to refresh the fullscreen state of all
@@ -2203,7 +2219,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ps->c.e.has_randr) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
-		x_update_monitors_async(&ps->c, &ps->monitors, NULL, NULL);
+		update_monitors(ps);
 	}
 
 	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->c.dpy), EV_READ);

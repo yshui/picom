@@ -31,6 +31,9 @@ void queue_redraw(session_t *ps);
 
 void configure_root(session_t *ps);
 
+/// Fetch the monitor configuration again.
+void update_monitors(session_t *ps);
+
 void quit(session_t *ps);
 
 xcb_window_t session_get_target_window(session_t *);

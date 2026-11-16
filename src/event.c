@@ -803,7 +803,7 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		if (ps->c.e.has_randr &&
 		    ev->response_type ==
 		        (ps->c.e.randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
-			x_update_monitors_async(&ps->c, &ps->monitors, NULL, NULL);
+			update_monitors(ps);
 			break;
 		}
 		if (ps->c.e.damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
