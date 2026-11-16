@@ -2203,7 +2203,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ps->c.e.has_randr) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
-		x_update_monitors_async(&ps->c, &ps->monitors);
+		x_update_monitors_async(&ps->c, &ps->monitors, NULL, NULL);
 	}
 
 	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->c.dpy), EV_READ);

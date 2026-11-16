@@ -134,6 +134,8 @@ struct x_connection {
 struct x_monitors {
 	int count;
 	region_t *regions;
+	/// Names of the monitors, in the same order as `regions`.
+	xcb_atom_t *names;
 };
 
 #define XCB_AWAIT_VOID(func, conn, ...)                                                   \
@@ -452,7 +454,9 @@ xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std);
 
 /// Populates a `struct x_monitors` with the current monitor configuration asynchronously.
-void x_update_monitors_async(struct x_connection *, struct x_monitors *);
+/// If `updated` is not NULL, it is called with `data` once the monitors are updated.
+void x_update_monitors_async(struct x_connection *, struct x_monitors *,
+                             void (*updated)(void *data), void *data);
 /// Free memory allocated for a `struct x_monitors`.
 void x_free_monitor_info(struct x_monitors *);
 
