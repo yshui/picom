@@ -194,6 +194,18 @@ struct ev_ewmh_active_win_request {
 	session_t *ps;
 };
 
+/// Mark the window `cursor` points to as focused, NULL means no window is focused.
+///
+/// This is called with the reply to a focus query, which usually arrives after the
+/// frame queued for the event that triggered the query has been drawn. The new focus
+/// state is only applied to the windows when the next frame is prepared, so queue
+/// one, otherwise it waits for something unrelated to be redrawn.
+static void ev_set_focused(session_t *ps, struct wm_ref *cursor) {
+	wm_ref_set_focused(ps->wm, cursor);
+	ps->pending_updates = true;
+	queue_redraw(ps);
+}
+
 /// Update current active window based on EWMH _NET_ACTIVE_WIN.
 ///
 /// Does not change anything if we fail to get the attribute or the window
@@ -229,8 +241,7 @@ update_ewmh_active_win(struct x_connection *c, struct x_async_request_base *req_
 
 	// Mark the window focused. No need to unfocus the previous one.
 	auto cursor = wm_find_by_client(ps->wm, wid);
-	wm_ref_set_focused(ps->wm, cursor);
-	ps->pending_updates = true;
+	ev_set_focused(ps, cursor);
 	log_debug("%#010x (%s) focused.", wid, win_wm_ref_name(cursor));
 }
 
@@ -285,8 +296,7 @@ static void recheck_focus(struct x_connection *c, struct x_async_request_base *r
 	}
 
 	// And we set the focus state here
-	wm_ref_set_focused(ps->wm, cursor);
-	ps->pending_updates = true;
+	ev_set_focused(ps, cursor);
 	log_debug("%#010x (%s) focused.", wid, win_wm_ref_name(cursor));
 }
 
