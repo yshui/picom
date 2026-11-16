@@ -4,6 +4,7 @@
 #include "renderer.h"
 
 #include <inttypes.h>
+#include <math.h>
 #include <picom/backend.h>
 #include <xcb/xcb_aux.h>
 
@@ -14,6 +15,7 @@
 #include "layout.h"
 #include "picom.h"
 #include "utils/dynarr.h"
+#include "x.h"
 
 struct renderer {
 	/// Intermediate image to hold what will be presented to the back buffer.
@@ -42,7 +44,43 @@ struct renderer {
 
 	/// A dynarr of region_t for storing culled masks
 	region_t *culled_masks;
+
+	/// Holds the magnified picture, which is presented instead of `back_image` when
+	/// a monitor is zoomed.
+	image_handle zoom_image;
+	/// Holds the part of `back_image` a zoomed monitor shows, before it's enlarged.
+	image_handle zoom_scratch;
+	/// The cursor drawn on zoomed monitors, and the X pixmap it is bound from.
+	image_handle zoom_cursor_image;
+	xcb_pixmap_t zoom_cursor_pixmap;
+	/// The `serial` of the cursor last put into `zoom_cursor_image`, 0 if none.
+	uint64_t zoom_cursor_serial;
+	/// Number of frames which still have to be fully repainted, so no magnified
+	/// pixels are left in any back buffer after zoom is turned off.
+	int zoom_full_repaints;
 };
+
+static void renderer_release_zoom_images(struct backend_base *backend, struct renderer *r) {
+	if (r->zoom_image) {
+		backend->ops.release_image(backend, r->zoom_image);
+		r->zoom_image = NULL;
+	}
+	if (r->zoom_scratch) {
+		backend->ops.release_image(backend, r->zoom_scratch);
+		r->zoom_scratch = NULL;
+	}
+}
+
+static void renderer_release_zoom_cursor(struct backend_base *backend, struct renderer *r) {
+	if (r->zoom_cursor_image) {
+		backend->ops.release_image(backend, r->zoom_cursor_image);
+		r->zoom_cursor_image = NULL;
+	}
+	if (r->zoom_cursor_pixmap != XCB_NONE) {
+		xcb_free_pixmap(backend->c->c, r->zoom_cursor_pixmap);
+		r->zoom_cursor_pixmap = XCB_NONE;
+	}
+}
 
 void renderer_free(struct backend_base *backend, struct renderer *r) {
 	if (r->white_image) {
@@ -76,6 +114,8 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 		free(r->monitor_repaint_copy);
 	}
 	dynarr_free(r->culled_masks, pixman_region32_fini);
+	renderer_release_zoom_images(backend, r);
+	renderer_release_zoom_cursor(backend, r);
 	free(r);
 }
 
@@ -145,6 +185,7 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 	if (r->back_image) {
 		backend->ops.release_image(backend, r->back_image);
 	}
+	renderer_release_zoom_images(backend, r);
 	if (r->back_buffer_copy) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
 			backend->ops.release_image(backend, r->back_buffer_copy[i]);
@@ -422,6 +463,176 @@ void renderer_ensure_images_ready(struct renderer *r, struct backend_base *backe
 	}
 }
 
+/// Make sure `r->zoom_cursor_image` holds the image of `cursor`.
+static bool renderer_prepare_zoom_cursor(struct renderer *r, struct backend_base *backend,
+                                         const struct renderer_zoom_cursor *cursor) {
+	if (r->zoom_cursor_serial == cursor->serial) {
+		// Already prepared, or already failed to be prepared.
+		return r->zoom_cursor_image != NULL;
+	}
+	renderer_release_zoom_cursor(backend, r);
+	r->zoom_cursor_serial = cursor->serial;
+
+	auto c = backend->c;
+	auto visual = x_get_visual_for_standard(c, XCB_PICT_STANDARD_ARGB_32);
+	if (visual == XCB_NONE) {
+		log_error("No ARGB visual for the cursor image");
+		return false;
+	}
+	auto npixels = (size_t)cursor->width * (size_t)cursor->height;
+	if (sizeof(xcb_put_image_request_t) + npixels * 4 >
+	    (size_t)xcb_get_maximum_request_length(c->c) * 4) {
+		log_error("The cursor image is too big: %dx%d", cursor->width, cursor->height);
+		return false;
+	}
+
+	// The cursor image is premultiplied ARGB, one 32-bit value per pixel in our
+	// byte order. That is the layout of a 32-bit ZPixmap, if the server uses the
+	// same byte order for images.
+	const uint32_t *pixels = cursor->pixels;
+	uint32_t *swapped = NULL;
+	bool little_endian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
+	if ((xcb_get_setup(c->c)->image_byte_order == XCB_IMAGE_ORDER_LSB_FIRST) !=
+	    little_endian) {
+		swapped = ccalloc(npixels, uint32_t);
+		for (size_t i = 0; i < npixels; i++) {
+			swapped[i] = __builtin_bswap32(pixels[i]);
+		}
+		pixels = swapped;
+	}
+
+	auto width = to_u16_checked(cursor->width);
+	auto height = to_u16_checked(cursor->height);
+	auto pixmap = x_new_id(c);
+	auto gc = x_new_id(c);
+	xcb_create_pixmap(c->c, 32, pixmap, c->screen_info->root, width, height);
+	xcb_create_gc(c->c, gc, pixmap, 0, NULL);
+	xcb_put_image(c->c, XCB_IMAGE_FORMAT_Z_PIXMAP, pixmap, gc, width, height, 0, 0, 0,
+	              32, (uint32_t)(npixels * 4), (const uint8_t *)pixels);
+	xcb_free_gc(c->c, gc);
+	free(swapped);
+
+	r->zoom_cursor_image =
+	    backend->ops.bind_pixmap(backend, pixmap, x_get_visual_info(c, visual));
+	if (r->zoom_cursor_image == NULL) {
+		log_error("Failed to bind the cursor image");
+		xcb_free_pixmap(c->c, pixmap);
+		return false;
+	}
+	r->zoom_cursor_pixmap = pixmap;
+	return true;
+}
+
+/// Draw the magnified picture into `r->zoom_image`: a copy of `r->back_image`, where
+/// every zoomed monitor shows its view enlarged, and the cursor on top of it.
+static bool renderer_compose_zoom(struct renderer *r, struct backend_base *backend,
+                                  const struct renderer_zoom *zoom) {
+	if (r->zoom_image == NULL) {
+		r->zoom_image = backend->ops.new_image(backend, r->format, r->canvas_size);
+	}
+	if (r->zoom_scratch == NULL) {
+		r->zoom_scratch = backend->ops.new_image(backend, r->format, r->canvas_size);
+	}
+	if (r->zoom_image == NULL || r->zoom_scratch == NULL) {
+		log_error("Failed to allocate images for zoom");
+		return false;
+	}
+
+	region_t canvas;
+	pixman_region32_init_rect(&canvas, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	bool succeeded = backend->ops.copy_area(backend, (ivec2){}, r->zoom_image,
+	                                        r->back_image, &canvas);
+	for (int i = 0; succeeded && i < zoom->nmonitors; i++) {
+		auto m = &zoom->monitors[i];
+		region_t target;
+		pixman_region32_init_rect(&target, m->x, m->y, (unsigned)m->width,
+		                          (unsigned)m->height);
+		pixman_region32_intersect(&target, &target, &canvas);
+		if (!pixman_region32_not_empty(&target)) {
+			pixman_region32_fini(&target);
+			continue;
+		}
+
+		// Copy the pixels covering the view to the scratch image, at its origin.
+		int x1 = max2(0, (int)floor(m->view_x));
+		int y1 = max2(0, (int)floor(m->view_y));
+		int x2 =
+		    min2(r->canvas_size.width, (int)ceil(m->view_x + m->width / m->factor));
+		int y2 = min2(r->canvas_size.height,
+		              (int)ceil(m->view_y + m->height / m->factor));
+		if (x2 <= x1 || y2 <= y1) {
+			pixman_region32_fini(&target);
+			continue;
+		}
+		region_t scratch_region;
+		pixman_region32_init_rect(&scratch_region, 0, 0, (unsigned)(x2 - x1),
+		                          (unsigned)(y2 - y1));
+		struct backend_blit_args copy = {
+		    .source_image = r->back_image,
+		    .target_mask = &scratch_region,
+		    .effective_size = r->canvas_size,
+		    .tint = {1, 1, 1, 1},
+		    .max_brightness = 1,
+		    .scale = SCALE_IDENTITY,
+		};
+		succeeded =
+		    backend->ops.blit(backend, (ivec2){-x1, -y1}, r->zoom_scratch, &copy);
+		pixman_region32_fini(&scratch_region);
+
+		// Then enlarge it onto the monitor. The origin is rounded so that
+		// every pixel of the monitor samples inside the copied area.
+		ivec2 origin = {
+		    .x = m->x - (int)floor((m->view_x - x1) * m->factor),
+		    .y = m->y - (int)floor((m->view_y - y1) * m->factor),
+		};
+		struct backend_blit_args enlarge = {
+		    .source_image = r->zoom_scratch,
+		    .target_mask = &target,
+		    .effective_size = {.width = x2 - x1, .height = y2 - y1},
+		    .tint = {1, 1, 1, 1},
+		    .max_brightness = 1,
+		    .scale = {m->factor, m->factor},
+		    .nearest = true,
+		};
+		succeeded = succeeded &&
+		            backend->ops.blit(backend, origin, r->zoom_image, &enlarge);
+
+		auto cursor = zoom->cursor;
+		if (succeeded && cursor != NULL && cursor->monitor == i &&
+		    renderer_prepare_zoom_cursor(r, backend, cursor)) {
+			// The hotspot goes where the pointer is shown on the monitor.
+			double hot_x = m->x + (cursor->x - m->view_x) * m->factor;
+			double hot_y = m->y + (cursor->y - m->view_y) * m->factor;
+			ivec2 cursor_origin = {
+			    .x = (int)lround(hot_x - cursor->xhot * m->factor),
+			    .y = (int)lround(hot_y - cursor->yhot * m->factor),
+			};
+			region_t cursor_region;
+			pixman_region32_init_rect(
+			    &cursor_region, cursor_origin.x, cursor_origin.y,
+			    (unsigned)lround(cursor->width * m->factor),
+			    (unsigned)lround(cursor->height * m->factor));
+			pixman_region32_intersect(&cursor_region, &cursor_region, &target);
+			struct backend_blit_args draw_cursor = {
+			    .source_image = r->zoom_cursor_image,
+			    .target_mask = &cursor_region,
+			    .effective_size = {.width = cursor->width, .height = cursor->height},
+			    .tint = {1, 1, 1, 1},
+			    .max_brightness = 1,
+			    .scale = {m->factor, m->factor},
+			    .nearest = true,
+			};
+			succeeded = backend->ops.blit(backend, cursor_origin,
+			                              r->zoom_image, &draw_cursor);
+			pixman_region32_fini(&cursor_region);
+		}
+		pixman_region32_fini(&target);
+	}
+	pixman_region32_fini(&canvas);
+	return succeeded;
+}
+
 /// @return true if a frame is rendered, false if this frame is skipped.
 bool renderer_render(struct renderer *r, struct backend_base *backend,
                      image_handle root_image, const rect_t *root_image_extent,
@@ -431,7 +642,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      bool force_blend, bool blur_frame, bool inactive_dim_fixed,
                      double max_brightness, const struct x_monitors *monitors,
                      const struct shader_info *root_pixmap_shader,
-                     const struct shader_info *shaders, uint64_t *after_damage_us) {
+                     const struct shader_info *shaders, const struct renderer_zoom *zoom,
+                     uint64_t *after_damage_us) {
 	if (xsync_fence != XCB_NONE) {
 		// Trigger the fence but don't immediately wait on it. Let it run
 		// concurrent with our CPU tasks to save time.
@@ -492,7 +704,18 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		                       r->back_buffer_copy[past_frame], &region);
 		pixman_region32_fini(&region);
 	}
-	if (buffer_age > 0 && (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
+	// While zoomed, every frame is a full repaint: a change anywhere might be
+	// visible enlarged elsewhere. After zoom is turned off, every back buffer has to
+	// be repainted once more.
+	bool zoomed = zoom != NULL && zoom->nmonitors > 0;
+	bool zoom_full_repaint = zoomed || r->zoom_full_repaints > 0;
+	if (zoomed) {
+		r->zoom_full_repaints = r->max_buffer_age;
+	} else if (r->zoom_full_repaints > 0) {
+		r->zoom_full_repaints--;
+	}
+	if (!zoom_full_repaint && buffer_age > 0 &&
+	    (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
 		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
 	}
 
@@ -558,8 +781,17 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		backend->ops.blit(backend, (ivec2){}, r->back_image, &blit);
 	}
 
+	image_handle present_image = r->back_image;
+	if (zoomed) {
+		if (renderer_compose_zoom(r, backend, zoom)) {
+			present_image = r->zoom_image;
+		} else {
+			log_error("Failed to draw the magnified picture");
+		}
+	}
+
 	backend->ops.copy_area_quantize(backend, (ivec2){}, backend->ops.back_buffer(backend),
-	                                r->back_image, &damage_region);
+	                                present_image, &damage_region);
 
 	if (global_debug_options.consistent_buffer_age) {
 		region_t region;

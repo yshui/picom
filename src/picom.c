@@ -1743,8 +1743,8 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		    render_start_us, ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
 		    ps->o.force_win_blend, ps->o.blur_background_frame,
 		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-		    ps->root_pixmap_shader, ps->shaders, &after_damage_us);
+		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->root_pixmap_shader,
+		    ps->shaders, NULL, &after_damage_us);
 		if (!succeeded) {
 			log_fatal("Render failure");
 			abort();
