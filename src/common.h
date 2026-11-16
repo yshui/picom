@@ -197,6 +197,9 @@ typedef struct session {
 	/// Information about monitors.
 	struct x_monitors monitors;
 
+	/// The magnifier
+	struct zoom *zoom;
+
 	// === Atoms ===
 	struct atom *atoms;
 

@@ -26,6 +26,7 @@
 #include "wm/defs.h"
 #include "wm/win.h"
 #include "wm/wm.h"
+#include "zoom.h"
 
 #include "dbus.h"
 
@@ -74,6 +75,9 @@ typedef uint32_t cdbus_enum_t;
 
 #define PICOM_WINDOW_INTERFACE "picom.Window"
 #define PICOM_COMPOSITOR_INTERFACE "picom.Compositor"
+#define PICOM_ZOOM_INTERFACE "picom.Zoom"
+#define PICOM_ZOOM_ERROR_UNKNOWN_MONITOR PICOM_ZOOM_INTERFACE ".Error.UnknownMonitor"
+#define PICOM_ZOOM_ERROR_NO_MONITOR PICOM_ZOOM_INTERFACE ".Error.NoMonitorUnderPointer"
 
 static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *ud);
 static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
@@ -1045,6 +1049,194 @@ cdbus_process_opts_set_success:
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/** @name picom.Zoom interface
+ */
+///@{
+
+/// Turn the result of a zoom operation into a D-Bus error, if it failed.
+static void cdbus_zoom_set_error(enum zoom_result result, DBusError *err) {
+	const char *name = NULL;
+	switch (result) {
+	case ZOOM_OK: return;
+	case ZOOM_ERROR_INVALID_FACTOR:
+	case ZOOM_ERROR_INVALID_STEP: name = DBUS_ERROR_INVALID_ARGS; break;
+	case ZOOM_ERROR_UNKNOWN_MONITOR: name = PICOM_ZOOM_ERROR_UNKNOWN_MONITOR; break;
+	case ZOOM_ERROR_NO_MONITOR_UNDER_POINTER:
+		name = PICOM_ZOOM_ERROR_NO_MONITOR;
+		break;
+	}
+	dbus_set_error_const(err, name, zoom_result_to_string(result));
+}
+
+static DBusHandlerResult
+cdbus_process_zoom_set_monitor_zoom(session_t *ps, DBusMessage *msg,
+                                    DBusMessage *reply attr_unused, DBusError *err) {
+	const char *name = NULL;
+	double factor = 0;
+	if (!dbus_message_get_args(msg, err, DBUS_TYPE_STRING, &name, DBUS_TYPE_DOUBLE,
+	                           &factor, DBUS_TYPE_INVALID)) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	cdbus_zoom_set_error(zoom_set_monitor_factor(ps->zoom, name, factor), err);
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+/// Apply `verb` to the monitor under the pointer. The signature of `msg` has been
+/// checked: it is "d" for verbs that take an argument, empty otherwise.
+static DBusHandlerResult cdbus_process_zoom_verb(session_t *ps, DBusMessage *msg,
+                                                 enum zoom_verb verb, DBusError *err) {
+	double arg = 0;
+	if (dbus_message_has_signature(msg, DBUS_TYPE_DOUBLE_AS_STRING) &&
+	    !dbus_message_get_args(msg, err, DBUS_TYPE_DOUBLE, &arg, DBUS_TYPE_INVALID)) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	cdbus_zoom_set_error(zoom_apply_verb(ps->zoom, verb, arg), err);
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+#define CDBUS_ZOOM_VERB_HANDLER(fn, verb)                                                \
+	static DBusHandlerResult fn(session_t *ps, DBusMessage *msg,                     \
+	                            DBusMessage *reply attr_unused, DBusError *err) {    \
+		return cdbus_process_zoom_verb(ps, msg, verb, err);                      \
+	}
+CDBUS_ZOOM_VERB_HANDLER(cdbus_process_zoom_in, ZOOM_VERB_IN)
+CDBUS_ZOOM_VERB_HANDLER(cdbus_process_zoom_out, ZOOM_VERB_OUT)
+CDBUS_ZOOM_VERB_HANDLER(cdbus_process_zoom_set, ZOOM_VERB_SET)
+CDBUS_ZOOM_VERB_HANDLER(cdbus_process_zoom_off, ZOOM_VERB_OFF)
+CDBUS_ZOOM_VERB_HANDLER(cdbus_process_zoom_toggle, ZOOM_VERB_TOGGLE)
+#undef CDBUS_ZOOM_VERB_HANDLER
+
+static DBusHandlerResult
+cdbus_process_zoom_set_mouse_tracking(session_t *ps, DBusMessage *msg,
+                                      DBusMessage *reply attr_unused, DBusError *err) {
+	const char *mode_name = NULL;
+	if (!dbus_message_get_args(msg, err, DBUS_TYPE_STRING, &mode_name, DBUS_TYPE_INVALID)) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	int mode = parse_zoom_mouse_tracking(mode_name);
+	if (mode >= ZOOM_MOUSE_TRACKING_INVALID) {
+		dbus_set_error(err, DBUS_ERROR_INVALID_ARGS,
+		               "Unknown mouse tracking mode \"%s\", expected one of: "
+		               "proportional, centered, push, none",
+		               mode_name);
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	ps->o.zoom_mouse_tracking = (enum zoom_mouse_tracking)mode;
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+static DBusHandlerResult
+cdbus_process_zoom_set_focus_tracking(session_t *ps, DBusMessage *msg,
+                                      DBusMessage *reply attr_unused, DBusError *err) {
+	const char *mode_name = NULL;
+	if (!dbus_message_get_args(msg, err, DBUS_TYPE_STRING, &mode_name, DBUS_TYPE_INVALID)) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	int mode = parse_zoom_focus_tracking(mode_name);
+	if (mode >= ZOOM_FOCUS_TRACKING_INVALID) {
+		dbus_set_error(err, DBUS_ERROR_INVALID_ARGS,
+		               "Unknown focus tracking mode \"%s\", expected one of: "
+		               "centered, push, none",
+		               mode_name);
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	ps->o.zoom_focus_tracking = (enum zoom_focus_tracking)mode;
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+/// GetState() -> (s mouse_tracking, s focus_tracking, a(sd(iiii)(dddd)) monitors)
+static DBusHandlerResult
+cdbus_process_zoom_get_state(session_t *ps, DBusMessage *msg attr_unused,
+                             DBusMessage *reply, DBusError *err attr_unused) {
+	if (reply == NULL) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	const char *mouse = zoom_mouse_tracking_name(ps->o.zoom_mouse_tracking);
+	const char *focus = zoom_focus_tracking_name(ps->o.zoom_focus_tracking);
+	DBusMessageIter iter, monitors;
+	dbus_message_iter_init_append(reply, &iter);
+	if (!dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &mouse) ||
+	    !dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &focus) ||
+	    !dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "(sd(iiii)(dddd))",
+	                                      &monitors)) {
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+	struct zoom_monitor_info info;
+	for (size_t i = 0; zoom_monitor_get(ps->zoom, i, &info); i++) {
+		DBusMessageIter entry, box, view;
+		dbus_int32_t box_values[] = {info.x, info.y, info.width, info.height};
+		double view_values[] = {info.view_x, info.view_y, info.view_width,
+		                        info.view_height};
+		bool ok =
+		    dbus_message_iter_open_container(&monitors, DBUS_TYPE_STRUCT, NULL, &entry) &&
+		    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &info.name) &&
+		    dbus_message_iter_append_basic(&entry, DBUS_TYPE_DOUBLE, &info.factor) &&
+		    dbus_message_iter_open_container(&entry, DBUS_TYPE_STRUCT, NULL, &box);
+		for (size_t j = 0; ok && j < ARR_SIZE(box_values); j++) {
+			ok = dbus_message_iter_append_basic(&box, DBUS_TYPE_INT32,
+			                                    &box_values[j]);
+		}
+		ok = ok && dbus_message_iter_close_container(&entry, &box) &&
+		     dbus_message_iter_open_container(&entry, DBUS_TYPE_STRUCT, NULL, &view);
+		for (size_t j = 0; ok && j < ARR_SIZE(view_values); j++) {
+			ok = dbus_message_iter_append_basic(&view, DBUS_TYPE_DOUBLE,
+			                                    &view_values[j]);
+		}
+		ok = ok && dbus_message_iter_close_container(&entry, &view) &&
+		     dbus_message_iter_close_container(&monitors, &entry);
+		if (!ok) {
+			dbus_message_iter_abandon_container_if_open(&iter, &monitors);
+			return DBUS_HANDLER_RESULT_NEED_MEMORY;
+		}
+	}
+	if (!dbus_message_iter_close_container(&iter, &monitors)) {
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+/// Process a message for the picom.Zoom interface.
+static DBusHandlerResult
+cdbus_process_zoom(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusError *err) {
+	static const struct {
+		const char *name;
+		const char *signature;
+		DBusHandlerResult (*func)(session_t *ps, DBusMessage *msg,
+		                          DBusMessage *reply, DBusError *err);
+	} handlers[] = {
+	    {"SetMonitorZoom", "sd", cdbus_process_zoom_set_monitor_zoom},
+	    {"ZoomIn", "d", cdbus_process_zoom_in},
+	    {"ZoomOut", "d", cdbus_process_zoom_out},
+	    {"ZoomSet", "d", cdbus_process_zoom_set},
+	    {"ZoomOff", "", cdbus_process_zoom_off},
+	    {"ZoomToggle", "", cdbus_process_zoom_toggle},
+	    {"SetMouseTracking", "s", cdbus_process_zoom_set_mouse_tracking},
+	    {"SetFocusTracking", "s", cdbus_process_zoom_set_focus_tracking},
+	    {"GetState", "", cdbus_process_zoom_get_state},
+	};
+
+	const char *member = dbus_message_get_member(msg);
+	for (size_t i = 0; i < ARR_SIZE(handlers); i++) {
+		if (strcmp(handlers[i].name, member) != 0) {
+			continue;
+		}
+		// Arguments must match exactly, extra arguments are rejected too.
+		if (!dbus_message_has_signature(msg, handlers[i].signature)) {
+			dbus_set_error(
+			    err, DBUS_ERROR_INVALID_ARGS,
+			    "Method %s expects arguments of signature \"%s\", got "
+			    "\"%s\"",
+			    member, handlers[i].signature, dbus_message_get_signature(msg));
+			return DBUS_HANDLER_RESULT_HANDLED;
+		}
+		return handlers[i].func(ps, msg, reply, err);
+	}
+	log_debug("Unknown method \"%s\" of " PICOM_ZOOM_INTERFACE ".", member);
+	dbus_set_error(err, DBUS_ERROR_UNKNOWN_METHOD, "Unknown method \"%s\"", member);
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+///@}
+
 /**
  * Process an Introspect D-Bus request.
  */
@@ -1103,6 +1295,34 @@ static DBusHandlerResult cdbus_process_introspect(DBusMessage *reply) {
 	    "    <signal name='WinUnmapped'>\n"
 	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
 	    "    </signal>\n"
+	    "  </interface>\n"
+	    "  <interface name='" PICOM_ZOOM_INTERFACE "'>\n"
+	    "    <method name='SetMonitorZoom'>\n"
+	    "      <arg name='monitor' type='s' direction='in' />\n"
+	    "      <arg name='factor' type='d' direction='in' />\n"
+	    "    </method>\n"
+	    "    <method name='ZoomIn'>\n"
+	    "      <arg name='step' type='d' direction='in' />\n"
+	    "    </method>\n"
+	    "    <method name='ZoomOut'>\n"
+	    "      <arg name='step' type='d' direction='in' />\n"
+	    "    </method>\n"
+	    "    <method name='ZoomSet'>\n"
+	    "      <arg name='factor' type='d' direction='in' />\n"
+	    "    </method>\n"
+	    "    <method name='ZoomOff' />\n"
+	    "    <method name='ZoomToggle' />\n"
+	    "    <method name='SetMouseTracking'>\n"
+	    "      <arg name='mode' type='s' direction='in' />\n"
+	    "    </method>\n"
+	    "    <method name='SetFocusTracking'>\n"
+	    "      <arg name='mode' type='s' direction='in' />\n"
+	    "    </method>\n"
+	    "    <method name='GetState'>\n"
+	    "      <arg name='mouse_tracking' type='s' direction='out' />\n"
+	    "      <arg name='focus_tracking' type='s' direction='out' />\n"
+	    "      <arg name='monitors' type='a(sd(iiii)(dddd))' direction='out' />\n"
+	    "    </method>\n"
 	    "  </interface>\n"
 	    "  <node name='windows' />\n"
 	    "</node>\n";
@@ -1284,6 +1504,8 @@ static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *msg, v
 
 	if (dbus_message_is_method_call(msg, DBUS_INTERFACE_INTROSPECTABLE, "Introspect")) {
 		ret = cdbus_process_introspect(reply);
+	} else if (interface != NULL && strcmp(interface, PICOM_ZOOM_INTERFACE) == 0) {
+		ret = cdbus_process_zoom(ps, msg, reply, &err);
 	} else if (strcmp(interface, CDBUS_INTERFACE_NAME) != 0) {
 		dbus_set_error_const(&err, DBUS_ERROR_UNKNOWN_INTERFACE, NULL);
 	} else {

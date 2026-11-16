@@ -70,6 +70,7 @@
 #include "wm/defs.h"
 #include "wm/wm.h"
 #include "x.h"
+#include "zoom.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -598,6 +599,20 @@ err:
 	return false;
 }
 
+static void monitors_updated(void *data) {
+	session_t *ps = data;
+	zoom_handle_monitors(ps->zoom, &ps->monitors);
+	// Shadows cropped to monitors and animations using the monitor's geometry
+	// may look different now.
+	force_repaint(ps);
+}
+
+void update_monitors(session_t *ps) {
+	if (ps->c.e.has_randr) {
+		x_update_monitors_async(&ps->c, &ps->monitors, monitors_updated, ps);
+	}
+}
+
 /// Handle configure event of the root window
 void configure_root(session_t *ps) {
 	// TODO(yshui) re-initializing backend should be done outside of the
@@ -624,6 +639,10 @@ void configure_root(session_t *ps) {
 	free(r);
 
 	rebuild_screen_reg(ps);
+
+	// Monitors set with RRSetMonitor (e.g. `xrandr --setmonitor`) are announced
+	// with nothing but a ConfigureNotify of the root window.
+	update_monitors(ps);
 
 	// Whether a window is fullscreen depends on the new screen
 	// size. So we need to refresh the fullscreen state of all
@@ -829,6 +848,10 @@ static bool paint_preprocess(session_t *ps, bool *animation, struct win **out_bo
 		//
 		// (might not be the best naming.)
 		unredir_possible = true;
+	}
+	if (zoom_is_active(ps->zoom)) {
+		// A magnified picture can only be shown while we are compositing.
+		unredir_possible = false;
 	}
 	if (unredir_possible) {
 		if (ps->redirected) {
@@ -1727,8 +1750,8 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		    render_start_us, ps->sync_fence, ps->o.use_damage, ps->o.monitor_repaint,
 		    ps->o.force_win_blend, ps->o.blur_background_frame,
 		    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-		    ps->root_pixmap_shader, ps->shaders, &after_damage_us);
+		    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->root_pixmap_shader,
+		    ps->shaders, zoom_render_parameters(ps->zoom), &after_damage_us);
 		if (!succeeded) {
 			log_fatal("Render failure");
 			abort();
@@ -1983,8 +2006,8 @@ static void show_config_warning_message_box(struct options *opt) {
 /// @param all_xerrors whether we should report all X errors
 /// @param fork whether we will fork after initialization
 ///
-static session_t *session_init(int argc, char **argv, Display *dpy,
-                               const char *config_file, bool all_xerrors, bool fork) {
+static session_t *session_init(int argc, char **argv, Display *dpy, const char *config_file,
+                               bool all_xerrors, bool fork, struct zoom_state *zoom_state) {
 	static const session_t s_def = {
 	    .backend_data = NULL,
 	    .root_height = 0,
@@ -2203,13 +2226,16 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (ps->c.e.has_randr) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
-		x_update_monitors_async(&ps->c, &ps->monitors);
+		update_monitors(ps);
 	}
 
 	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->c.dpy), EV_READ);
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
+
+	// The magnifier keeps its state in `zoom_state` across resets.
+	ps->zoom = zoom_new(ps, zoom_state);
 
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
@@ -2382,6 +2408,9 @@ static void session_destroy(session_t *ps) {
 	}
 #endif
 
+	zoom_free(ps->zoom);
+	ps->zoom = NULL;
+
 	wm_stack_foreach(ps->wm, cursor) {
 		auto w = wm_ref_deref(cursor);
 		if (w != NULL) {
@@ -2550,6 +2579,8 @@ int PICOM_MAIN(int argc, char **argv) {
 	bool quit = false;
 	int ret_code = 0;
 	char *pid_file = NULL;
+	// The magnifier's state is kept across resets.
+	auto zoom_state = zoom_state_new();
 
 	do {
 		Display *dpy = XOpenDisplay(NULL);
@@ -2565,7 +2596,8 @@ int PICOM_MAIN(int argc, char **argv) {
 		log_deinit_tls();
 		log_init_tls();
 
-		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
+		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork,
+		                    zoom_state);
 		if (!ps_g) {
 			log_fatal("Failed to create new session.");
 			ret_code = 1;
@@ -2609,6 +2641,7 @@ int PICOM_MAIN(int argc, char **argv) {
 		}
 	} while (!quit);
 
+	zoom_state_free(zoom_state);
 	free(config_file);
 	if (pid_file) {
 		log_trace("remove pid file %s", pid_file);

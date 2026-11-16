@@ -291,6 +291,30 @@ struct option_name {
 	const char *name;
 };
 
+/// How the magnifier's view follows the pointer.
+enum zoom_mouse_tracking {
+	/// The pointer keeps the same relative position in the view as in the monitor
+	ZOOM_MOUSE_TRACKING_PROPORTIONAL = 0,
+	/// The view is centered on the pointer
+	ZOOM_MOUSE_TRACKING_CENTERED,
+	/// The view moves only as far as needed to keep the pointer in it
+	ZOOM_MOUSE_TRACKING_PUSH,
+	/// The view doesn't follow the pointer
+	ZOOM_MOUSE_TRACKING_NONE,
+	ZOOM_MOUSE_TRACKING_INVALID,
+};
+
+/// How the magnifier's view follows the keyboard focus.
+enum zoom_focus_tracking {
+	/// The view doesn't follow the focus
+	ZOOM_FOCUS_TRACKING_NONE = 0,
+	/// The view is centered on the newly focused window
+	ZOOM_FOCUS_TRACKING_CENTERED,
+	/// The view moves only as far as needed to show the newly focused window
+	ZOOM_FOCUS_TRACKING_PUSH,
+	ZOOM_FOCUS_TRACKING_INVALID,
+};
+
 /// Structure representing all options.
 typedef struct options {
 	// === Deprecation ===
@@ -346,6 +370,10 @@ typedef struct options {
 	switch_t stoppaint_force;
 	/// Whether to enable D-Bus support.
 	bool dbus;
+	/// How the magnifier's view follows the pointer.
+	enum zoom_mouse_tracking zoom_mouse_tracking;
+	/// How the magnifier's view follows the keyboard focus.
+	enum zoom_focus_tracking zoom_focus_tracking;
 	/// Path to log file.
 	char *logpath;
 	/// Number of cycles to paint in benchmark mode. 0 for disabled.
@@ -544,6 +572,10 @@ void *parse_numeric_prefix(const char *src, const char **end, void *user_data);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
 int must_use parse_blur_method(const char *src);
+int must_use parse_zoom_mouse_tracking(const char *src);
+int must_use parse_zoom_focus_tracking(const char *src);
+const char *zoom_mouse_tracking_name(enum zoom_mouse_tracking mode);
+const char *zoom_focus_tracking_name(enum zoom_focus_tracking mode);
 void parse_debug_options(struct debug_options *);
 
 const char *xdg_config_home(void);

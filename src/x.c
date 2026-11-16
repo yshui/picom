@@ -291,6 +291,7 @@ bool x_extensions_init(struct x_connection *c) {
 		return false;
 	}
 
+	c->e.fixes_event = extension->first_event;
 	c->e.fixes_error = extension->first_error;
 
 	// According to the X Fixes extension's specification:
@@ -1057,13 +1058,18 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 struct x_update_monitors_request {
 	struct x_async_request_base base;
 	struct x_monitors *monitors;
+	void (*updated)(void *data);
+	void *data;
 };
 
 static void x_handle_update_monitors_reply(struct x_connection *c,
                                            struct x_async_request_base *req_base,
                                            const xcb_raw_generic_event_t *reply_or_error) {
-	auto m = ((struct x_update_monitors_request *)req_base)->monitors;
-	free(req_base);
+	auto req = (struct x_update_monitors_request *)req_base;
+	auto m = req->monitors;
+	auto updated = req->updated;
+	auto data = req->data;
+	free(req);
 
 	if (reply_or_error == NULL) {
 		// Shutting down
@@ -1082,19 +1088,28 @@ static void x_handle_update_monitors_reply(struct x_connection *c,
 
 	m->count = xcb_randr_get_monitors_monitors_length(reply);
 	m->regions = ccalloc(m->count, region_t);
+	m->names = ccalloc(m->count, xcb_atom_t);
 	xcb_randr_monitor_info_iterator_t monitor_info_it =
 	    xcb_randr_get_monitors_monitors_iterator(reply);
 	for (int i = 0; monitor_info_it.rem; xcb_randr_monitor_info_next(&monitor_info_it)) {
 		xcb_randr_monitor_info_t *mi = monitor_info_it.data;
+		m->names[i] = mi->name;
 		pixman_region32_init_rect(&m->regions[i++], mi->x, mi->y, mi->width, mi->height);
+	}
+
+	if (updated != NULL) {
+		updated(data);
 	}
 }
 
-void x_update_monitors_async(struct x_connection *c, struct x_monitors *m) {
+void x_update_monitors_async(struct x_connection *c, struct x_monitors *m,
+                             void (*updated)(void *data), void *data) {
 	auto req = ccalloc(1, struct x_update_monitors_request);
 	req->base.callback = x_handle_update_monitors_reply;
 	req->base.sequence = xcb_randr_get_monitors(c->c, c->screen_info->root, 1).sequence;
 	req->monitors = m;
+	req->updated = updated;
+	req->data = data;
 	x_await_request(c, &req->base);
 }
 
@@ -1106,6 +1121,8 @@ void x_free_monitor_info(struct x_monitors *m) {
 		free(m->regions);
 		m->regions = NULL;
 	}
+	free(m->names);
+	m->names = NULL;
 	m->count = 0;
 }
 

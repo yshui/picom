@@ -243,6 +243,12 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--dbus*::
 	Enable remote control via D-Bus. See the xref:_d_bus_api[*D-BUS API*] section below for more details.
 
+*--zoom-mouse-tracking* _MODE_::
+	How the view of a zoomed monitor follows the pointer. _MODE_ is one of `proportional`, `centered`, `push` or `none`. See the xref:_magnifier[*MAGNIFIER*] section below for what each mode does. (default: `proportional`)
+
+*--zoom-focus-tracking* _MODE_::
+	How the view of a zoomed monitor follows the keyboard focus. _MODE_ is one of `centered`, `push` or `none`. See the xref:_magnifier[*MAGNIFIER*] section below for what each mode does. (default: `none`)
+
 *--benchmark* _CYCLES_::
 	Benchmark mode. Repeatedly paint until reaching the specified cycles.
 
@@ -928,6 +934,32 @@ If blur is enabled, noise can be configured with the following options: ::
   *noise-scale*:::
   A floating point number. The size of noise features. Corresponds to the *--blur-noise-scale* command line option. If negative or zero, noise is disabled (default: 0.005).
 
+MAGNIFIER
+---------
+
+picom can magnify the screen, one monitor at a time. Monitors are the named areas of the screen reported by the X RandR extension (see *xrandr*(1) *--listmonitors*), all coordinates are root window pixels.
+
+Each monitor has a zoom factor, from 1 to 32. On a monitor with a factor greater than 1, picom shows a part of the screen, called the _view_, enlarged by the factor to fill the monitor. The view is the size of the monitor divided by the factor, and always stays inside the monitor. Everything picom draws on the monitor is enlarged: the desktop background, windows and their frames. The pointer is drawn enlarged too, in place of the X server's own cursor. At factor 1 a monitor shows the normal picture.
+
+Magnification only changes what is shown on screen. Input still works in root window coordinates, and no window, monitor or screen geometry changes. While any monitor is zoomed, picom keeps compositing, and won't unredirect the screen for full-screen windows. Zoom factors, views and toggle memories survive picom resetting itself (*SIGUSR1*, the `reset` D-Bus method, or a change to the configuration file), and are remembered for monitors that disappear and come back under the same name.
+
+The zoom is controlled with the `picom.Zoom` D-Bus interface, see xref:_d_bus_api[*D-BUS API*]. How views follow the pointer and the keyboard focus is chosen with *zoom-mouse-tracking* and *zoom-focus-tracking*.
+
+Mouse tracking modes, applied to the zoomed monitor the pointer moves on:
+
+`proportional`::: The pointer keeps the same relative position in the view as it has in the monitor. That is, along each axis, the view starts at the monitor's start plus the pointer's distance from it, multiplied by (1 - 1/_factor_).
+`centered`::: The view is centered on the pointer, as far as it stays inside the monitor.
+`push`::: The view moves only as far as needed to bring the pointer back inside it.
+`none`::: The view doesn't follow the pointer.
+
+Focus tracking modes, applied when a different top-level window gains focus while the pointer is outside of it. The zoomed monitor containing the center of the window, frame included, is moved:
+
+`centered`::: The view is centered on the window, as far as it stays inside the monitor.
+`push`::: The view moves only as far as needed to show the whole window. If the window is bigger than the view, the view's top-left corner moves to the window's top-left corner.
+`none`::: The view doesn't follow the focus.
+
+When the factor of a monitor changes, the new view is centered where the old view was centered. Coming from factor 1, it is centered on the pointer if the pointer is on that monitor, or on the middle of the monitor otherwise. Then, if the pointer is on the monitor, the mouse tracking mode is applied once.
+
 SIGNALS
 -------
 
@@ -938,7 +970,53 @@ D-BUS API
 
 It's possible to control picom via D-Bus messages, by running picom with *--dbus* and send messages to `com.github.chjj.compton.<DISPLAY>`. `<DISPLAY>` is the display used by picom, with all non-alphanumeric characters transformed to underscores. For `DISPLAY=:0.0` you should use `com.github.chjj.compton._0_0`, for example.
 
-The D-Bus methods and signals are not yet stable, thus undocumented right now.
+The D-Bus methods and signals are not yet stable, thus undocumented right now, with the exception of the `picom.Zoom` interface described below.
+
+=== picom.Zoom
+
+The `picom.Zoom` interface is available on the `/com/github/chjj/compton` object. It controls the xref:_magnifier[*MAGNIFIER*]. Arguments are listed with their D-Bus types.
+
+*SetMonitorZoom*(_monitor_: `s`, _factor_: `d`)::
+	Set the zoom factor of the monitor named _monitor_. If _monitor_ is `*`, the factor is set for every monitor present at the time of the call. _factor_ must be from 1 to 32; 1 turns zoom off for the monitor.
+
+*ZoomIn*(_step_: `d`)::
+	Increase the zoom factor of the monitor under the pointer by _step_, which must be greater than 0. The factor is capped at 32.
+
+*ZoomOut*(_step_: `d`)::
+	Decrease the zoom factor of the monitor under the pointer by _step_, which must be greater than 0. The factor never goes below 1.
+
+*ZoomSet*(_factor_: `d`)::
+	Set the zoom factor of the monitor under the pointer to _factor_, which must be from 1 to 32.
+
+*ZoomOff*()::
+	Set the zoom factor of the monitor under the pointer to 1.
+
+*ZoomToggle*()::
+	If the monitor under the pointer is zoomed, set its factor to 1. Otherwise, restore the last factor above 1 it had, or 2 if it has never been zoomed.
+
+*SetMouseTracking*(_mode_: `s`)::
+	Set the mouse tracking mode, one of `proportional`, `centered`, `push` or `none`. This overrides *zoom-mouse-tracking* until picom resets.
+
+*SetFocusTracking*(_mode_: `s`)::
+	Set the focus tracking mode, one of `centered`, `push` or `none`. This overrides *zoom-focus-tracking* until picom resets.
+
+*GetState*() -> (_mouse_tracking_: `s`, _focus_tracking_: `s`, _monitors_: `a(sd(iiii)(dddd))`)::
+	Return the current tracking modes, and one entry for each monitor present, in no particular order. Each entry holds the monitor's name, its zoom factor, its rectangle as (x, y, width, height), and its view as (x, y, width, height).
+
+A call that can't be honoured returns an error and changes nothing. That is the case when:
+
+* a _factor_ is not a finite number from 1 to 32 (NaN and infinities are rejected);
+* a _step_ is not a finite number greater than 0;
+* _monitor_ is neither `*` nor the name of a current monitor (error `picom.Zoom.Error.UnknownMonitor`);
+* _mode_ is not one of the listed mode names (they are case sensitive);
+* *ZoomIn*, *ZoomOut*, *ZoomSet*, *ZoomOff* or *ZoomToggle* is called while the pointer is not on any monitor (error `picom.Zoom.Error.NoMonitorUnderPointer`);
+* the arguments don't match the method's signature exactly, e.g. an integer where a double is expected, or missing or extra arguments (error `org.freedesktop.DBus.Error.InvalidArgs`).
+
+For example, to magnify the monitor under the pointer twofold on display `:0`:
+
+------------
+$ dbus-send --print-reply --dest=com.github.chjj.compton._0 /com/github/chjj/compton picom.Zoom.ZoomSet double:2
+------------
 
 EXAMPLES
 --------

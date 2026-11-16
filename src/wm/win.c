@@ -31,6 +31,7 @@
 #include "utils/console.h"
 #include "utils/misc.h"
 #include "x.h"
+#include "zoom.h"
 
 #include "defs.h"
 #include "wm.h"
@@ -419,6 +420,9 @@ void win_process_secondary_flags(session_t *ps, struct win *w) {
 		          win_id(w), w->name, w->is_focused, new_focused);
 		w->is_focused = new_focused;
 		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		if (new_focused) {
+			zoom_handle_focus(ps->zoom, w);
+		}
 		// Send D-Bus signal
 		if (ps->o.dbus) {
 			if (new_focused) {

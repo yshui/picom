@@ -10,7 +10,7 @@
 #include "types.h"
 
 #define PICOM_BACKEND_MAJOR (2UL)
-#define PICOM_BACKEND_MINOR (0UL)
+#define PICOM_BACKEND_MINOR (1UL)
 #define PICOM_BACKEND_MAKE_VERSION(major, minor) ((major) * 1000 + (minor))
 
 typedef pixman_region32_t region_t;
@@ -165,6 +165,10 @@ struct backend_blit_args {
 	int border_width;
 	/// Whether the source image should be inverted.
 	bool color_inverted;
+	/// Sample the nearest source pixel when the source image is scaled, instead of
+	/// interpolating between source pixels. Has no effect if `scale` is identity.
+	/// (Since backend version 2.1)
+	bool nearest;
 };
 
 enum backend_image_format {
