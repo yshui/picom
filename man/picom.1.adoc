@@ -224,7 +224,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Crop shadow of a window fully on a particular monitor to that monitor. This is currently implemented using the X RandR extension.
 
 *--backend* _BACKEND_::
-	Specify the backend to use: `xrender` or `glx`. `xrender` is the default one.
+	Specify the backend to use: `xrender` or `glx`. There is no default: picom will not start unless a backend is set, either with this option or with `backend` in the configuration file.
 +
 --
 * `xrender` backend performs all rendering operations with X Render extension. It is what `xcompmgr` uses, and is generally a safe fallback when you encounter rendering artifacts or instability.
