@@ -1060,7 +1060,7 @@ bool parse_config_libconfig(options_t *opt, const char *config_file) { /*NOLINT(
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
 		bool parsed_vsync = parse_vsync(sval);
 		log_error("vsync option will take a boolean from now on. \"%s\" in "
-		          "your configuration should be changed to \"%s\"",
+		          "your configuration should be changed to %s",
 		          sval, parsed_vsync ? "true" : "false");
 		goto out;
 	}
