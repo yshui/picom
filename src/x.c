@@ -200,8 +200,6 @@ void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_
 	x_await_request(c, &req->base);
 }
 
-static bool x_feed_event(struct x_connection *c, xcb_generic_event_t *e);
-
 /**
  * Xlib error handler function.
  */
@@ -211,13 +209,14 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 		return 0;
 	}
 
-	// Fake a xcb error, fill in just enough information
-	xcb_generic_error_t xcb_err = {};
-	xcb_err.full_sequence = (uint32_t)ev->serial;
-	xcb_err.major_code = ev->request_code;
-	xcb_err.minor_code = ev->minor_code;
-	xcb_err.error_code = ev->error_code;
-	x_feed_event(&ps_g->c, (xcb_generic_event_t *)&xcb_err);
+	// XCB owns the event queue, so Xlib only reports errors for requests issued
+	// through Xlib (e.g. by GLX). Those are never in `pending_x_requests`, and
+	// Xlib can report them before older events and errors that are still queued
+	// in xcb, so feeding them to `x_feed_event` would break its assumption that
+	// sequence numbers only go up. Just log them.
+	log_warn("X error from Xlib: %s",
+	         x_error_code_to_string(&ps_g->c, (uint32_t)ev->serial, ev->request_code,
+	                                ev->minor_code, ev->error_code));
 	return 0;
 }
 
